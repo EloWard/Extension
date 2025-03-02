@@ -2,4 +2,4 @@ Google Chrome Extension like 7tv.app:
 
 EloWard:
 
-- This app 
+- This app is a chrome extension that allows you to add badges next to your name in twitch chat.
