@@ -1,11 +1,32 @@
-Google Chrome Extension like 7tv.app:
+# EloWard: League of Legends Rank Badges for Twitch Chat
 
-EloWard:
+## Core Concept
+EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat, allowing viewers to showcase their in-game achievements while watching streams.
 
-- This app is a chrome extension that allows you to add badges next to your name in twitch chat.
-- The badges will be your rank in a game.
-- It will be a paid service that streamers can subscribe to, allowing their viewers to have a badge based on their rank in the game.
-- The viewers will be able to use EloWard for free, but will only be activated in the chat of the subscribed streamers.
-- Currently, it will only support League of Legends streamers and their viewers.
-- Use the Riot API to get the data and Riot RSO to verify the user and have a clean experience logging into their riot account.
-- If needed, can use the twitch api to link the twitch account to the league account.
+## Business Model
+- **For Streamers**: A subscription-based service that streamers pay for to enable the feature in their chat
+- **For Viewers**: Completely free to use, with badges only appearing in chats of subscribed streamers
+
+## Key Features
+1. **Rank Badge Display**: Automatically shows League of Legends rank badges (Iron through Challenger) next to usernames in Twitch chat
+2. **Streamer-Activated**: Badges only appear in chats of streamers who have subscribed to the service
+3. **Seamless Authentication**: Uses Riot RSO (Riot Sign On) for secure and user-friendly League account verification
+4. **Account Linking**: Connects viewers' Twitch accounts with their League of Legends accounts
+5. **Real-Time Rank Updates**: Badges reflect current League of Legends ranks, updated regularly
+
+## Technical Requirements
+- Integration with Riot Games API to fetch accurate rank data
+- Twitch API integration for account linking and chat modification
+- Secure authentication flow using Riot RSO
+- Efficient caching system to respect Riot API rate limits
+- Channel-specific activation based on streamer subscription status
+
+## User Experience
+- **For Streamers**: Simple subscription process with dashboard to manage their service
+- **For Viewers**: One-time setup to link accounts, then badges appear automatically in supported channels
+- **Badge Visibility**: Only visible to other users who have the extension installed
+
+## Initial Scope
+- League of Legends ranks only (potential to expand to other games later)
+- Focus on core functionality before adding customization options
+- Prioritize performance and minimal impact on Twitch experience
