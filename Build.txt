@@ -1,0 +1,121 @@
+# EloWard Chrome Extension Build Plan
+
+## Overview
+EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat. This document outlines the technical implementation steps and tools required.
+
+## Tech Stack
+- **Frontend**: JavaScript, HTML, CSS
+- **Backend**: Node.js with Express
+- **Database**: MongoDB (for user accounts, subscriptions, and cached rank data)
+- **Authentication**: Riot RSO (Riot Sign On) and Twitch OAuth
+- **APIs**: Riot Games API, Twitch API
+- **Hosting**: AWS or Heroku for backend services
+- **Payment Processing**: Stripe
+
+## Implementation Steps
+
+### 1. Project Setup
+- Create GitHub repository
+- Set up development environment
+- Initialize Chrome extension manifest.json (v3)
+- Create basic extension structure
+
+### 2. Backend Development
+- Set up Node.js/Express server
+- Implement MongoDB connection and schemas
+  - User accounts (linking Twitch and League accounts)
+  - Subscription status
+  - Cached rank data
+- Create API endpoints:
+  - User authentication
+  - Rank data retrieval
+  - Subscription management
+
+### 3. Authentication System
+- Implement Riot RSO integration
+  - Register application with Riot Developer Portal
+  - Set up OAuth flow for League account verification
+- Implement Twitch OAuth
+  - Register application with Twitch Developer Portal
+  - Set up authentication flow for Twitch account linking
+- Create secure token system for extension-to-backend communication
+
+### 4. Riot API Integration
+- Implement endpoints to fetch player rank data
+- Set up caching system to minimize API calls (Riot has rate limits)
+- Create background job to refresh rank data periodically
+- Implement error handling for API failures
+
+### 5. Chrome Extension Development
+- Create manifest.json with required permissions:
+  - Access to Twitch.tv
+  - Storage for user preferences
+  - Network requests to backend
+- Develop content scripts to:
+  - Identify Twitch chat messages
+  - Query backend for rank data
+  - Insert rank badges next to usernames
+- Create extension popup UI for:
+  - User login/authentication
+  - Account linking
+  - Settings and preferences
+
+### 6. Badge System
+- Design rank badges for all League of Legends ranks
+- Implement badge rendering in chat
+- Create badge positioning and styling system
+- Add animations or hover effects for badges
+
+### 7. Subscription System
+- Implement Stripe integration for payment processing
+- Create subscription tiers and pricing
+- Develop subscription management dashboard for streamers
+- Implement webhook handlers for subscription events
+
+### 8. Streamer Dashboard
+- Create web interface for streamers to:
+  - Manage their subscription
+  - View analytics (number of viewers with badges, etc.)
+  - Customize badge appearance (optional feature)
+  - Control which badges are displayed
+
+### 9. Testing
+- Unit tests for backend services
+- Integration tests for API endpoints
+- End-to-end testing of the extension on Twitch
+- Cross-browser compatibility testing
+- Performance testing (ensure minimal impact on page load)
+
+### 10. Deployment
+- Set up CI/CD pipeline
+- Deploy backend to cloud provider
+- Publish extension to Chrome Web Store
+- Implement monitoring and logging
+
+### 11. Post-Launch
+- Set up analytics to track usage
+- Create support system for users
+- Plan for feature expansion (other games, more customization)
+
+## Technical Challenges and Solutions
+
+### Rate Limiting
+- Implement intelligent caching to minimize Riot API calls
+- Use webhooks where possible
+- Batch requests for efficiency
+
+### Security
+- Secure storage of API keys
+- Implement proper authentication flows
+- Protect user data and payment information
+
+### Performance
+- Optimize extension to minimize impact on Twitch page performance
+- Lazy-load badges as needed
+- Use efficient DOM manipulation techniques
+
+## Expansion Possibilities
+- Support for additional games (Valorant, CS:GO, etc.)
+- Custom badge designs for premium subscribers
+- Streamer-specific badge variations
+- Integration with stream overlays
