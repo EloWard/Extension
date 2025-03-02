@@ -1,0 +1,7 @@
+How to test the extension:
+1. Load the extension in Chrome using Developer mode
+Click the EloWard icon to open the popup
+3. Connect your accounts (simulated in the MVP)
+Visit one of the active channels (riotgames, lcs, faker, doublelift, tyler1)
+You should see rank badges appear next to usernames in chat
+The extension is now ready for testing and can be further developed to implement the remaining stages, including the subscription system for streamers and other advanced features.
