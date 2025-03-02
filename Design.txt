@@ -8,3 +8,4 @@ EloWard:
 - Currently, it will only support League of Legends streamers and their viewers.
 - Each viewer will have a badge based on their rank in the game.
 - Use the Riot API to get the data and Riot RSO to verify the user and have a clean experience logging into their riot account.
+- If needed, can use the twitch api to link the twitch account to the league account.
