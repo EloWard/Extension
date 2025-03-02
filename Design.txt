@@ -4,8 +4,8 @@ EloWard:
 
 - This app is a chrome extension that allows you to add badges next to your name in twitch chat.
 - The badges will be your rank in a game.
-- It will be a paid service that streamers can subscribe to.
+- It will be a paid service that streamers can subscribe to, allowing their viewers to have a badge based on their rank in the game.
+- The viewers will be able to use EloWard for free, but will only be activated in the chat of the subscribed streamers.
 - Currently, it will only support League of Legends streamers and their viewers.
-- Each viewer will have a badge based on their rank in the game.
 - Use the Riot API to get the data and Riot RSO to verify the user and have a clean experience logging into their riot account.
 - If needed, can use the twitch api to link the twitch account to the league account.
