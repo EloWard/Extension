@@ -35,6 +35,24 @@ This is a Minimum Viable Product (MVP) implementation that includes:
 3. Visit one of the active Twitch channels (currently hardcoded for testing)
 4. You should see rank badges next to usernames in chat
 
+## Riot API Integration Notes
+
+This extension is designed to work with the Riot Games API following their official guidelines:
+
+1. **Authentication**: Uses Riot RSO (Riot Sign On) for secure account verification
+2. **API Endpoints**:
+   - Account-V1 API: Used to get PUUID from Riot ID (gameName + tagLine)
+   - Summoner-V4 API: Used to get summoner information
+   - League-V4 API: Used to get rank information
+3. **Regional Routing**: Proper handling of platform and regional routing values
+4. **Rate Limiting**: Caching system to respect Riot API rate limits
+5. **Data Dragon**: Used for official rank icons and assets
+
+Note: For the MVP, we're using mock data instead of real API calls. In a production implementation, you would need to:
+1. Register your application on the [Riot Developer Portal](https://developer.riotgames.com/)
+2. Implement proper API key management (preferably through a backend service)
+3. Follow the [Riot API Usage Policies](https://developer.riotgames.com/policies/general)
+
 ## Active Channels for Testing
 
 The MVP is configured to work on the following Twitch channels:
@@ -55,7 +73,8 @@ The MVP is configured to work on the following Twitch channels:
 ├── css/
 │   └── popup.css         # Styles for the extension popup
 ├── js/
-│   └── popup.js          # JavaScript for the extension popup
+│   ├── popup.js          # JavaScript for the extension popup
+│   └── config.js         # Configuration for API endpoints
 └── images/
     ├── icon16.png        # Extension icon (16x16)
     ├── icon48.png        # Extension icon (48x48)

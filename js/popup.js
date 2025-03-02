@@ -34,6 +34,11 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.add('connected');
         connectRiotBtn.textContent = 'Disconnect';
         
+        // Show Riot ID
+        if (result.riotAuth.riotId) {
+          riotConnectionStatus.textContent = `Connected (${result.riotAuth.riotId})`;
+        }
+        
         // Show rank if available
         if (result.userRank) {
           displayRank(result.userRank);
@@ -80,12 +85,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       } else {
         // Connect flow
-        // In real implementation, this would involve Riot RSO
-        // For MVP, we'll simulate authentication
+        // In a production extension, we would:
+        // 1. Use Riot RSO (Riot Sign On) for authentication
+        // 2. Follow the OAuth 2.0 protocol
+        // 3. Exchange authorization code for access token
+        // 4. Use token to access Riot API
         
         chrome.runtime.sendMessage({ action: 'authenticate_riot' }, (response) => {
           if (response && response.success) {
             riotConnectionStatus.textContent = 'Connected';
+            if (response.riotId) {
+              riotConnectionStatus.textContent = `Connected (${response.riotId})`;
+            }
+            
             riotConnectionStatus.classList.add('connected');
             connectRiotBtn.textContent = 'Disconnect';
             
@@ -99,7 +111,24 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function displayRank(rankData) {
-    currentRank.textContent = `${rankData.tier} ${rankData.division}`;
+    // Handle null or undefined rank data
+    if (!rankData) {
+      currentRank.textContent = 'Unranked';
+      rankBadgePreview.style.backgroundImage = 'none';
+      return;
+    }
+    
+    // Format the rank text
+    let rankText = rankData.tier;
+    if (rankData.division && rankData.tier !== 'Master' && 
+        rankData.tier !== 'Grandmaster' && rankData.tier !== 'Challenger') {
+      rankText += ' ' + rankData.division;
+    }
+    
+    currentRank.textContent = rankText;
+    
+    // In a production extension, we would use Data Dragon for official rank icons
+    // For MVP, we use local images
     rankBadgePreview.style.backgroundImage = `url('../images/ranks/${rankData.tier.toLowerCase()}.png')`;
   }
 

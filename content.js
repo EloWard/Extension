@@ -6,6 +6,7 @@ let isChannelActive = false;
 let channelName = '';
 let processedMessages = new Set();
 let observerInitialized = false;
+let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 
 // Initialize when the page is loaded
 initializeExtension();
@@ -135,12 +136,16 @@ function processNewMessage(messageNode) {
   const usernameElement = messageNode.querySelector('[data-a-target="chat-message-username"]');
   if (!usernameElement) return;
   
-  // Get username
-  const username = usernameElement.textContent.trim();
+  // Get Twitch username
+  const twitchUsername = usernameElement.textContent.trim();
+  
+  // In a production extension, we would use a backend service to map
+  // Twitch usernames to Riot IDs (gameName#tagLine) and then query Riot API
+  // For the MVP, we'll use the mock function
   
   // Get rank data for this user
   chrome.runtime.sendMessage(
-    { action: 'get_user_rank', username },
+    { action: 'get_user_rank', username: twitchUsername },
     (response) => {
       if (response && response.rank) {
         addBadgeToMessage(usernameElement, response.rank);
@@ -158,11 +163,24 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeElement.classList.add('eloward-tooltip', 'eloward-badge-new');
   
   // Set tooltip text
-  const rankText = rankData.division 
-    ? `${rankData.tier} ${rankData.division}` 
-    : rankData.tier;
+  const rankText = formatRankText(rankData);
   badgeElement.setAttribute('data-rank', rankText);
   
   // Insert badge before the username
   usernameElement.parentNode.insertBefore(badgeElement, usernameElement);
+}
+
+// Helper function to format rank text properly
+function formatRankText(rankData) {
+  if (!rankData) return 'Unranked';
+  
+  let rankText = rankData.tier;
+  if (rankData.division && 
+      rankData.tier !== 'Master' && 
+      rankData.tier !== 'Grandmaster' && 
+      rankData.tier !== 'Challenger') {
+    rankText += ' ' + rankData.division;
+  }
+  
+  return rankText;
 } 

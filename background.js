@@ -1,10 +1,28 @@
 // EloWard Background Service Worker
 
-// Mock data for MVP
-const MOCK_RANK_DATA = {
-  'twitch_user123': { tier: 'Gold', division: 'II' },
-  'twitch_user456': { tier: 'Diamond', division: 'IV' },
-  'twitch_user789': { tier: 'Iron', division: 'III' },
+// Constants
+const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
+const RIOT_API_BASE_URL = 'https://{{platform}}.api.riotgames.com/lol/';
+const RIOT_REGIONAL_URL = 'https://{{region}}.api.riotgames.com/lol/';
+
+// Platform routing values for Riot API
+const PLATFORM_ROUTING = {
+  'na1': { region: 'americas', name: 'North America' },
+  'euw1': { region: 'europe', name: 'EU West' },
+  'eun1': { region: 'europe', name: 'EU Nordic & East' },
+  'kr': { region: 'asia', name: 'Korea' },
+  'br1': { region: 'americas', name: 'Brazil' },
+  'jp1': { region: 'asia', name: 'Japan' },
+  'la1': { region: 'americas', name: 'LAN' },
+  'la2': { region: 'americas', name: 'LAS' },
+  'oc1': { region: 'sea', name: 'Oceania' },
+  'ru': { region: 'europe', name: 'Russia' },
+  'tr1': { region: 'europe', name: 'Turkey' },
+  'ph2': { region: 'sea', name: 'Philippines' },
+  'sg2': { region: 'sea', name: 'Singapore' },
+  'th2': { region: 'sea', name: 'Thailand' },
+  'tw2': { region: 'sea', name: 'Taiwan' },
+  'vn2': { region: 'sea', name: 'Vietnam' }
 };
 
 // Mock active streamers (would be fetched from backend in real implementation)
@@ -16,9 +34,6 @@ const ACTIVE_STREAMERS = [
   'tyler1'
 ];
 
-// Constants
-const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
-
 // Initialize
 chrome.runtime.onInstalled.addListener(() => {
   console.log('EloWard extension installed');
@@ -27,45 +42,24 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({
     activeStreamers: ACTIVE_STREAMERS,
     cachedRanks: {},
-    lastRankUpdate: 0
+    lastRankUpdate: 0,
+    apiKey: '' // In production, this would be managed securely via backend
   });
 });
 
 // Message handling from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'authenticate_twitch') {
-    // Mock Twitch authentication for MVP
-    const mockTwitchAuth = {
-      accessToken: 'mock_twitch_token',
-      userId: 'twitch_user123',
-      username: 'EloWardUser'
-    };
-    
-    chrome.storage.local.set({ twitchAuth: mockTwitchAuth }, () => {
-      sendResponse({ success: true });
-    });
-    
+    // In real implementation, we'd use Twitch OAuth
+    // https://dev.twitch.tv/docs/authentication/
+    initiateTwitchAuth(sendResponse);
     return true; // Keep the message channel open for async response
   }
   
   if (message.action === 'authenticate_riot') {
-    // Mock Riot authentication for MVP
-    const mockRiotAuth = {
-      accessToken: 'mock_riot_token',
-      summonerId: 'summoner123',
-      region: 'NA1'
-    };
-    
-    // Mock rank data
-    const mockRank = { tier: 'Platinum', division: 'IV' };
-    
-    chrome.storage.local.set({ 
-      riotAuth: mockRiotAuth,
-      userRank: mockRank
-    }, () => {
-      sendResponse({ success: true, rank: mockRank });
-    });
-    
+    // In real implementation, we'd use Riot RSO (Riot Sign On)
+    // As detailed in https://developer.riotgames.com/docs/portal
+    initiateRiotAuth(sendResponse);
     return true; // Keep the message channel open for async response
   }
   
@@ -90,39 +84,123 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       
-      // Otherwise, get "fresh" data (mock for MVP)
-      let rank = MOCK_RANK_DATA[username];
-      
-      // Generate random rank for users not in our mock data
-      if (!rank) {
-        const tiers = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger'];
-        const divisions = ['I', 'II', 'III', 'IV'];
-        
-        // 20% chance of having no rank
-        if (Math.random() < 0.2) {
-          rank = null;
-        } else {
-          const tierIndex = Math.floor(Math.random() * tiers.length);
-          // Masters+ don't have divisions
-          const division = tierIndex < 7 ? divisions[Math.floor(Math.random() * divisions.length)] : '';
-          
-          rank = {
-            tier: tiers[tierIndex],
-            division
-          };
+      // For MVP, we'll use mock data instead of real API calls
+      // In a real implementation, we would:
+      // 1. Use the Account-V1 API to get PUUID from Riot ID (gameName + tagLine)
+      // 2. Use the League-V4 API to get rank data using the PUUID
+      // Following the migration from summoner names to Riot IDs
+      generateMockRankData(username, (rank) => {
+        // Cache the rank data
+        if (!data.cachedRanks) {
+          data.cachedRanks = {};
         }
-      }
-      
-      // Cache the rank data
-      data.cachedRanks[username] = rank;
-      chrome.storage.local.set({
-        cachedRanks: data.cachedRanks,
-        lastRankUpdate: now
+        
+        data.cachedRanks[username] = rank;
+        chrome.storage.local.set({
+          cachedRanks: data.cachedRanks,
+          lastRankUpdate: now
+        });
+        
+        sendResponse({ rank });
       });
-      
-      sendResponse({ rank });
     });
     
     return true; // Keep the message channel open for async response
   }
-}); 
+});
+
+// Helper functions
+
+// Mock Twitch authentication for MVP
+function initiateTwitchAuth(sendResponse) {
+  const mockTwitchAuth = {
+    accessToken: 'mock_twitch_token',
+    userId: 'twitch_user123',
+    username: 'EloWardUser'
+  };
+  
+  chrome.storage.local.set({ twitchAuth: mockTwitchAuth }, () => {
+    sendResponse({ success: true });
+  });
+}
+
+// Mock Riot authentication for MVP
+// In a real implementation, this would use Riot RSO
+function initiateRiotAuth(sendResponse) {
+  const mockRiotAuth = {
+    accessToken: 'mock_riot_token',
+    riotId: 'EloWardUser#NA1', // New Riot ID format (gameName#tagLine)
+    puuid: 'mock-puuid-123456789',
+    region: 'na1'
+  };
+  
+  // Mock rank data
+  const mockRank = { tier: 'Platinum', division: 'IV' };
+  
+  chrome.storage.local.set({ 
+    riotAuth: mockRiotAuth,
+    userRank: mockRank
+  }, () => {
+    sendResponse({ success: true, rank: mockRank });
+  });
+}
+
+// Generate mock rank data for users
+// In a real implementation, this would fetch from Riot API
+function generateMockRankData(username, callback) {
+  // Some predefined mock data
+  const MOCK_RANK_DATA = {
+    'twitch_user123': { tier: 'Gold', division: 'II' },
+    'twitch_user456': { tier: 'Diamond', division: 'IV' },
+    'twitch_user789': { tier: 'Iron', division: 'III' },
+  };
+  
+  let rank = MOCK_RANK_DATA[username];
+  
+  // Generate random rank for users not in our mock data
+  if (!rank) {
+    const tiers = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger'];
+    const divisions = ['I', 'II', 'III', 'IV'];
+    
+    // 20% chance of having no rank
+    if (Math.random() < 0.2) {
+      rank = null;
+    } else {
+      const tierIndex = Math.floor(Math.random() * tiers.length);
+      // Masters+ don't have divisions
+      const division = tierIndex < 7 ? divisions[Math.floor(Math.random() * divisions.length)] : '';
+      
+      rank = {
+        tier: tiers[tierIndex],
+        division
+      };
+    }
+  }
+  
+  callback(rank);
+}
+
+// In a real implementation, these functions would make actual API calls
+
+// Get PUUID from Riot ID (gameName + tagLine)
+function getPUUIDFromRiotId(gameName, tagLine, region, callback) {
+  // Would use Account-V1 API: 
+  // GET /riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}
+  // Example: https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/EloWardUser/NA1
+}
+
+// Get League rank data from PUUID
+function getRankFromPUUID(puuid, platform, callback) {
+  // Would use League-V4 API:
+  // GET /lol/league/v4/entries/by-summoner/{encryptedSummonerId}
+  // First need to get summonerId from PUUID using Summoner-V4 API
+}
+
+// Get assets from Data Dragon
+function getRankIconUrl(tier) {
+  // Data Dragon would be used for official rank icons
+  // Example: https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Aatrox_0.jpg
+  
+  // For MVP, we'd just return the path to local assets
+  return `images/ranks/${tier.toLowerCase()}.png`;
+} 
