@@ -1,0 +1,168 @@
+// EloWard Content Script
+// This script runs on Twitch pages and adds rank badges to chat messages
+
+// Global state
+let isChannelActive = false;
+let channelName = '';
+let processedMessages = new Set();
+let observerInitialized = false;
+
+// Initialize when the page is loaded
+initializeExtension();
+
+function initializeExtension() {
+  // Extract channel name from URL
+  channelName = window.location.pathname.split('/')[1];
+  if (!channelName) return;
+  
+  console.log(`EloWard: Initializing on channel ${channelName}`);
+  
+  // Check if this is an activated channel
+  chrome.runtime.sendMessage(
+    { action: 'check_channel_active', channelName },
+    (response) => {
+      if (response && response.isActive) {
+        isChannelActive = true;
+        console.log(`EloWard: Channel ${channelName} is active`);
+        
+        // Initialize the observer for chat messages
+        initializeObserver();
+      } else {
+        console.log(`EloWard: Channel ${channelName} is not active`);
+      }
+    }
+  );
+  
+  // Listen for URL changes (when user navigates to a different channel)
+  let lastUrl = window.location.href;
+  new MutationObserver(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      // Reset state
+      isChannelActive = false;
+      channelName = window.location.pathname.split('/')[1];
+      processedMessages.clear();
+      
+      // Check if new channel is active
+      if (channelName) {
+        chrome.runtime.sendMessage(
+          { action: 'check_channel_active', channelName },
+          (response) => {
+            if (response && response.isActive) {
+              isChannelActive = true;
+              console.log(`EloWard: Channel ${channelName} is active`);
+              
+              // Initialize the observer for chat messages
+              initializeObserver();
+            } else {
+              console.log(`EloWard: Channel ${channelName} is not active`);
+            }
+          }
+        );
+      }
+    }
+  }).observe(document, { subtree: true, childList: true });
+}
+
+function initializeObserver() {
+  if (observerInitialized) return;
+  
+  // Find the chat container
+  function findChatContainer() {
+    return document.querySelector('[data-test-selector="chat-scrollable-area__message-container"]');
+  }
+  
+  // Try to find the chat container
+  let chatContainer = findChatContainer();
+  
+  // If not found, wait and retry
+  if (!chatContainer) {
+    console.log('EloWard: Chat container not found, waiting...');
+    const checkInterval = setInterval(() => {
+      chatContainer = findChatContainer();
+      if (chatContainer) {
+        clearInterval(checkInterval);
+        setupChatObserver(chatContainer);
+      }
+    }, 1000);
+  } else {
+    setupChatObserver(chatContainer);
+  }
+  
+  observerInitialized = true;
+}
+
+function setupChatObserver(chatContainer) {
+  console.log('EloWard: Setting up chat observer');
+  
+  // Create a mutation observer to watch for new chat messages
+  const observer = new MutationObserver((mutations) => {
+    if (!isChannelActive) return;
+    
+    for (const mutation of mutations) {
+      if (mutation.addedNodes.length > 0) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            processNewMessage(node);
+          }
+        }
+      }
+    }
+  });
+  
+  // Start observing the chat container
+  observer.observe(chatContainer, {
+    childList: true,
+    subtree: false
+  });
+  
+  // Process existing messages as well
+  const existingMessages = chatContainer.querySelectorAll('[data-a-target="chat-line-message"]');
+  existingMessages.forEach(processNewMessage);
+}
+
+function processNewMessage(messageNode) {
+  if (!isChannelActive) return;
+  
+  // Get a unique ID for this message
+  const messageId = messageNode.getAttribute('id');
+  if (!messageId || processedMessages.has(messageId)) return;
+  
+  // Mark this message as processed
+  processedMessages.add(messageId);
+  
+  // Find username element
+  const usernameElement = messageNode.querySelector('[data-a-target="chat-message-username"]');
+  if (!usernameElement) return;
+  
+  // Get username
+  const username = usernameElement.textContent.trim();
+  
+  // Get rank data for this user
+  chrome.runtime.sendMessage(
+    { action: 'get_user_rank', username },
+    (response) => {
+      if (response && response.rank) {
+        addBadgeToMessage(usernameElement, response.rank);
+      }
+    }
+  );
+}
+
+function addBadgeToMessage(usernameElement, rankData) {
+  // Create badge element
+  const badgeElement = document.createElement('span');
+  
+  // Set classes for styling
+  badgeElement.classList.add('eloward-badge', `eloward-${rankData.tier.toLowerCase()}`);
+  badgeElement.classList.add('eloward-tooltip', 'eloward-badge-new');
+  
+  // Set tooltip text
+  const rankText = rankData.division 
+    ? `${rankData.tier} ${rankData.division}` 
+    : rankData.tier;
+  badgeElement.setAttribute('data-rank', rankText);
+  
+  // Insert badge before the username
+  usernameElement.parentNode.insertBefore(badgeElement, usernameElement);
+} 

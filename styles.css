@@ -1,0 +1,89 @@
+/* EloWard Rank Badges for Twitch Chat */
+
+.eloward-badge {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  vertical-align: middle;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* Rank-specific badges */
+.eloward-iron {
+  background-image: url('images/ranks/iron.png');
+}
+
+.eloward-bronze {
+  background-image: url('images/ranks/bronze.png');
+}
+
+.eloward-silver {
+  background-image: url('images/ranks/silver.png');
+}
+
+.eloward-gold {
+  background-image: url('images/ranks/gold.png');
+}
+
+.eloward-platinum {
+  background-image: url('images/ranks/platinum.png');
+}
+
+.eloward-emerald {
+  background-image: url('images/ranks/emerald.png');
+}
+
+.eloward-diamond {
+  background-image: url('images/ranks/diamond.png');
+}
+
+.eloward-master {
+  background-image: url('images/ranks/master.png');
+}
+
+.eloward-grandmaster {
+  background-image: url('images/ranks/grandmaster.png');
+}
+
+.eloward-challenger {
+  background-image: url('images/ranks/challenger.png');
+}
+
+/* Badge tooltip */
+.eloward-tooltip {
+  position: relative;
+}
+
+.eloward-tooltip:hover::after {
+  content: attr(data-rank);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+}
+
+/* Animation for newly added badges */
+@keyframes eloward-badge-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.eloward-badge-new {
+  animation: eloward-badge-appear 0.3s ease-out;
+} 

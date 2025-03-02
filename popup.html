@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EloWard</title>
+  <link rel="stylesheet" href="css/popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>EloWard</h1>
+      <p>League of Legends Rank Badges for Twitch Chat</p>
+    </header>
+    
+    <div id="login-section" class="section">
+      <h2>Account Connection</h2>
+      <div id="twitch-status">
+        <p>Twitch Account: <span id="twitch-connection-status">Not Connected</span></p>
+        <button id="connect-twitch" class="btn">Connect Twitch Account</button>
+      </div>
+      <div id="riot-status">
+        <p>League Account: <span id="riot-connection-status">Not Connected</span></p>
+        <button id="connect-riot" class="btn">Connect League Account</button>
+      </div>
+    </div>
+    
+    <div id="info-section" class="section">
+      <h2>Your League Info</h2>
+      <div id="rank-display">
+        <p>Current Rank: <span id="current-rank">Unknown</span></p>
+        <div id="rank-badge-preview"></div>
+      </div>
+    </div>
+    
+    <footer>
+      <p>EloWard v0.1.0 | <a href="#" id="settings-link">Settings</a></p>
+    </footer>
+  </div>
+
+  <script src="js/popup.js"></script>
+</body>
+</html> 
