@@ -16,50 +16,41 @@
         <img src="images/icon128.png" alt="EloWard Logo" class="logo">
         <h1>EloWard</h1>
       </div>
-      <p class="tagline">League Ranks in Twitch Chat</p>
+      <p class="subtitle">LoL Rank Badges for Twitch</p>
     </header>
     
     <div class="card">
-      <div class="section" id="login-section">
-        <h2>Connect Accounts</h2>
-        <div class="account-item" id="twitch-status">
-          <div class="account-info">
-            <span class="icon twitch-icon"></span>
-            <div class="account-details">
-              <p class="account-type">Twitch</p>
-              <p class="account-status" id="twitch-connection-status">Not Connected</p>
-            </div>
-          </div>
-          <button id="connect-twitch" class="btn">Connect</button>
+      <h2>Account Connection</h2>
+      <div class="connection-item">
+        <div class="connection-info">
+          <span class="connection-label">Twitch</span>
+          <span id="twitch-connection-status" class="connection-status">Not Connected</span>
         </div>
-        
-        <div class="account-item" id="riot-status">
-          <div class="account-info">
-            <span class="icon riot-icon"></span>
-            <div class="account-details">
-              <p class="account-type">League of Legends</p>
-              <p class="account-status" id="riot-connection-status">Not Connected</p>
-            </div>
-          </div>
-          <button id="connect-riot" class="btn">Connect</button>
+        <button id="connect-twitch" class="btn">Connect</button>
+      </div>
+      
+      <div class="connection-item">
+        <div class="connection-info">
+          <span class="connection-label">League of Legends</span>
+          <span id="riot-connection-status" class="connection-status">Not Connected</span>
+        </div>
+        <button id="connect-riot" class="btn">Connect</button>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>Your Profile</h2>
+      <div class="rank-container">
+        <div id="rank-badge-preview" class="rank-badge"></div>
+        <div class="rank-info">
+          <span class="rank-label">Current Rank</span>
+          <span id="current-rank" class="rank-value">Unknown</span>
         </div>
       </div>
       
-      <div class="divider"></div>
-      
-      <div class="section" id="info-section">
-        <div class="rank-section">
-          <h2>Your Rank</h2>
-          <div class="rank-container">
-            <div id="rank-badge-preview"></div>
-            <div class="rank-text">
-              <p id="current-rank">Unknown</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="region-section">
-          <h2>Region</h2>
+      <div class="region-selector">
+        <label for="region">Region</label>
+        <div class="select-wrapper">
           <select id="region" class="select-input">
             <option value="na1">North America</option>
             <option value="euw1">EU West</option>
