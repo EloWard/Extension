@@ -7,10 +7,20 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
 - **Frontend**: JavaScript, HTML, CSS
 - **Backend**: Node.js with Express
 - **Database**: MongoDB (for user accounts, subscriptions, and cached rank data)
-- **Authentication**: Riot RSO (Riot Sign On) and Twitch OAuth
-- **APIs**: Riot Games API, Twitch API
+- **Authentication**: Riot RSO (Riot Sign On) for viewers, Twitch OAuth for streamers
+- **APIs**: Riot Games API, Twitch API (limited usage)
 - **Hosting**: AWS or Heroku for backend services
 - **Payment Processing**: Stripe
+
+## Authentication Approach
+- **For Viewers**: No Twitch login required
+  - Username detection via DOM or cookies
+  - One-time League account verification via Riot RSO
+  - Association stored in database and local storage
+- **For Streamers**: Twitch OAuth authentication
+  - Store both channel name and unique Twitch ID
+  - Robust tracking despite channel name changes
+  - Subscription management through streamer dashboard
 
 ## Implementation Steps
 
@@ -23,77 +33,78 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
 ### 2. Backend Development
 - Set up Node.js/Express server
 - Implement MongoDB connection and schemas
-  - User accounts (linking Twitch and League accounts)
+  - Viewer accounts (linking Twitch username to League accounts)
+  - Streamer accounts (with Twitch ID for reliable tracking)
   - Streamer subscription status
-  - Viewer activation status
   - Cached rank data
 - Create API endpoints:
-  - User authentication (separate flows for viewers and streamers)
+  - League account verification flow
+  - Streamer authentication and subscription management
   - Rank data retrieval
-  - Subscription management for streamers
-  - Channel activation verification
+  - Channel subscription verification
 
 ### 3. Authentication System
-- Implement Riot RSO integration
+- Implement Riot RSO integration for viewers
   - Register application with Riot Developer Portal
   - Set up OAuth flow for League account verification
-- Implement Twitch OAuth
+  - Create content script to capture League account info
+- Implement Twitch OAuth for streamers only
   - Register application with Twitch Developer Portal
-  - Set up authentication flow for Twitch account linking
+  - Set up authentication flow for Twitch identity verification
+  - Store both Twitch username and unique Twitch ID
 - Create secure token system for extension-to-backend communication
-- Develop system to verify viewer is in a subscribed streamer's chat
 
-### 4. Riot API Integration
+### 4. Viewer Experience Implementation
+- Automatic Twitch username detection from page
+  - Primary method: Extract from DOM elements
+  - Fallback methods: Cookies, localStorage
+- League account linking interface
+  - Simple popup UI for one-time League verification
+  - Clear visual feedback on link status
+- Local storage optimization
+  - Cache linked account status to minimize API calls
+  - Implement refresh logic for rank updates
+
+### 5. Streamer System
+- Twitch authentication for streamers
+  - OAuth flow to capture Twitch identity
+  - Store Twitch ID as primary identifier (immune to username changes)
+- Subscription management dashboard
+  - Activate/deactivate service
+  - View subscription status and history
+  - Access analytics (optional)
+- Implement Stripe for payment processing
+
+### 6. Riot API Integration
 - Implement endpoints to fetch player rank data
 - Set up caching system to minimize API calls (Riot has rate limits)
 - Create background job to refresh rank data periodically
 - Implement error handling for API failures
 
-### 5. Chrome Extension Development
+### 7. Chrome Extension Development
 - Create manifest.json with required permissions:
   - Access to Twitch.tv
   - Storage for user preferences
   - Network requests to backend
 - Develop content scripts to:
   - Identify current Twitch channel and verify subscription status
+  - Extract Twitch username without requiring login
   - Identify Twitch chat messages
   - Query backend for rank data
   - Insert rank badges next to usernames only in subscribed channels
 - Create extension popup UI for:
-  - User login/authentication
-  - Account linking
+  - League account linking
   - Settings and preferences
   - Different interfaces for viewers vs. streamers
 
-### 6. Badge System
+### 8. Badge System
 - Design rank badges for all League of Legends ranks
 - Implement badge rendering in chat
 - Create badge positioning and styling system
 - Add animations or hover effects for badges
 - Implement channel-specific badge activation logic
 
-### 7. Subscription System for Streamers
-- Implement Stripe integration for payment processing
-- Create subscription tiers and pricing for streamers
-- Develop subscription management dashboard for streamers
-- Implement webhook handlers for subscription events
-- Create system to track which streamers have active subscriptions
-
-### 8. Streamer Dashboard
-- Create web interface for streamers to:
-  - Manage their subscription
-  - View analytics (number of viewers with badges, etc.)
-  - Customize badge appearance (optional feature)
-  - Control which badges are displayed
-  - Access subscription billing history
-
-### 9. Viewer Experience
-- Implement automatic badge activation when in subscribed channels
-- Create viewer onboarding flow (Riot account verification)
-- Develop viewer dashboard to see which channels support badges
-- Add notification system for when a viewer enters a supported channel
-
-### 10. Testing
+### 9. Testing
 - Unit tests for backend services
 - Integration tests for API endpoints
 - End-to-end testing of the extension on Twitch
@@ -101,14 +112,14 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
 - Performance testing (ensure minimal impact on page load)
 - Test subscription activation/deactivation flows
 
-### 11. Deployment
+### 10. Deployment
 - Set up CI/CD pipeline
 - Deploy backend to cloud provider
 - Publish extension to Chrome Web Store
 - Implement monitoring and logging
 - Set up automated alerts for service disruptions
 
-### 12. Post-Launch
+### 11. Post-Launch
 - Set up analytics to track usage
 - Create support system for users (both viewers and streamers)
 - Plan for feature expansion (other games, more customization)
@@ -116,29 +127,31 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
 
 ## Technical Challenges and Solutions
 
+### User Identity Management
+- **Problem**: Reliably identifying Twitch users without login
+- **Solution**: Multiple extraction methods (DOM elements, cookies, localStorage)
+- **Fallback**: Optional manual username entry if automatic detection fails
+
+### Streamer Identity Tracking
+- **Problem**: Channel name changes breaking subscription tracking
+- **Solution**: Store both Twitch username and unique Twitch ID
+- **Implementation**: Use Twitch ID as primary key in database
+
 ### Rate Limiting
-- Implement intelligent caching to minimize Riot API calls
-- Use webhooks where possible
-- Batch requests for efficiency
-- Prioritize API calls for active streamers with more viewers
+- **Problem**: Riot API has strict rate limits
+- **Solution**: Implement intelligent caching to minimize API calls
+- **Implementation**: Cache rank data with reasonable TTL (time-to-live)
+- **Optimization**: Prioritize rank lookups for active channels
 
 ### Security
-- Secure storage of API keys
-- Implement proper authentication flows
-- Protect user data and payment information
-- Prevent badge spoofing or unauthorized activation
+- **Problem**: Protecting API keys and user data
+- **Solution**: Move all sensitive operations to backend
+- **Implementation**: Use secure API endpoints, avoid storing keys in extension code
 
 ### Performance
-- Optimize extension to minimize impact on Twitch page performance
-- Lazy-load badges as needed
-- Use efficient DOM manipulation techniques
-- Implement progressive loading for high-traffic chats
-
-### Subscription Management
-- Handle subscription expiration gracefully
-- Provide clear notifications to streamers about subscription status
-- Implement automatic renewal options
-- Create grace periods for payment issues
+- **Problem**: Minimizing impact on Twitch experience
+- **Solution**: Efficient DOM operations and response caching
+- **Implementation**: Throttle update frequency, background processing
 
 ## Expansion Possibilities
 - Support for additional games (Valorant, CS:GO, etc.)

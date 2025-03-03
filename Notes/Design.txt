@@ -14,16 +14,26 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
 4. **Account Linking**: Connects viewers' Twitch accounts with their League of Legends accounts
 5. **Real-Time Rank Updates**: Badges reflect current League of Legends ranks, updated regularly
 
+## Authentication Approach
+- **For Viewers**: No Twitch login required
+  - Extension automatically detects Twitch username from the page
+  - Only League account verification needed (one-time process via Riot RSO)
+  - Similar to popular extensions like 7TV and BetterTTV
+- **For Streamers**: Twitch authentication required
+  - Ensures subscription tracking even if streamer changes channel name
+  - Uses Twitch OAuth for secure identification
+  - Stores both Twitch username and unique Twitch ID
+
 ## Technical Requirements
 - Integration with Riot Games API to fetch accurate rank data
-- Twitch API integration for account linking and chat modification
-- Secure authentication flow using Riot RSO
+- Minimal Twitch API integration (only for streamer authentication)
+- Secure authentication flow using Riot RSO for League accounts
 - Efficient caching system to respect Riot API rate limits
 - Channel-specific activation based on streamer subscription status
 
 ## User Experience
 - **For Streamers**: Simple subscription process with dashboard to manage their service
-- **For Viewers**: One-time setup to link accounts, then badges appear automatically in supported channels
+- **For Viewers**: One-time League account verification, no Twitch login needed
 - **Badge Visibility**: Only visible to other users who have the extension installed
 
 ## Initial Scope
