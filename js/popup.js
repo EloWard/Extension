@@ -151,7 +151,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function displayRank(rankData) {
     if (!rankData) {
       currentRank.textContent = 'Unranked';
+      // Enhanced image URL path to ensure proper loading with transparent background
       rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+      // Apply custom positioning for unranked badge
+      rankBadgePreview.style.transform = 'translateY(-3px)';
       return;
     }
     
@@ -163,8 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     currentRank.textContent = rankText;
     
-    // In a production extension, we would use Data Dragon for official rank icons
-    // For MVP, we use local images
+    // Enhanced image path and ensure proper sizing to display transparent PNG
     rankBadgePreview.style.backgroundImage = `url('../images/ranks/${rankData.tier.toLowerCase()}.png')`;
   }
 }); 

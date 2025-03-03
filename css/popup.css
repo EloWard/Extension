@@ -163,14 +163,13 @@ header h1 {
 }
 
 .rank-badge {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background-color: #EAEAEA;
+  width: 70px;
+  height: 70px;
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
-  box-shadow: var(--shadow-sm);
+  position: relative;
+  transform: translateY(-3px);
 }
 
 .rank-info {
