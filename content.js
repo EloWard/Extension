@@ -225,7 +225,7 @@ function showActivationNotification() {
   
   // Add logo
   const logo = document.createElement('img');
-  logo.src = chrome.runtime.getURL('images/icon48.png');
+  logo.src = chrome.runtime.getURL('images/logo/icon48.png');
   logo.alt = 'EloWard';
   logo.style.cssText = `
     width: 24px;

@@ -1,7 +1,7 @@
 # EloWard: League of Legends Rank Badges for Twitch
 
 <div align="center">
-  <img src="images/icon128.png" alt="EloWard Logo" width="80" height="80">
+  <img src="images/logo/icon128.png" alt="EloWard Logo" width="80" height="80">
   <h3>Show off your League rank in Twitch chat</h3>
 </div>
 
