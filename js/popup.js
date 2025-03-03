@@ -59,20 +59,28 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.remove('twitchAuth', () => {
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected');
-          connectTwitchBtn.textContent = 'Connect Twitch Account';
+          connectTwitchBtn.textContent = 'Connect';
         });
       } else {
-        // Connect flow
-        // In real implementation, this would involve Twitch OAuth
-        // For MVP, we'll simulate authentication
+        // Connect flow - show loading state
+        connectTwitchBtn.textContent = 'Connecting...';
+        connectTwitchBtn.disabled = true;
         
-        chrome.runtime.sendMessage({ action: 'authenticate_twitch' }, (response) => {
-          if (response && response.success) {
-            twitchConnectionStatus.textContent = 'Connected';
-            twitchConnectionStatus.classList.add('connected');
-            connectTwitchBtn.textContent = 'Disconnect';
-          }
-        });
+        // In real implementation, this would involve Twitch OAuth
+        // For MVP, we'll simulate authentication with a delay
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ action: 'authenticate_twitch' }, (response) => {
+            connectTwitchBtn.disabled = false;
+            
+            if (response && response.success) {
+              twitchConnectionStatus.textContent = 'Connected';
+              twitchConnectionStatus.classList.add('connected');
+              connectTwitchBtn.textContent = 'Disconnect';
+            } else {
+              connectTwitchBtn.textContent = 'Connect';
+            }
+          });
+        }, 800); // Simulate network delay
       }
     });
   }
@@ -84,38 +92,43 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.remove(['riotAuth', 'userRank'], () => {
           riotConnectionStatus.textContent = 'Not Connected';
           riotConnectionStatus.classList.remove('connected');
-          connectRiotBtn.textContent = 'Connect League Account';
+          connectRiotBtn.textContent = 'Connect';
           currentRank.textContent = 'Unknown';
           rankBadgePreview.style.backgroundImage = 'none';
         });
       } else {
-        // Connect flow
-        // In a production extension, we would:
-        // 1. Use Riot RSO (Riot Sign On) for authentication
-        // 2. Follow the OAuth 2.0 protocol
-        // 3. Exchange authorization code for access token
-        // 4. Use token to access Riot API
+        // Connect flow - show loading state
+        connectRiotBtn.textContent = 'Connecting...';
+        connectRiotBtn.disabled = true;
         
         const selectedRegion = regionSelect.value;
         
-        chrome.runtime.sendMessage({ 
-          action: 'authenticate_riot',
-          region: selectedRegion 
-        }, (response) => {
-          if (response && response.success) {
-            riotConnectionStatus.textContent = 'Connected';
-            if (response.riotId) {
-              riotConnectionStatus.textContent = `Connected (${response.riotId})`;
-            }
+        // In a production extension, this would use Riot RSO
+        // For MVP, we'll simulate with a delay
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ 
+            action: 'authenticate_riot',
+            region: selectedRegion 
+          }, (response) => {
+            connectRiotBtn.disabled = false;
             
-            riotConnectionStatus.classList.add('connected');
-            connectRiotBtn.textContent = 'Disconnect';
-            
-            if (response.rank) {
-              displayRank(response.rank);
+            if (response && response.success) {
+              riotConnectionStatus.textContent = 'Connected';
+              riotConnectionStatus.classList.add('connected');
+              connectRiotBtn.textContent = 'Disconnect';
+              
+              if (response.riotId) {
+                riotConnectionStatus.textContent = `Connected (${response.riotId})`;
+              }
+              
+              if (response.rank) {
+                displayRank(response.rank);
+              }
+            } else {
+              connectRiotBtn.textContent = 'Connect';
             }
-          }
-        });
+          });
+        }, 800); // Simulate network delay
       }
     });
   }

@@ -18,7 +18,8 @@
   },
   "permissions": [
     "storage",
-    "identity"
+    "identity",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.twitch.tv/*",
@@ -35,5 +36,14 @@
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "images/*.png",
+        "images/ranks/*.png"
+      ],
+      "matches": ["https://*.twitch.tv/*"]
+    }
+  ]
 } 

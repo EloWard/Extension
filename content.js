@@ -28,6 +28,9 @@ function initializeExtension() {
         
         // Initialize the observer for chat messages
         initializeObserver();
+        
+        // Show a subtle notification that EloWard is active
+        showActivationNotification();
       } else {
         console.log(`EloWard: Channel ${channelName} is not active`);
       }
@@ -44,6 +47,9 @@ function initializeExtension() {
       channelName = window.location.pathname.split('/')[1];
       processedMessages.clear();
       
+      // Remove any existing notification
+      removeActivationNotification();
+      
       // Check if new channel is active
       if (channelName) {
         chrome.runtime.sendMessage(
@@ -55,6 +61,9 @@ function initializeExtension() {
               
               // Initialize the observer for chat messages
               initializeObserver();
+              
+              // Show activation notification
+              showActivationNotification();
             } else {
               console.log(`EloWard: Channel ${channelName} is not active`);
             }
@@ -183,4 +192,104 @@ function formatRankText(rankData) {
   }
   
   return rankText;
+}
+
+// Show a subtle notification that EloWard is active
+function showActivationNotification() {
+  // Check if notification already exists
+  if (document.getElementById('eloward-notification')) return;
+  
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.id = 'eloward-notification';
+  notification.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: rgba(33, 37, 41, 0.85);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(4px);
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 0;
+    transform: translateY(10px);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+  
+  // Add logo
+  const logo = document.createElement('img');
+  logo.src = chrome.runtime.getURL('images/icon48.png');
+  logo.alt = 'EloWard';
+  logo.style.cssText = `
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+  `;
+  
+  // Add text
+  const text = document.createElement('span');
+  text.textContent = 'EloWard Active - LoL ranks enabled in chat';
+  
+  // Add close button
+  const closeBtn = document.createElement('span');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = `
+    margin-left: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.7;
+  `;
+  closeBtn.addEventListener('click', () => {
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateY(10px)';
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, 300);
+  });
+  
+  // Assemble and add to page
+  notification.appendChild(logo);
+  notification.appendChild(text);
+  notification.appendChild(closeBtn);
+  document.body.appendChild(notification);
+  
+  // Animate in
+  setTimeout(() => {
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateY(0)';
+  }, 10);
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    if (document.body.contains(notification)) {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateY(10px)';
+      setTimeout(() => {
+        if (document.body.contains(notification)) {
+          document.body.removeChild(notification);
+        }
+      }, 300);
+    }
+  }, 5000);
+}
+
+// Remove activation notification if it exists
+function removeActivationNotification() {
+  const notification = document.getElementById('eloward-notification');
+  if (notification && document.body.contains(notification)) {
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateY(10px)';
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 300);
+  }
 } 

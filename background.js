@@ -46,6 +46,10 @@ chrome.runtime.onInstalled.addListener(() => {
     apiKey: '', // In production, this would be managed securely via backend
     selectedRegion: 'na1' // Default region
   });
+  
+  // Set icon badge to show it's active
+  chrome.action.setBadgeText({ text: '' });
+  chrome.action.setBadgeBackgroundColor({ color: '#E63946' });
 });
 
 // Message handling from popup and content scripts
@@ -68,6 +72,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'check_channel_active') {
     chrome.storage.local.get('activeStreamers', (data) => {
       const isActive = data.activeStreamers.includes(message.channelName.toLowerCase());
+      
+      // Update badge when on an active channel
+      if (isActive) {
+        chrome.action.setBadgeText({ text: '✓' });
+      } else {
+        chrome.action.setBadgeText({ text: '' });
+      }
+      
       sendResponse({ isActive });
     });
     
@@ -85,7 +97,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const cacheKey = `${username}_${region}`;
       
       // If we have recent cached data, use it
-      if (data.cachedRanks[cacheKey] && now - data.lastRankUpdate < BADGE_REFRESH_INTERVAL) {
+      if (data.cachedRanks && data.cachedRanks[cacheKey] && now - data.lastRankUpdate < BADGE_REFRESH_INTERVAL) {
         sendResponse({ rank: data.cachedRanks[cacheKey] });
         return;
       }

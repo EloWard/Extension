@@ -1,4 +1,22 @@
-/* General styles */
+/* Modern, clean styling for EloWard extension */
+
+:root {
+  --primary: #E63946;
+  --primary-dark: #C1121F;
+  --background: #F8F9FA;
+  --surface: #FFFFFF;
+  --text-primary: #212529;
+  --text-secondary: #6C757D;
+  --border: #DEE2E6;
+  --success: #10B981;
+  --error: #EF4444;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -6,134 +24,253 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  color: #f8f8f2;
-  background-color: #0e0e10;
-  width: 320px;
-  min-height: 300px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text-primary);
+  background-color: var(--background);
+  width: 340px;
+  min-height: 420px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   padding: 16px;
+  height: 100%;
 }
 
-/* Header */
+/* Header Styling */
 header {
-  text-align: center;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #444;
-  padding-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 8px;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
 }
 
 header h1 {
-  color: #9147ff; /* Twitch purple */
-  margin-bottom: 5px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0;
 }
 
-/* Sections */
-.section {
-  margin-bottom: 16px;
-  background-color: #18181b;
-  border-radius: 4px;
-  padding: 12px;
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 2px;
 }
 
-.section h2 {
+/* Card Styling */
+.card {
+  background-color: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border);
+}
+
+.card h2 {
   font-size: 16px;
-  margin-bottom: 12px;
-  color: #dedee3;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
 }
 
-/* Buttons */
+/* Connection Item Styling */
+.connection-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.connection-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.connection-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.connection-label {
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.connection-status {
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connection-status.connected {
+  color: var(--success);
+}
+
+/* Button Styling */
 .btn {
-  background-color: #9147ff;
+  background-color: var(--primary);
   color: white;
   border: none;
-  padding: 8px 12px;
-  border-radius: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
-  margin-top: 8px;
-  width: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.2s, transform 0.1s;
 }
 
 .btn:hover {
-  background-color: #772ce8;
+  background-color: var(--primary-dark);
+}
+
+.btn:active {
+  transform: scale(0.98);
 }
 
 .btn:disabled {
-  background-color: #555;
+  background-color: var(--text-secondary);
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
-/* Account connection status */
-#twitch-status, #riot-status {
-  margin-bottom: 12px;
-}
-
-span#twitch-connection-status, span#riot-connection-status {
-  font-weight: bold;
-  color: #fc4646;
-}
-
-span.connected {
-  color: #00b04f !important;
-}
-
-/* Rank Display */
-#rank-display {
+/* Rank Display Styling */
+.rank-container {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
 
-#rank-badge-preview {
-  width: 48px;
-  height: 48px;
-  background-color: #2c2c2e;
+.rank-badge {
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
+  background-color: #EAEAEA;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: var(--shadow-sm);
 }
 
-/* Region selector */
-.form-group {
-  margin-bottom: 12px;
+.rank-info {
+  display: flex;
+  flex-direction: column;
 }
 
-.form-group label {
+.rank-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.rank-value {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* Region Selector Styling */
+.region-selector {
+  margin-top: 8px;
+}
+
+.region-selector label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.select-wrapper {
+  position: relative;
+}
+
+.select-wrapper::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--text-secondary);
+  pointer-events: none;
 }
 
 .select-input {
   width: 100%;
-  padding: 8px;
-  border-radius: 4px;
-  background-color: #2c2c2e;
-  color: #f8f8f2;
-  border: none;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   font-size: 14px;
+  appearance: none;
+  outline: none;
 }
 
 .select-input:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(145, 71, 255, 0.5);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2);
 }
 
-/* Footer */
+/* Footer Styling */
 footer {
+  margin-top: auto;
   text-align: center;
-  font-size: 12px;
-  color: #888;
-  margin-top: 20px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-top: 8px;
 }
 
-footer a {
-  color: #9147ff;
-  text-decoration: none;
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-footer a:hover {
-  text-decoration: underline;
+.card {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Guide Card Styling */
+.guide-card {
+  background-color: var(--background);
+  border: 1px dashed var(--border);
+}
+
+.guide-list {
+  padding-left: 24px;
+  margin-bottom: 4px;
+}
+
+.guide-list li {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.guide-list li:last-child {
+  margin-bottom: 0;
 } 

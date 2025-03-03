@@ -1,106 +1,109 @@
-# EloWard: League of Legends Rank Badges for Twitch Chat
+# EloWard: League of Legends Rank Badges for Twitch
 
-EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat, allowing viewers to showcase their in-game achievements while watching streams.
+<div align="center">
+  <img src="images/icon128.png" alt="EloWard Logo" width="80" height="80">
+  <h3>Show off your League rank in Twitch chat</h3>
+</div>
+
+## Overview
+
+EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat. Now you can immediately see which rank that challenger player in chat actually is!
+
+<div align="center">
+  <img src="screenshots/preview.png" alt="EloWard Preview" width="500">
+</div>
 
 ## Features
 
-- **Rank Badge Display**: Shows League of Legends rank badges (Iron through Challenger) next to usernames in Twitch chat
-- **Streamer-Activated**: Badges only appear in chats of streamers who have subscribed to the service
-- **Account Linking**: Connects viewers' Twitch accounts with their League of Legends accounts
-- **Real-Time Rank Updates**: Badges reflect current League of Legends ranks, updated regularly
+- 🎮 **Twitch Integration**: Automatically shows rank badges in any Twitch chat
+- 🏆 **Real-time Rank Display**: Shows accurate, up-to-date LoL ranks
+- 🌍 **Region Support**: Supports all major LoL regions
+- 🔗 **Account Linking**: Easily connect your Twitch and Riot accounts
+- 🎨 **Clean Design**: Modern, unobtrusive UI that fits with Twitch's design
 
-## Current MVP Status
+## Installation
 
-This is a Minimum Viable Product (MVP) implementation that includes:
+### From Chrome Web Store (Coming Soon)
+1. Visit the Chrome Web Store (link coming soon)
+2. Click "Add to Chrome"
+3. Confirm the installation
 
-- Basic Chrome extension structure
-- UI for account linking
-- Mock authentication flow (no real authentication yet)
-- Mock rank data generation
-- Badge display system for Twitch chat
-- Active channel detection
+### Manual Installation (Developer Mode)
+1. Download this repository
+2. Go to `chrome://extensions/` in Chrome
+3. Enable "Developer mode" in the top-right corner
+4. Click "Load unpacked" and select the downloaded folder
+5. The extension should now be installed and visible in your toolbar
 
-## Development Setup
+## Getting Started
 
-1. Clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode" in the top right
-4. Click "Load unpacked" and select the extension folder
-5. The extension should now be installed and active
+1. Click the EloWard icon in your Chrome toolbar
+2. Connect your Twitch account
+3. Connect your League of Legends account
+4. Select your server region
+5. Visit any Twitch channel to see rank badges in chat!
 
-## Usage
+## How It Works
 
-1. Click the EloWard extension icon in Chrome
-2. Connect your Twitch and League of Legends accounts (simulated in MVP)
-3. Visit one of the active Twitch channels (currently hardcoded for testing)
-4. You should see rank badges next to usernames in chat
+EloWard connects your Twitch username to your Riot ID, then uses the Riot Games API to fetch your current rank information. When you chat on Twitch, other users with the extension installed will see your rank badge next to your name.
 
-## Riot API Integration Notes
+When browsing Twitch channels with the extension active, you'll see rank badges next to other chatters who have connected their accounts.
 
-This extension is designed to work with the Riot Games API following their official guidelines:
+## Privacy
 
-1. **Authentication**: Uses Riot RSO (Riot Sign On) for secure account verification
-2. **API Endpoints**:
-   - Account-V1 API: Used to get PUUID from Riot ID (gameName + tagLine)
-   - Summoner-V4 API: Used to get summoner information
-   - League-V4 API: Used to get rank information
-3. **Regional Routing**: Proper handling of platform and regional routing values
-4. **Rate Limiting**: Caching system to respect Riot API rate limits
-5. **Data Dragon**: Used for official rank icons and assets
+EloWard only accesses:
+- Your Twitch username (with your permission)
+- Your Riot ID (with your permission)
+- Your League of Legends rank data (public information)
 
-Note: For the MVP, we're using mock data instead of real API calls. In a production implementation, you would need to:
-1. Register your application on the [Riot Developer Portal](https://developer.riotgames.com/)
-2. Implement proper API key management (preferably through a backend service)
-3. Follow the [Riot API Usage Policies](https://developer.riotgames.com/policies/general)
+We do not store any personal information beyond what's necessary for the extension to function. Your account connection data is stored locally on your device and is not shared with any third parties.
 
-## Active Channels for Testing
+## Development
 
-The MVP is configured to work on the following Twitch channels:
-- riotgames
-- lcs
-- faker
-- doublelift
-- tyler1
-
-## Project Structure
+### Project Structure
 
 ```
-├── manifest.json         # Chrome extension manifest
-├── popup.html            # Extension popup HTML
-├── background.js         # Background service worker
+├── images/               # Extension icons and rank badges
+│   └── ranks/            # Rank badge images
+├── js/                   # JavaScript files
+│   ├── config.js         # Configuration constants
+│   └── popup.js          # Popup interface logic
+├── css/                  # CSS stylesheets
+│   └── popup.css         # Popup styling
+├── background.js         # Extension background script
 ├── content.js            # Content script for Twitch pages
-├── styles.css            # Styles for badges in Twitch chat
-├── css/
-│   └── popup.css         # Styles for the extension popup
-├── js/
-│   ├── popup.js          # JavaScript for the extension popup
-│   └── config.js         # Configuration for API endpoints
-└── images/
-    ├── icon16.png        # Extension icon (16x16)
-    ├── icon48.png        # Extension icon (48x48)
-    ├── icon128.png       # Extension icon (128x128)
-    └── ranks/            # Rank badge images
-        ├── iron.png
-        ├── bronze.png
-        ├── silver.png
-        ├── gold.png
-        ├── platinum.png
-        ├── emerald.png
-        ├── diamond.png
-        ├── master.png
-        ├── grandmaster.png
-        └── challenger.png
+├── manifest.json         # Extension manifest
+├── popup.html            # Extension popup interface
+└── styles.css            # Twitch chat badge styling
 ```
 
-## Next Steps
+### Building From Source
 
-- Implement real authentication with Riot RSO and Twitch OAuth
-- Create backend service for storing user data and managing subscriptions
-- Add real rank data fetching from Riot API
-- Implement subscription system for streamers
-- Create streamer dashboard for subscription management
-- Add more customization options
+1. Clone the repository
+2. Install dependencies (none required for basic functionality)
+3. Make your changes
+4. Load the extension in developer mode for testing
+
+## Contributing
+
+Contributions are welcome! If you'd like to contribute, please:
+
+1. Fork the repository
+2. Create a new branch for your feature
+3. Make your changes
+4. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+[MIT License](LICENSE)
+
+## Credits
+
+- Rank badge images derived from League of Legends assets
+- Built with love for the League and Twitch communities
+
+---
+
+<div align="center">
+  <p>Made by EloWard Team © 2023</p>
+</div> 
