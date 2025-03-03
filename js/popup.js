@@ -149,14 +149,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function displayRank(rankData) {
-    // Handle null or undefined rank data
     if (!rankData) {
       currentRank.textContent = 'Unranked';
-      rankBadgePreview.style.backgroundImage = 'none';
+      rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
       return;
     }
     
-    // Format the rank text
     let rankText = rankData.tier;
     if (rankData.division && rankData.tier !== 'Master' && 
         rankData.tier !== 'Grandmaster' && rankData.tier !== 'Challenger') {

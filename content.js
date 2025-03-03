@@ -168,7 +168,11 @@ function addBadgeToMessage(usernameElement, rankData) {
   const badgeElement = document.createElement('span');
   
   // Set classes for styling
-  badgeElement.classList.add('eloward-badge', `eloward-${rankData.tier.toLowerCase()}`);
+  if (!rankData) {
+    badgeElement.classList.add('eloward-badge', 'eloward-unranked');
+  } else {
+    badgeElement.classList.add('eloward-badge', `eloward-${rankData.tier.toLowerCase()}`);
+  }
   badgeElement.classList.add('eloward-tooltip', 'eloward-badge-new');
   
   // Set tooltip text

@@ -19,6 +19,10 @@
 }
 
 /* Rank-specific badges */
+.eloward-unranked {
+  background-image: url('images/ranks/unranked.png');
+}
+
 .eloward-iron {
   background-image: url('images/ranks/iron.png');
 }

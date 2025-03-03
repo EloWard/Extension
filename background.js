@@ -177,6 +177,43 @@ function initiateRiotAuth(region, sendResponse) {
   });
 }
 
+// Retrieve rank data for a user
+function getUserRankData(username, region, callback) {
+  console.log(`Getting rank data for ${username} in region ${region}`);
+  
+  // In a real implementation, this would check cached data first,
+  // then fetch from Riot API if needed
+  chrome.storage.local.get('cachedRanks', (data) => {
+    const now = Date.now();
+    const cacheKey = `${username}:${region}`;
+    
+    // Check if we have a recent cached result
+    if (data.cachedRanks && data.cachedRanks[cacheKey] && 
+        data.cachedRanks[cacheKey].timestamp > now - BADGE_REFRESH_INTERVAL) {
+      console.log(`Using cached rank data for ${username}`);
+      callback(data.cachedRanks[cacheKey].rank);
+      return;
+    }
+    
+    // Otherwise, generate new data
+    generateMockRankData(username, region, (rankData) => {
+      // Cache the result
+      const cachedRanks = data.cachedRanks || {};
+      cachedRanks[cacheKey] = {
+        rank: rankData,
+        timestamp: now
+      };
+      
+      chrome.storage.local.set({ 
+        cachedRanks: cachedRanks,
+        lastRankUpdate: now
+      }, () => {
+        callback(rankData);
+      });
+    });
+  });
+}
+
 // Generate mock rank data for users
 // In a real implementation, this would fetch from Riot API
 function generateMockRankData(username, region, callback) {
@@ -196,20 +233,28 @@ function generateMockRankData(username, region, callback) {
     
     // 20% chance of having no rank
     if (Math.random() < 0.2) {
+      // Return null explicitly for unranked users
       rank = null;
     } else {
-      const tierIndex = Math.floor(Math.random() * tiers.length);
-      // Masters+ don't have divisions
-      const division = tierIndex < 7 ? divisions[Math.floor(Math.random() * divisions.length)] : '';
+      const randomTier = tiers[Math.floor(Math.random() * tiers.length)];
+      let randomDivision = null;
       
-      rank = {
-        tier: tiers[tierIndex],
-        division
+      // Only add division for tiers below Master
+      if (randomTier !== 'Master' && randomTier !== 'Grandmaster' && randomTier !== 'Challenger') {
+        randomDivision = divisions[Math.floor(Math.random() * divisions.length)];
+      }
+      
+      rank = { 
+        tier: randomTier,
+        division: randomDivision
       };
     }
   }
   
-  callback(rank);
+  // Add a small delay to simulate API call
+  setTimeout(() => {
+    callback(rank);
+  }, 100);
 }
 
 // In a real implementation, these functions would make actual API calls
