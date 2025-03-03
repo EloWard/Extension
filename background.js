@@ -55,18 +55,15 @@ chrome.runtime.onInstalled.addListener(() => {
 // Message handling from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'authenticate_twitch') {
-    // In real implementation, we'd use Twitch OAuth
-    // https://dev.twitch.tv/docs/authentication/
+    // Mock Twitch authentication for MVP
     initiateTwitchAuth(sendResponse);
-    return true; // Keep the message channel open for async response
+    return true; // Indicate we will respond asynchronously
   }
   
   if (message.action === 'authenticate_riot') {
-    // In real implementation, we'd use Riot RSO (Riot Sign On)
-    // As detailed in https://developer.riotgames.com/docs/portal
-    const region = message.region || 'na1'; // Use specified region or default to NA
-    initiateRiotAuth(region, sendResponse);
-    return true; // Keep the message channel open for async response
+    // Mock Riot authentication for MVP
+    initiateRiotAuth(message.region, sendResponse);
+    return true; // Indicate we will respond asynchronously
   }
   
   if (message.action === 'check_channel_active') {
@@ -131,37 +128,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Mock Twitch authentication for MVP
 function initiateTwitchAuth(sendResponse) {
+  // Use a consistent mock username for testing
+  const mockTwitchUsername = 'TwitchUser123';
+  
   const mockTwitchAuth = {
     accessToken: 'mock_twitch_token',
     userId: 'twitch_user123',
-    username: 'EloWardUser'
+    username: mockTwitchUsername
   };
   
   chrome.storage.local.set({ twitchAuth: mockTwitchAuth }, () => {
-    sendResponse({ success: true });
+    sendResponse({ 
+      success: true,
+      auth: mockTwitchAuth
+    });
   });
 }
 
 // Mock Riot authentication for MVP
 // In a real implementation, this would use Riot RSO
 function initiateRiotAuth(region, sendResponse) {
-  // When using Riot RSO, the region would be extracted from the authenticated user's info
+  // Use consistent mock values for testing
+  const mockGameName = 'RiotUser';
+  const mockTagLine = region.toUpperCase().replace('1', '');
+  const mockRiotId = `${mockGameName}#${mockTagLine}`;
+  
   const mockRiotAuth = {
     accessToken: 'mock_riot_token',
-    riotId: 'EloWardUser#NA1', // New Riot ID format (gameName#tagLine)
+    riotId: mockRiotId, // New Riot ID format (gameName#tagLine)
+    summonerName: mockGameName,
     puuid: 'mock-puuid-123456789',
     region: region
   };
   
-  // Mock rank data for the selected region
-  const mockRank = { tier: 'Platinum', division: 'IV' };
-  
   chrome.storage.local.set({ 
     riotAuth: mockRiotAuth,
-    userRank: mockRank,
-    selectedRegion: region
+    selectedRegion: region 
   }, () => {
-    sendResponse({ success: true, rank: mockRank, riotId: mockRiotAuth.riotId });
+    // Generate mock rank data
+    generateMockRankData(mockRiotAuth.riotId, region, (rankData) => {
+      chrome.storage.local.set({ userRank: rankData }, () => {
+        sendResponse({ 
+          success: true,
+          auth: mockRiotAuth 
+        });
+      });
+    });
   });
 }
 

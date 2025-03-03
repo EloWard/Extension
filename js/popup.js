@@ -23,21 +23,22 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.get(['twitchAuth', 'riotAuth', 'userRank', 'selectedRegion'], (result) => {
       // Check Twitch auth
       if (result.twitchAuth) {
-        twitchConnectionStatus.textContent = 'Connected';
+        // Display Twitch username instead of "Connected"
+        twitchConnectionStatus.textContent = result.twitchAuth.username || 'Connected';
         twitchConnectionStatus.classList.add('connected');
         connectTwitchBtn.textContent = 'Disconnect';
       }
 
       // Check Riot auth
       if (result.riotAuth) {
-        riotConnectionStatus.textContent = 'Connected';
+        // Display Riot ID instead of "Connected"
+        if (result.riotAuth.riotId) {
+          riotConnectionStatus.textContent = result.riotAuth.riotId;
+        } else {
+          riotConnectionStatus.textContent = result.riotAuth.summonerName || 'Connected';
+        }
         riotConnectionStatus.classList.add('connected');
         connectRiotBtn.textContent = 'Disconnect';
-        
-        // Show Riot ID
-        if (result.riotAuth.riotId) {
-          riotConnectionStatus.textContent = `Connected (${result.riotAuth.riotId})`;
-        }
         
         // Show rank if available
         if (result.userRank) {
@@ -73,7 +74,8 @@ document.addEventListener('DOMContentLoaded', () => {
             connectTwitchBtn.disabled = false;
             
             if (response && response.success) {
-              twitchConnectionStatus.textContent = 'Connected';
+              // Always use the username from the auth response, never show "Connected" text
+              twitchConnectionStatus.textContent = response.auth.username;
               twitchConnectionStatus.classList.add('connected');
               connectTwitchBtn.textContent = 'Disconnect';
             } else {
@@ -93,6 +95,8 @@ document.addEventListener('DOMContentLoaded', () => {
           riotConnectionStatus.textContent = 'Not Connected';
           riotConnectionStatus.classList.remove('connected');
           connectRiotBtn.textContent = 'Connect';
+          
+          // Reset rank display
           currentRank.textContent = 'Unknown';
           rankBadgePreview.style.backgroundImage = 'none';
         });
@@ -101,34 +105,40 @@ document.addEventListener('DOMContentLoaded', () => {
         connectRiotBtn.textContent = 'Connecting...';
         connectRiotBtn.disabled = true;
         
-        const selectedRegion = regionSelect.value;
+        // Get selected region
+        const region = regionSelect.value;
         
-        // In a production extension, this would use Riot RSO
-        // For MVP, we'll simulate with a delay
+        // In real implementation, this would involve Riot RSO
+        // For MVP, we'll simulate authentication with a delay
         setTimeout(() => {
-          chrome.runtime.sendMessage({ 
-            action: 'authenticate_riot',
-            region: selectedRegion 
-          }, (response) => {
+          chrome.runtime.sendMessage({ action: 'authenticate_riot', region: region }, (response) => {
             connectRiotBtn.disabled = false;
             
             if (response && response.success) {
-              riotConnectionStatus.textContent = 'Connected';
+              // Always use the Riot ID or summoner name from the auth response
+              if (response.auth.riotId) {
+                riotConnectionStatus.textContent = response.auth.riotId;
+              } else {
+                riotConnectionStatus.textContent = response.auth.summonerName;
+              }
               riotConnectionStatus.classList.add('connected');
               connectRiotBtn.textContent = 'Disconnect';
               
-              if (response.riotId) {
-                riotConnectionStatus.textContent = `Connected (${response.riotId})`;
-              }
-              
-              if (response.rank) {
-                displayRank(response.rank);
-              }
+              // Fetch and display rank for the authenticated account
+              chrome.runtime.sendMessage({ 
+                action: 'get_user_rank', 
+                username: response.auth.riotId || response.auth.summonerName,
+                region: region
+              }, (rankResponse) => {
+                if (rankResponse && rankResponse.rank) {
+                  displayRank(rankResponse.rank);
+                }
+              });
             } else {
               connectRiotBtn.textContent = 'Connect';
             }
           });
-        }, 800); // Simulate network delay
+        }, 1000); // Simulate network delay
       }
     });
   }
