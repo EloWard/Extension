@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "EloWard",
   "version": "0.1.0",
-  "description": "Display League of Legends rank badges next to usernames in Twitch chat",
+  "description": "Show your ",
   "icons": {
     "16": "images/icon16.png",
     "48": "images/icon48.png",
