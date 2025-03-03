@@ -1,0 +1,80 @@
+<html>
+  <head>
+    <link rel="stylesheet" href="popup.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body>
+    <div id="content">
+      <div class="header">
+        <div class="headerEnd"></div>
+      </div>
+      <div class="container">
+        <div class="logo-and-title">
+          <img
+            id="logo"
+            src="images/Logos/ShowmyranksEmblem128.png"
+            alt="Logo"
+          />
+          <h1>Show My Ranks</h1>
+        </div>
+      </div>
+      <div id="rankAndPreviewContainer"></div>
+      <div id="signInContainer"></div>
+      <div id="signUpContainer" style="display: none">
+        <button id="close-button3"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="popup-container" id="popup-container">
+        <div class="product">
+          <div class="description">
+            <button id="close-button"><i class="fa-solid fa-xmark"></i></button>
+            <h2>Show your ranks on ANY stream&nbsp</h2>
+            <h3>Show your ranks on any stream that isnt currently linkable!</h3>
+            <h2>Legacy / Relic Emblems</h2>
+            <h3>
+              Display Legacy or Relic Emblems instead of the current emblems for
+              your League of Legends and TeamFight Tactics Ranks!
+            </h3>
+            <img src="/images/LegacyLOLEmblems/gold.png" id="subImg" />
+            <img src="/images/LegacyLOLEmblems/master.png" id="subImg" />
+            <img src="/images/LegacyLOLEmblems/challenger.png" id="subImg" />
+            <img src="/images/LegacyLOLEmblems/platinum.png" id="subImg" />
+            <img src="/images/RelicLOLEmblems/gold.png" id="subImg" />
+            <img src="/images/RelicLOLEmblems/master.png" id="subImg" />
+            <img src="/images/RelicLOLEmblems/challenger.png" id="subImg" />
+            <img src="/images/RelicLOLEmblems/platinum.png" id="subImg" />
+          </div>
+          <div id="checkout-container">
+            <p id="alert-message"></p>
+            <input
+              type="text"
+              id="license-key"
+              placeholder="Enter License Key"
+            />
+
+            <button id="checkout-button" disabled>
+              <b>ACTIVATE</b>
+            </button>
+          </div>
+          <h3 id="gumroad-prompt">
+            Don't have a license key? Get one
+            <a
+              href="https://showmyranks.gumroad.com/l/ShowMyRanksPremium"
+              id="gumroad-link"
+              >here!</a
+            >
+          </h3>
+        </div>
+      </div>
+      <div id="options-container" class="options-container">
+        <h2 id="options-title">Options</h2>
+        <div id="rankDropdownContainer"></div>
+        <button id="close-button2"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

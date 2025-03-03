@@ -1,0 +1,50 @@
+{
+"update_url": "https://clients2.google.com/service/update2/crx",
+
+  "manifest_version": 3,
+  "name": "Show My Ranks for Twitch™",
+  "description": "Shows the users League of Legends/TeamFight Tactics/Chess/Dota 2 rank next to their Twitch name.",
+  "version": "1.0.33",
+  "permissions": ["tabs", "alarms"],
+  "icons": {
+    "16": "images/Logos/ShowmyranksEmblem16smol.png",
+    "48": "images/Logos/ShowmyranksEmblem48smol.png",
+    "128": "images/Logos/ShowmyranksEmblem128smol.png"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Show My Ranks",
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*.png"],
+      "matches": ["https://www.twitch.tv/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "js": ["getLeagueUsername.js"],
+      "matches": ["https://account.riotgames.com/*"],
+      "run_at": "document_end"
+    },
+    {
+      "js": ["displayrank.js"],
+      "matches": ["https://www.twitch.tv/*"],
+      "run_at": "document_end"
+    },
+    {
+      "js": ["getSteamUsername.js"],
+      "matches": ["https://steamcommunity.com/profiles/*"],
+      "run_at": "document_end"
+    },
+    {
+      "js": ["getChessUsername.js"],
+      "matches": ["https://www.chess.com/*"],
+      "run_at": "document_end"
+    }
+  ]
+}
