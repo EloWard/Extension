@@ -1,159 +1,350 @@
-# EloWard Chrome Extension Build Plan
+# EloWard Implementation Plan
 
-## Overview
-EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat. Streamers subscribe to the service, enabling their viewers to display rank badges for free in their chat. This document outlines the technical implementation steps and tools required.
+## System Overview
+EloWard consists of two primary components:
+1. **Chrome Extension**: Displays League of Legends rank badges in Twitch chat
+2. **Streamer Web Application**: Manages streamer subscriptions and settings
+
+This separation follows industry best practices (similar to 7TV and BetterTTV) by keeping the extension focused on core functionality while handling subscription management and payments through a dedicated web platform.
 
 ## Tech Stack
+
+### Chrome Extension
 - **Frontend**: JavaScript, HTML, CSS
+- **Storage**: Browser local storage for user preferences and caching
+- **APIs Used**: Riot Games API (via backend proxy)
+
+### Streamer Web Application
+- **Frontend**: React.js with Material UI
 - **Backend**: Node.js with Express
-- **Database**: MongoDB (for user accounts, subscriptions, and cached rank data)
-- **Authentication**: Riot RSO (Riot Sign On) for viewers, Twitch OAuth for streamers
-- **APIs**: Riot Games API, Twitch API (limited usage)
-- **Hosting**: AWS or Heroku for backend services
+- **Database**: MongoDB (streamer accounts and subscription data)
+- **Authentication**: Twitch OAuth
 - **Payment Processing**: Stripe
 
-## Authentication Approach
-- **For Viewers**: No Twitch login required
-  - Username detection via DOM or cookies
-  - One-time League account verification via Riot RSO
-  - Association stored in database and local storage
-- **For Streamers**: Twitch OAuth authentication
-  - Store both channel name and unique Twitch ID
-  - Robust tracking despite channel name changes
-  - Subscription management through streamer dashboard
+### Shared Backend Services
+- **API Server**: Node.js with Express
+- **Caching Layer**: Redis for performance optimization
+- **Rate Limiting**: Intelligent throttling for Riot API requests
+- **Deployment**: Docker containers on AWS/Google Cloud
 
 ## Implementation Steps
 
-### 1. Project Setup
-- Create GitHub repository
-- Set up development environment
+### 1. Extension Development
+
+#### 1.1 Project Setup
+- Create GitHub repository for extension
 - Initialize Chrome extension manifest.json (v3)
-- Create basic extension structure
+- Set up development environment and folder structure
 
-### 2. Backend Development
-- Set up Node.js/Express server
-- Implement MongoDB connection and schemas
-  - Viewer accounts (linking Twitch username to League accounts)
-  - Streamer accounts (with Twitch ID for reliable tracking)
-  - Streamer subscription status
-  - Cached rank data
-- Create API endpoints:
-  - League account verification flow
-  - Streamer authentication and subscription management
-  - Rank data retrieval
-  - Channel subscription verification
+#### 1.2 Core Extension Components
+- **Manifest.json**: Define minimal required permissions
+- **Background Service Worker**: Handle authentication and API calls
+- **Content Scripts**: Inject functionality into Twitch pages
+- **Popup Interface**: User settings and account linking
 
-### 3. Authentication System
-- Implement Riot RSO integration for viewers
+#### 1.3 Authentication System (Viewers)
+- Implement Riot RSO integration
   - Register application with Riot Developer Portal
   - Set up OAuth flow for League account verification
-  - Create content script to capture League account info
-- Implement Twitch OAuth for streamers only
-  - Register application with Twitch Developer Portal
-  - Set up authentication flow for Twitch identity verification
-  - Store both Twitch username and unique Twitch ID
-- Create secure token system for extension-to-backend communication
+  - Store credentials in local storage with appropriate security
 
-### 4. Viewer Experience Implementation
-- Automatic Twitch username detection from page
-  - Primary method: Extract from DOM elements
-  - Fallback methods: Cookies, localStorage
-- League account linking interface
-  - Simple popup UI for one-time League verification
-  - Clear visual feedback on link status
-- Local storage optimization
-  - Cache linked account status to minimize API calls
-  - Implement refresh logic for rank updates
+#### 1.4 Twitch Integration
+- Create content script system to identify and modify chat:
+  - Observer pattern to watch for new messages
+  - Username extraction from chat messages
+  - Check channel subscription status before displaying badges
+  - Badge insertion next to usernames in subscribed channels only
+- Implement MutationObserver for dynamic content
+- Ensure compatibility with Twitch's interface changes
 
-### 5. Streamer System
-- Twitch authentication for streamers
-  - OAuth flow to capture Twitch identity
-  - Store Twitch ID as primary identifier (immune to username changes)
-- Subscription management dashboard
-  - Activate/deactivate service
-  - View subscription status and history
-  - Access analytics (optional)
-- Implement Stripe for payment processing
+#### 1.5 Riot API Integration (Client-Side)
+- Implement API calls to backend proxy
+- Set up local caching system
+- Create badge rendering based on rank data
 
-### 6. Riot API Integration
-- Implement endpoints to fetch player rank data
-- Set up caching system to minimize API calls (Riot has rate limits)
-- Create background job to refresh rank data periodically
-- Implement error handling for API failures
-
-### 7. Chrome Extension Development
-- Create manifest.json with required permissions:
-  - Access to Twitch.tv
-  - Storage for user preferences
-  - Network requests to backend
-- Develop content scripts to:
-  - Identify current Twitch channel and verify subscription status
-  - Extract Twitch username without requiring login
-  - Identify Twitch chat messages
-  - Query backend for rank data
-  - Insert rank badges next to usernames only in subscribed channels
-- Create extension popup UI for:
+#### 1.6 User Settings
+- Create popup interface for:
   - League account linking
-  - Settings and preferences
-  - Different interfaces for viewers vs. streamers
+  - Badge display preferences
+  - Opt-out option
+- Implement local storage for settings persistence
 
-### 8. Badge System
-- Design rank badges for all League of Legends ranks
-- Implement badge rendering in chat
-- Create badge positioning and styling system
-- Add animations or hover effects for badges
-- Implement channel-specific badge activation logic
+### 2. Web Application Development
 
-### 9. Testing
-- Unit tests for backend services
-- Integration tests for API endpoints
-- End-to-end testing of the extension on Twitch
+#### 2.1 Project Setup
+- Create separate GitHub repository for web app
+- Set up React project with necessary dependencies
+- Configure build system and development environment
+
+#### 2.2 Authentication System (Streamers)
+- Implement Twitch OAuth integration
+  - Register application with Twitch Developer Portal
+  - Set up secure authentication flow
+  - Store Twitch ID as primary identifier
+
+#### 2.3 Subscription Management
+- Create subscription plans in Stripe
+- Implement subscription workflows:
+  - Initial subscription
+  - Renewal process
+  - Cancellation handling
+- Design and implement subscription dashboard
+
+#### 2.4 Streamer Dashboard
+- Create main dashboard UI
+- Implement analytics views
+- Build settings management interface
+- Add channel-specific customization options
+
+#### 2.5 Admin Functions
+- Create admin panel for service management
+- Implement user support interface
+- Add monitoring and reporting tools
+
+### 3. Backend Services Development
+
+#### 3.1 Shared API Server
+- Set up Express.js server
+- Implement authentication and authorization
+- Create shared database models
+- Configure security measures
+
+#### 3.2 Riot API Proxy
+- Create proxy server to:
+  - Protect Riot API key
+  - Handle rate limiting
+  - Cache common requests
+- Implement efficient data storage strategy
+
+#### 3.3 Subscription Verification API
+- Create fast endpoint for subscription checks
+- Implement multi-level caching strategy
+- Design efficient database queries
+
+#### 3.4 Database Setup
+- Configure MongoDB with appropriate schemas
+- Implement data validation
+- Set up backup and recovery procedures
+
+### 4. Integration and Testing
+
+#### 4.1 Extension Testing
+- Unit tests for core functionality
+- End-to-end testing on actual Twitch pages
 - Cross-browser compatibility testing
-- Performance testing (ensure minimal impact on page load)
-- Test subscription activation/deactivation flows
+- Performance optimization
 
-### 10. Deployment
+#### 4.2 Web App Testing
+- Component tests for React elements
+- Integration tests for API endpoints
+- User flow testing
+- Payment system testing
+
+#### 4.3 Security Testing
+- Penetration testing for web app
+- Data security audit
+- API endpoint security review
+
+### 5. Deployment
+
+#### 5.1 Extension Deployment
 - Set up CI/CD pipeline
-- Deploy backend to cloud provider
-- Publish extension to Chrome Web Store
-- Implement monitoring and logging
-- Set up automated alerts for service disruptions
+- Publish to Chrome Web Store
+- Implement monitoring system
 
-### 11. Post-Launch
-- Set up analytics to track usage
-- Create support system for users (both viewers and streamers)
-- Plan for feature expansion (other games, more customization)
-- Implement feedback collection system
+#### 5.2 Web Application Deployment
+- Configure production environment
+- Set up SSL certificates
+- Deploy to cloud provider
+- Configure monitoring and alerting
+
+#### 5.3 Backend Deployment
+- Deploy API server to production
+- Configure database production environment
+- Set up logging and monitoring
+
+### 6. Post-Launch
+- Monitor for Twitch interface changes
+- Collect user feedback
+- Plan for feature expansion
+- Explore Firefox and Edge compatibility
+
+## Technical Implementation Details
+
+### Extension-Backend Communication
+```javascript
+// Example of extension checking subscription status
+const checkChannelSubscription = async (channelName) => {
+  // Check local cache first
+  if (subscribedChannels.has(channelName)) return true;
+  
+  // Check memory cache with timestamp
+  const cached = subscriptionCache.get(channelName);
+  if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+    if (cached.status) subscribedChannels.add(channelName);
+    return cached.status;
+  }
+  
+  // Call API to check subscription
+  try {
+    const response = await fetch(`${API_URL}/api/subscription/verify?channel=${channelName}`);
+    const data = await response.json();
+    
+    // Update cache
+    subscriptionCache.set(channelName, {
+      timestamp: Date.now(),
+      status: data.subscribed
+    });
+    
+    if (data.subscribed) {
+      subscribedChannels.add(channelName);
+    }
+    
+    return data.subscribed;
+  } catch (error) {
+    console.error('Failed to verify subscription:', error);
+    return false;
+  }
+};
+```
+
+### Content Script Injection
+```javascript
+// Example based on 7TV/BetterTTV approach
+const injectBadges = () => {
+  // Get current channel name
+  const channelName = getCurrentChannel();
+  
+  // Check if channel is subscribed
+  checkChannelSubscription(channelName).then(isSubscribed => {
+    if (!isSubscribed) return; // Don't proceed if channel isn't subscribed
+    
+    // Select chat messages
+    const chatMessages = document.querySelectorAll('.chat-line__message');
+    
+    // Process each message
+    chatMessages.forEach(message => {
+      const username = message.querySelector('.chat-author__display-name').textContent;
+      fetchAndDisplayBadge(username, message);
+    });
+  });
+};
+
+// Set up MutationObserver for new messages
+const chatObserver = new MutationObserver(mutations => {
+  // Get current channel name
+  const channelName = getCurrentChannel();
+  
+  // Only proceed if we've verified this channel is subscribed
+  if (!subscribedChannels.has(channelName)) return;
+  
+  mutations.forEach(mutation => {
+    mutation.addedNodes.forEach(node => {
+      if (node.classList && node.classList.contains('chat-line__message')) {
+        // Process new chat message
+        const username = node.querySelector('.chat-author__display-name').textContent;
+        fetchAndDisplayBadge(username, node);
+      }
+    });
+  });
+});
+
+// Only start observation if channel is subscribed
+checkChannelSubscription(getCurrentChannel()).then(isSubscribed => {
+  if (isSubscribed) {
+    chatObserver.observe(document.querySelector('.chat-scrollable-area__message-container'), {
+      childList: true
+    });
+  }
+});
+```
+
+### Web App API Endpoints
+```javascript
+// Example API endpoints for the web application
+
+// User authentication
+app.post('/api/auth/twitch', async (req, res) => {
+  // Handle Twitch OAuth authentication
+});
+
+// Subscription management
+app.post('/api/subscriptions/create', requireAuth, async (req, res) => {
+  // Create a new subscription using Stripe
+});
+
+app.get('/api/subscriptions/status', requireAuth, async (req, res) => {
+  // Get current subscription status
+});
+
+// Subscription verification endpoint (called by extension)
+app.get('/api/subscription/verify', async (req, res) => {
+  const { channel } = req.query;
+  
+  if (!channel) {
+    return res.status(400).json({ error: 'Channel name required' });
+  }
+  
+  try {
+    // Check if channel has an active subscription
+    const subscription = await Subscription.findOne({
+      channelName: channel.toLowerCase(),
+      status: 'active'
+    });
+    
+    return res.json({
+      subscribed: !!subscription
+    });
+  } catch (error) {
+    console.error('Subscription verification error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+```
 
 ## Technical Challenges and Solutions
 
+### Twitch DOM Integration
+- **Challenge**: Reliably identifying and modifying chat elements
+- **Solution**: Study 7TV/BetterTTV implementations for best practices
+- **Implementation**: Use MutationObserver and targeted DOM operations
+
 ### User Identity Management
-- **Problem**: Reliably identifying Twitch users without login
-- **Solution**: Multiple extraction methods (DOM elements, cookies, localStorage)
-- **Fallback**: Optional manual username entry if automatic detection fails
+- **Challenge**: Reliably identifying Twitch users without login
+- **Solution**: Multiple extraction methods from DOM elements
+- **Implementation**: Pattern matching similar to 7TV/BetterTTV
 
 ### Streamer Identity Tracking
-- **Problem**: Channel name changes breaking subscription tracking
+- **Challenge**: Channel name changes breaking subscription tracking
 - **Solution**: Store both Twitch username and unique Twitch ID
 - **Implementation**: Use Twitch ID as primary key in database
 
 ### Rate Limiting
-- **Problem**: Riot API has strict rate limits
-- **Solution**: Implement intelligent caching to minimize API calls
-- **Implementation**: Cache rank data with reasonable TTL (time-to-live)
-- **Optimization**: Prioritize rank lookups for active channels
+- **Challenge**: Riot API has strict rate limits
+- **Solution**: Implement intelligent caching on both client and server
+- **Implementation**: Prioritize active users, use appropriate cache TTLs
 
-### Security
-- **Problem**: Protecting API keys and user data
-- **Solution**: Move all sensitive operations to backend
-- **Implementation**: Use secure API endpoints, avoid storing keys in extension code
+### Subscription Verification
+- **Challenge**: Efficiently verifying if a channel is subscribed
+- **Solution**: Multi-level caching strategy
+- **Implementation**: Browser cache, memory cache, database lookups in sequence
+
+### Extension-Web App Communication
+- **Challenge**: Secure and efficient communication between components
+- **Solution**: RESTful API with appropriate authentication
+- **Implementation**: JWT or API key authentication for secure endpoints
 
 ### Performance
-- **Problem**: Minimizing impact on Twitch experience
-- **Solution**: Efficient DOM operations and response caching
-- **Implementation**: Throttle update frequency, background processing
+- **Challenge**: Minimizing impact on Twitch experience
+- **Solution**: Efficient DOM operations and background processing
+- **Implementation**: Lazy loading, progressive enhancement
 
-## Expansion Possibilities
+### Security
+- **Challenge**: Protecting API keys and user data
+- **Solution**: Minimize data collection, use secure storage
+- **Implementation**: Proxy sensitive API calls through backend
+
+## Future Expansion Possibilities
 - Support for additional games (Valorant, CS:GO, etc.)
 - Custom badge designs for premium subscribers
 - Streamer-specific badge variations

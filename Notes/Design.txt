@@ -1,42 +1,112 @@
-# EloWard: League of Legends Rank Badges for Twitch Chat
+# EloWard: Chrome Extension for League of Legends Rank Badges in Twitch Chat
 
 ## Core Concept
-EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat, allowing viewers to showcase their in-game achievements while watching streams.
+EloWard is a Chrome extension that displays League of Legends rank badges next to usernames in Twitch chat, enabling viewers to see other viewers' ranks without leaving the stream. This creates a more engaging viewing experience for League of Legends content.
+
+## System Architecture
+EloWard consists of two main components:
+- **Chrome Extension**: Handles badge display in Twitch chat and viewer account linking
+- **Streamer Web Application**: Separate web portal for streamers to manage subscriptions and settings
+
+This separation allows each component to focus on its core functionality, improves security for payment processing, and provides streamers with a better management experience.
 
 ## Business Model
-- **For Streamers**: A subscription-based service that streamers pay for to enable the feature in their chat
-- **For Viewers**: Completely free to use, with badges only appearing in chats of subscribed streamers
+EloWard uses a dual approach for monetization:
+- **Free for Viewers**: All viewers can install and use the extension for free
+- **Paid for Streamers**: Streamers must pay a subscription fee to enable the badges to appear in their channel's chat
+- **Value Proposition**: Enhances community engagement for League of Legends-focused streams by providing insight into viewers' skill levels
+- **Target Market**: League of Legends streamers who want to enhance viewer engagement and create a more connected community
 
 ## Key Features
-1. **Rank Badge Display**: Automatically shows League of Legends rank badges (Iron through Challenger) next to usernames in Twitch chat
-2. **Streamer-Activated**: Badges only appear in chats of streamers who have subscribed to the service
-3. **Seamless Authentication**: Uses Riot RSO (Riot Sign On) for secure and user-friendly League account verification
-4. **Account Linking**: Connects viewers' Twitch accounts with their League of Legends accounts
-5. **Real-Time Rank Updates**: Badges reflect current League of Legends ranks, updated regularly
+
+### Chrome Extension
+1. **Rank Badge Display**: Shows League of Legends rank badges next to usernames in Twitch chat (in subscribed channels only)
+2. **Seamless Viewer Authentication**: One-time League of Legends account linking via Riot RSO
+3. **Real-time Rank Updates**: Badges reflect current League of Legends ranks
+4. **Privacy Controls**: Allows users to opt out if they prefer not to display their rank
+
+### Streamer Web Application
+1. **Subscription Management**: Secure payment processing and subscription management
+2. **Channel Settings**: Customization options for how badges appear in chat
+3. **Analytics Dashboard**: Basic metrics on badge usage in streamer's channel
+4. **Account Management**: Streamers can manage their profiles and subscription details
 
 ## Authentication Approach
-- **For Viewers**: No Twitch login required
-  - Extension automatically detects Twitch username from the page
-  - Only League account verification needed (one-time process via Riot RSO)
-  - Similar to popular extensions like 7TV and BetterTTV
-- **For Streamers**: Twitch authentication required
-  - Ensures subscription tracking even if streamer changes channel name
-  - Uses Twitch OAuth for secure identification
-  - Stores both Twitch username and unique Twitch ID
+- **For Viewers (Extension)**: 
+  - No Twitch login required
+  - One-time League of Legends account verification via Riot RSO
+  - Local storage of verification token
+- **For Streamers (Web App)**:
+  - Twitch OAuth authentication required
+  - Subscription management through secure web dashboard
+  - No sensitive payment information handled by the extension
 
-## Technical Requirements
-- Integration with Riot Games API to fetch accurate rank data
-- Minimal Twitch API integration (only for streamer authentication)
-- Secure authentication flow using Riot RSO for League accounts
-- Efficient caching system to respect Riot API rate limits
-- Channel-specific activation based on streamer subscription status
+## Technical Design
+
+### Chrome Extension
+- **Browser Compatibility**: Chrome initially, with future Firefox support
+- **Client-Side Focus**: Majority of operations happen in the browser
+- **Content Scripts**: Dynamically injected into Twitch pages (inspired by 7TV/BetterTTV)
+- **Background Service Worker**: Manages authentication and API requests
+- **Local Storage**: Stores user preferences and cached data
+- **Minimal Permissions**: Only requests necessary permissions for operation
+
+### Streamer Web Application
+- **Tech Stack**: Node.js backend with React frontend
+- **Payment Processing**: Stripe integration for secure payment handling
+- **Authentication**: Twitch OAuth for streamer identity verification
+- **API Endpoints**: RESTful API for extension communication
+- **Database**: MongoDB for storing streamer accounts and subscription data
+
+### Backend Services
+- **API Server**: Handles requests from both extension and web app
+- **Riot API Proxy**: Manages rate limits and caches rank data
+- **Subscription Verification**: Fast endpoint for checking channel subscription status
 
 ## User Experience
-- **For Streamers**: Simple subscription process with dashboard to manage their service
-- **For Viewers**: One-time League account verification, no Twitch login needed
-- **Badge Visibility**: Only visible to other users who have the extension installed
+
+### For Viewers
+- **Installation**: Simple one-click installation from Chrome Web Store
+- **Setup**: One-time League account linking via Riot RSO
+- **Badge Display**: Unobtrusive badges that match Twitch's UI aesthetic
+- **Performance**: Minimal impact on browsing experience
+- **Opt-Out Option**: Clear option for privacy-conscious users
+
+### For Streamers
+- **Registration**: Simple signup through the web app using Twitch authentication
+- **Subscription**: Clear pricing and easy payment process
+- **Dashboard**: Intuitive interface for managing account and viewing analytics
+- **Support**: Dedicated support section within the web app
 
 ## Initial Scope
-- League of Legends ranks only (potential to expand to other games later)
-- Focus on core functionality before adding customization options
-- Prioritize performance and minimal impact on Twitch experience
+- **Game Focus**: League of Legends ranks only (Summoner's Rift Solo/Duo Queue)
+- **Platform**: Google Chrome extension initially
+- **Regions**: All regions supported by Riot Games API
+
+## Implementation Strategy
+- **Phase 1**: Core functionality
+  - Basic extension structure
+  - Streamer web app with essential subscription management
+  - Riot API integration
+  - Badge display system
+- **Phase 2**: Enhanced user experience
+  - Improved UI for both extension and web app
+  - Additional badge styles
+  - Basic analytics for streamers
+- **Phase 3**: Expansion based on user feedback
+  - Firefox support
+  - Additional queue types
+  - Potential expansion to other games
+
+## Key Differentiation
+- **Unique Value**: No other extension currently displays League of Legends ranks in Twitch chat
+- **Community Building**: Creates a sense of community and friendly competition
+- **Engagement**: Increases viewer engagement through rank visibility
+- **Streamer Revenue**: Provides streamers with a unique way to enhance their channel's experience
+
+## Technical Challenges
+- **Twitch Interface Integration**: Ensuring compatibility with Twitch's evolving UI
+- **Rate Limiting**: Managing Riot API rate limits efficiently
+- **User Identity**: Reliably connecting Twitch usernames to League accounts
+- **Privacy Concerns**: Implementing appropriate privacy controls
+- **Extension-Web App Communication**: Ensuring efficient and secure communication between components
