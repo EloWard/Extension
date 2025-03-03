@@ -5,51 +5,80 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EloWard</title>
   <link rel="stylesheet" href="css/popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>EloWard</h1>
+      <div class="logo-container">
+        <img src="images/icon128.png" alt="EloWard Logo" class="logo">
+        <h1>EloWard</h1>
+      </div>
+      <p class="tagline">League Ranks in Twitch Chat</p>
     </header>
     
-    <div id="login-section" class="section">
-      <h2>Account Connection</h2>
-      <div id="twitch-status">
-        <p>Twitch Account: <span id="twitch-connection-status">Not Connected</span></p>
-        <button id="connect-twitch" class="btn">Connect Twitch Account</button>
+    <div class="card">
+      <div class="section" id="login-section">
+        <h2>Connect Accounts</h2>
+        <div class="account-item" id="twitch-status">
+          <div class="account-info">
+            <span class="icon twitch-icon"></span>
+            <div class="account-details">
+              <p class="account-type">Twitch</p>
+              <p class="account-status" id="twitch-connection-status">Not Connected</p>
+            </div>
+          </div>
+          <button id="connect-twitch" class="btn">Connect</button>
+        </div>
+        
+        <div class="account-item" id="riot-status">
+          <div class="account-info">
+            <span class="icon riot-icon"></span>
+            <div class="account-details">
+              <p class="account-type">League of Legends</p>
+              <p class="account-status" id="riot-connection-status">Not Connected</p>
+            </div>
+          </div>
+          <button id="connect-riot" class="btn">Connect</button>
+        </div>
       </div>
-      <div id="riot-status">
-        <p>League Account: <span id="riot-connection-status">Not Connected</span></p>
-        <button id="connect-riot" class="btn">Connect League Account</button>
-      </div>
-    </div>
-    
-    <div id="info-section" class="section">
-      <h2>Your Info</h2>
-      <div id="rank-display">
-        <p>Current Rank: <span id="current-rank">Unknown</span></p>
-        <div id="rank-badge-preview"></div>
-      </div>
-      <div id="region-select" class="form-group">
-        <label for="region">Region:</label>
-        <select id="region" class="select-input">
-          <option value="na1">North America</option>
-          <option value="euw1">EU West</option>
-          <option value="eun1">EU Nordic & East</option>
-          <option value="kr">Korea</option>
-          <option value="br1">Brazil</option>
-          <option value="jp1">Japan</option>
-          <option value="la1">LAN</option>
-          <option value="la2">LAS</option>
-          <option value="oc1">Oceania</option>
-          <option value="tr1">Turkey</option>
-          <option value="ru">Russia</option>
-        </select>
+      
+      <div class="divider"></div>
+      
+      <div class="section" id="info-section">
+        <div class="rank-section">
+          <h2>Your Rank</h2>
+          <div class="rank-container">
+            <div id="rank-badge-preview"></div>
+            <div class="rank-text">
+              <p id="current-rank">Unknown</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="region-section">
+          <h2>Region</h2>
+          <select id="region" class="select-input">
+            <option value="na1">North America</option>
+            <option value="euw1">EU West</option>
+            <option value="eun1">EU Nordic & East</option>
+            <option value="kr">Korea</option>
+            <option value="br1">Brazil</option>
+            <option value="jp1">Japan</option>
+            <option value="la1">LAN</option>
+            <option value="la2">LAS</option>
+            <option value="oc1">Oceania</option>
+            <option value="tr1">Turkey</option>
+            <option value="ru">Russia</option>
+          </select>
+        </div>
       </div>
     </div>
     
     <footer>
-      <p>EloWard v0.1.0</p>
+      <p>v0.1.0</p>
     </footer>
   </div>
 
