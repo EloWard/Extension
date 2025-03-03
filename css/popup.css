@@ -272,4 +272,21 @@ footer {
 
 .guide-list li:last-child {
   margin-bottom: 0;
+}
+
+/* Tip Card Styling */
+.tip-card {
+  background-color: rgba(230, 57, 70, 0.05);
+  border: 1px dashed rgba(230, 57, 70, 0.3);
+}
+
+.tip-content {
+  padding: 0 4px;
+}
+
+.tip-content p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
 } 
