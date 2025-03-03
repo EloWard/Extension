@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const riotConnectionStatus = document.getElementById('riot-connection-status');
   const currentRank = document.getElementById('current-rank');
   const rankBadgePreview = document.getElementById('rank-badge-preview');
-  const settingsLink = document.getElementById('settings-link');
+  const regionSelect = document.getElementById('region');
 
   // Check authentication status
   checkAuthStatus();
@@ -16,11 +16,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   connectRiotBtn.addEventListener('click', connectRiotAccount);
-  settingsLink.addEventListener('click', openSettings);
+  regionSelect.addEventListener('change', handleRegionChange);
 
   // Functions
   function checkAuthStatus() {
-    chrome.storage.local.get(['twitchAuth', 'riotAuth', 'userRank'], (result) => {
+    chrome.storage.local.get(['twitchAuth', 'riotAuth', 'userRank', 'selectedRegion'], (result) => {
       // Check Twitch auth
       if (result.twitchAuth) {
         twitchConnectionStatus.textContent = 'Connected';
@@ -43,6 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.userRank) {
           displayRank(result.userRank);
         }
+      }
+      
+      // Set selected region if available
+      if (result.selectedRegion) {
+        regionSelect.value = result.selectedRegion;
       }
     });
   }
@@ -91,7 +96,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. Exchange authorization code for access token
         // 4. Use token to access Riot API
         
-        chrome.runtime.sendMessage({ action: 'authenticate_riot' }, (response) => {
+        const selectedRegion = regionSelect.value;
+        
+        chrome.runtime.sendMessage({ 
+          action: 'authenticate_riot',
+          region: selectedRegion 
+        }, (response) => {
           if (response && response.success) {
             riotConnectionStatus.textContent = 'Connected';
             if (response.riotId) {
@@ -108,6 +118,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
     });
+  }
+
+  function handleRegionChange() {
+    const selectedRegion = regionSelect.value;
+    chrome.storage.local.set({ selectedRegion });
   }
 
   function displayRank(rankData) {
@@ -130,11 +145,5 @@ document.addEventListener('DOMContentLoaded', () => {
     // In a production extension, we would use Data Dragon for official rank icons
     // For MVP, we use local images
     rankBadgePreview.style.backgroundImage = `url('../images/ranks/${rankData.tier.toLowerCase()}.png')`;
-  }
-
-  function openSettings(e) {
-    e.preventDefault();
-    // For MVP, we'll just show an alert
-    alert('Settings functionality will be implemented in a future version.');
   }
 }); 

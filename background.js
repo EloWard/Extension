@@ -43,7 +43,8 @@ chrome.runtime.onInstalled.addListener(() => {
     activeStreamers: ACTIVE_STREAMERS,
     cachedRanks: {},
     lastRankUpdate: 0,
-    apiKey: '' // In production, this would be managed securely via backend
+    apiKey: '', // In production, this would be managed securely via backend
+    selectedRegion: 'na1' // Default region
   });
 });
 
@@ -59,7 +60,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'authenticate_riot') {
     // In real implementation, we'd use Riot RSO (Riot Sign On)
     // As detailed in https://developer.riotgames.com/docs/portal
-    initiateRiotAuth(sendResponse);
+    const region = message.region || 'na1'; // Use specified region or default to NA
+    initiateRiotAuth(region, sendResponse);
     return true; // Keep the message channel open for async response
   }
   
@@ -74,13 +76,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'get_user_rank') {
     // Check if we have rank data cached
-    chrome.storage.local.get(['cachedRanks', 'lastRankUpdate'], (data) => {
+    chrome.storage.local.get(['cachedRanks', 'lastRankUpdate', 'selectedRegion'], (data) => {
       const now = Date.now();
       const username = message.username.toLowerCase();
+      const region = data.selectedRegion || 'na1';
+      
+      // Cache key includes region to handle different ranks in different regions
+      const cacheKey = `${username}_${region}`;
       
       // If we have recent cached data, use it
-      if (data.cachedRanks[username] && now - data.lastRankUpdate < BADGE_REFRESH_INTERVAL) {
-        sendResponse({ rank: data.cachedRanks[username] });
+      if (data.cachedRanks[cacheKey] && now - data.lastRankUpdate < BADGE_REFRESH_INTERVAL) {
+        sendResponse({ rank: data.cachedRanks[cacheKey] });
         return;
       }
       
@@ -89,13 +95,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // 1. Use the Account-V1 API to get PUUID from Riot ID (gameName + tagLine)
       // 2. Use the League-V4 API to get rank data using the PUUID
       // Following the migration from summoner names to Riot IDs
-      generateMockRankData(username, (rank) => {
+      generateMockRankData(username, region, (rank) => {
         // Cache the rank data
         if (!data.cachedRanks) {
           data.cachedRanks = {};
         }
         
-        data.cachedRanks[username] = rank;
+        data.cachedRanks[cacheKey] = rank;
         chrome.storage.local.set({
           cachedRanks: data.cachedRanks,
           lastRankUpdate: now
@@ -126,28 +132,30 @@ function initiateTwitchAuth(sendResponse) {
 
 // Mock Riot authentication for MVP
 // In a real implementation, this would use Riot RSO
-function initiateRiotAuth(sendResponse) {
+function initiateRiotAuth(region, sendResponse) {
+  // When using Riot RSO, the region would be extracted from the authenticated user's info
   const mockRiotAuth = {
     accessToken: 'mock_riot_token',
     riotId: 'EloWardUser#NA1', // New Riot ID format (gameName#tagLine)
     puuid: 'mock-puuid-123456789',
-    region: 'na1'
+    region: region
   };
   
-  // Mock rank data
+  // Mock rank data for the selected region
   const mockRank = { tier: 'Platinum', division: 'IV' };
   
   chrome.storage.local.set({ 
     riotAuth: mockRiotAuth,
-    userRank: mockRank
+    userRank: mockRank,
+    selectedRegion: region
   }, () => {
-    sendResponse({ success: true, rank: mockRank });
+    sendResponse({ success: true, rank: mockRank, riotId: mockRiotAuth.riotId });
   });
 }
 
 // Generate mock rank data for users
 // In a real implementation, this would fetch from Riot API
-function generateMockRankData(username, callback) {
+function generateMockRankData(username, region, callback) {
   // Some predefined mock data
   const MOCK_RANK_DATA = {
     'twitch_user123': { tier: 'Gold', division: 'II' },
