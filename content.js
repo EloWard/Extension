@@ -210,7 +210,7 @@ function showActivationNotification() {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background-color: rgba(33, 37, 41, 0.85);
+    background-color: rgba(28, 30, 48, 0.95);
     color: white;
     padding: 12px 16px;
     border-radius: 8px;
@@ -219,12 +219,13 @@ function showActivationNotification() {
     display: flex;
     align-items: center;
     gap: 8px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(4px);
     transition: opacity 0.3s, transform 0.3s;
     opacity: 0;
     transform: translateY(10px);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    border: 1px solid rgba(217, 163, 54, 0.3);
   `;
   
   // Add logo
@@ -239,7 +240,8 @@ function showActivationNotification() {
   
   // Add text
   const text = document.createElement('span');
-  text.textContent = 'EloWard Active - LoL ranks enabled in chat';
+  text.innerHTML = '<span style="color: #DC2123; font-weight: 600;">EloWard</span> Active - LoL ranks enabled in chat';
+  text.style.color = '#A09B8C';
   
   // Add close button
   const closeBtn = document.createElement('span');
@@ -249,6 +251,7 @@ function showActivationNotification() {
     cursor: pointer;
     font-size: 16px;
     opacity: 0.7;
+    color: #D9A336;
   `;
   closeBtn.addEventListener('click', () => {
     notification.style.opacity = '0';

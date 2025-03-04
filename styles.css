@@ -74,8 +74,9 @@
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background-color: rgba(33, 37, 41, 0.95);
-  color: white;
+  background-color: rgba(28, 30, 48, 0.95);
+  color: #FFFFFF;
+  border: 1px solid rgba(217, 163, 54, 0.3);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
