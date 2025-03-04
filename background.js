@@ -49,7 +49,7 @@ chrome.runtime.onInstalled.addListener(() => {
   
   // Set icon badge to show it's active
   chrome.action.setBadgeText({ text: '' });
-  chrome.action.setBadgeBackgroundColor({ color: '#E63946' });
+  chrome.action.setBadgeBackgroundColor({ color: '#DC2123' });
 });
 
 // Message handling from popup and content scripts
