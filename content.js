@@ -224,7 +224,7 @@ function showActivationNotification() {
     transition: opacity 0.3s, transform 0.3s;
     opacity: 0;
     transform: translateY(10px);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'neue-haas-grotesk-display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     border: 1px solid rgba(217, 163, 54, 0.3);
   `;
   
