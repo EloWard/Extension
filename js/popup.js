@@ -2,9 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM elements
-  const connectTwitchBtn = document.getElementById('connect-twitch');
   const connectRiotBtn = document.getElementById('connect-riot');
-  const twitchConnectionStatus = document.getElementById('twitch-connection-status');
   const riotConnectionStatus = document.getElementById('riot-connection-status');
   const currentRank = document.getElementById('current-rank');
   const rankBadgePreview = document.getElementById('rank-badge-preview');
@@ -14,21 +12,12 @@ document.addEventListener('DOMContentLoaded', () => {
   checkAuthStatus();
 
   // Event Listeners
-  connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
 
   // Functions
   function checkAuthStatus() {
-    chrome.storage.local.get(['twitchAuth', 'riotAuth', 'userRank', 'selectedRegion'], (result) => {
-      // Check Twitch auth
-      if (result.twitchAuth) {
-        // Display Twitch username instead of "Connected"
-        twitchConnectionStatus.textContent = result.twitchAuth.username || 'Connected';
-        twitchConnectionStatus.classList.add('connected');
-        connectTwitchBtn.textContent = 'Disconnect';
-      }
-
+    chrome.storage.local.get(['riotAuth', 'userRank', 'selectedRegion'], (result) => {
       // Check Riot auth
       if (result.riotAuth) {
         // Display Riot ID instead of "Connected"
@@ -49,40 +38,6 @@ document.addEventListener('DOMContentLoaded', () => {
       // Set selected region if available
       if (result.selectedRegion) {
         regionSelect.value = result.selectedRegion;
-      }
-    });
-  }
-
-  function connectTwitchAccount() {
-    chrome.storage.local.get('twitchAuth', (result) => {
-      if (result.twitchAuth) {
-        // Disconnect flow
-        chrome.storage.local.remove('twitchAuth', () => {
-          twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('connected');
-          connectTwitchBtn.textContent = 'Connect';
-        });
-      } else {
-        // Connect flow - show loading state
-        connectTwitchBtn.textContent = 'Connecting...';
-        connectTwitchBtn.disabled = true;
-        
-        // In real implementation, this would involve Twitch OAuth
-        // For MVP, we'll simulate authentication with a delay
-        setTimeout(() => {
-          chrome.runtime.sendMessage({ action: 'authenticate_twitch' }, (response) => {
-            connectTwitchBtn.disabled = false;
-            
-            if (response && response.success) {
-              // Always use the username from the auth response, never show "Connected" text
-              twitchConnectionStatus.textContent = response.auth.username;
-              twitchConnectionStatus.classList.add('connected');
-              connectTwitchBtn.textContent = 'Disconnect';
-            } else {
-              connectTwitchBtn.textContent = 'Connect';
-            }
-          });
-        }, 800); // Simulate network delay
       }
     });
   }

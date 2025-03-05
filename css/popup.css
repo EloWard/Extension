@@ -303,4 +303,16 @@ footer {
   line-height: 1.5;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.tip-content a {
+  color: #D9A336;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.tip-content a:hover {
+  color: #E5B550;
+  text-decoration: underline;
 } 
