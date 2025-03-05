@@ -36,7 +36,7 @@ EloWard uses a dual approach for monetization:
   - No Twitch login required
   - One-time League of Legends account verification via Riot RSO
   - Local storage of verification token
-  - Secure backend proxy to protect client credentials
+  - Secure Cloudflare Workers proxy to protect client credentials
 - **For Streamers (Web App)**:
   - Twitch OAuth authentication required
   - Subscription management through secure web dashboard
@@ -53,24 +53,27 @@ EloWard uses a dual approach for monetization:
 - **Minimal Permissions**: Only requests necessary permissions for operation
 
 ### Streamer Web Application
-- **Tech Stack**: Node.js backend with React frontend
+- **Tech Stack**: Cloudflare Pages with React frontend
+- **Backend Services**: Cloudflare Workers and Pages Functions
 - **Payment Processing**: Stripe integration for secure payment handling
 - **Authentication**: Twitch OAuth for streamer identity verification
-- **API Endpoints**: RESTful API for extension communication
-- **Database**: MongoDB for storing streamer accounts and subscription data
+- **API Endpoints**: RESTful API implemented with Cloudflare Workers
+- **Database**: Cloudflare D1 for storing streamer accounts and subscription data
 
 ### Backend Services
-- **API Server**: Handles requests from both extension and web app
-- **Riot API Proxy**: Manages rate limits and caches rank data
-- **Subscription Verification**: Fast endpoint for checking channel subscription status
-- **Authentication Proxy**: Securely handles Riot RSO authentication without exposing client credentials
+- **API Server**: Cloudflare Workers handling requests from both extension and web app
+- **Riot API Proxy**: Cloudflare Workers managing rate limits and caching rank data
+- **Subscription Verification**: Fast Cloudflare Worker endpoint for checking channel subscription status
+- **Authentication Proxy**: Cloudflare Worker securely handling Riot RSO authentication without exposing client credentials
+- **Caching Layer**: Cloudflare KV for efficient data caching and state management
 
 ### Security Architecture
-- **Client Credential Protection**: Riot client ID and secret stored only on the backend
-- **OAuth Proxy**: Backend handles sensitive parts of the OAuth flow
+- **Client Credential Protection**: Riot client ID and secret stored securely in Cloudflare Workers environment variables
+- **OAuth Proxy**: Cloudflare Workers handle sensitive parts of the OAuth flow
 - **Token Management**: Secure handling of access and refresh tokens
-- **Rate Limit Management**: Centralized control of API rate limits
+- **Rate Limit Management**: Utilizing Cloudflare's built-in rate limiting features
 - **Data Minimization**: Only essential data stored in the extension
+- **Edge Security**: Leveraging Cloudflare's global security features
 
 ## User Experience
 
@@ -115,42 +118,88 @@ EloWard uses a dual approach for monetization:
 
 ## Technical Challenges
 - **Twitch Interface Integration**: Ensuring compatibility with Twitch's evolving UI
-- **Rate Limiting**: Managing Riot API rate limits efficiently
+- **Rate Limiting**: Managing Riot API rate limits efficiently using Cloudflare's built-in features
 - **User Identity**: Reliably connecting Twitch usernames to League accounts
 - **Privacy Concerns**: Implementing appropriate privacy controls
 - **Extension-Web App Communication**: Ensuring efficient and secure communication between components
-- **Client Credential Security**: Protecting Riot client credentials through backend proxy
+- **Client Credential Security**: Protecting Riot client credentials through Cloudflare Workers
 
-## Backend Deployment Options
+## Cloudflare Deployment Strategy
 
-### Cloudflare Workers (Recommended)
+### Full Cloudflare Stack (Recommended)
 - **Benefits**:
-  - Global distribution for low-latency responses
+  - Leverages existing Cloudflare subscription for cost efficiency
+  - Global distribution for low-latency responses worldwide
   - Serverless architecture for easy scaling
   - Built-in security features
   - Simple deployment process
-  - Works well with existing Cloudflare subscription
+  - Unified monitoring and analytics
+  - Reduced operational complexity
 - **Implementation**:
-  - Implement authentication proxy as Cloudflare Workers
-  - Use Cloudflare KV for caching
-  - Connect to external database or use Cloudflare D1 for data storage
+  - Implement all backend services as Cloudflare Workers
+  - Host frontend application on Cloudflare Pages
+  - Use Cloudflare KV for caching and state management
+  - Store structured data in Cloudflare D1
+  - Utilize Cloudflare Durable Objects for coordination when needed
 
-### Traditional Server Deployment
-- **Benefits**:
-  - More control over server environment
-  - No execution time limits
-  - Potentially lower costs for high-volume operations
-- **Implementation**:
-  - Deploy Node.js server on cloud provider
-  - Set up load balancing for high availability
-  - Implement caching layer with Redis
+### Cloudflare Components
 
-### Hybrid Approach
+#### Cloudflare Workers
+- **Usage**: All backend API endpoints and services
 - **Benefits**:
-  - Optimized for different types of operations
-  - Cost-effective scaling
-  - Leverages strengths of both approaches
-- **Implementation**:
-  - Use Cloudflare Workers for high-performance endpoints
-  - Use traditional servers for complex operations
-  - Implement shared caching strategy
+  - Global distribution with edge execution
+  - Low latency for all users
+  - Built-in security features
+  - Automatic scaling
+  - Simple deployment model
+- **Implementation Details**:
+  - Authentication proxy for Riot RSO
+  - API endpoints for extension and web app
+  - Subscription verification services
+  - Rate limit management
+
+#### Cloudflare Pages
+- **Usage**: Streamer web application frontend
+- **Benefits**:
+  - Integrated hosting with global CDN
+  - Automatic CI/CD from GitHub
+  - Built-in analytics
+  - Free SSL certificates
+- **Implementation Details**:
+  - React application for streamer dashboard
+  - Pages Functions for server-side operations
+  - Automatic preview deployments for testing
+
+#### Cloudflare D1
+- **Usage**: Primary database for all structured data
+- **Benefits**:
+  - SQL database at the edge
+  - Integrated with Workers ecosystem
+  - Automatic backups
+  - No separate database infrastructure to manage
+- **Implementation Details**:
+  - Store streamer accounts and subscription data
+  - Track user preferences and settings
+  - Store analytics information
+
+#### Cloudflare KV
+- **Usage**: Caching and state management
+- **Benefits**:
+  - Global key-value store
+  - Low-latency reads
+  - Ideal for caching frequently accessed data
+- **Implementation Details**:
+  - Cache subscription status for popular channels
+  - Store temporary authentication tokens
+  - Cache Riot API responses
+
+#### Cloudflare Durable Objects
+- **Usage**: Coordination and stateful operations
+- **Benefits**:
+  - Strong consistency guarantees
+  - Global uniqueness
+  - Ideal for coordination
+- **Implementation Details**:
+  - Rate limit tracking
+  - Global state management
+  - Concurrent operation handling
