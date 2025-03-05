@@ -1,0 +1,7 @@
+- Make sure RIOT RSO backend is working
+- Deploy to Cloudflare Worker
+
+
+
+
+- Change Vercel deployment to Cloudflare Pages
