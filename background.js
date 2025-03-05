@@ -1,9 +1,10 @@
 // EloWard Background Service Worker
+import './js/config.js';
+import './js/riotAuth.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const RIOT_API_BASE_URL = 'https://{{platform}}.api.riotgames.com/lol/';
-const RIOT_REGIONAL_URL = 'https://{{region}}.api.riotgames.com/lol/';
+const API_BASE_URL = 'https://api.eloward.xyz'; // Replace with your actual backend URL
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -43,7 +44,6 @@ chrome.runtime.onInstalled.addListener(() => {
     activeStreamers: ACTIVE_STREAMERS,
     cachedRanks: {},
     lastRankUpdate: 0,
-    apiKey: '', // In production, this would be managed securely via backend
     selectedRegion: 'na1' // Default region
   });
   
@@ -61,24 +61,18 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received message:', message);
   
-  if (message.action === 'authenticate_riot') {
-    initiateRiotAuth(message.region, sendResponse);
-    return true; // Keep the message channel open for async response
-  }
-  
-  if (message.action === 'get_user_rank') {
-    getUserRankData(message.username, message.region, (rankData) => {
-      sendResponse({ rank: rankData });
-    });
-    return true; // Keep the message channel open for async response
-  }
-  
   if (message.action === 'check_streamer_subscription') {
     // In a real implementation, this would check against a backend API
-    // For MVP, we'll check against our mock list of subscribed streamers
-    const isSubscribed = ACTIVE_STREAMERS.includes(message.streamer.toLowerCase());
-    sendResponse({ subscribed: isSubscribed });
-    return false; // No async response needed
+    checkStreamerSubscription(message.streamer)
+      .then(isSubscribed => {
+        sendResponse({ subscribed: isSubscribed });
+      })
+      .catch(error => {
+        console.error('Error checking streamer subscription:', error);
+        sendResponse({ subscribed: false, error: error.message });
+      });
+    
+    return true; // Keep the message channel open for async response
   }
   
   if (message.action === 'get_rank_for_user') {
@@ -94,20 +88,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Use cached data if it's fresh
         sendResponse({ rank: cachedRanks[cacheKey].data });
       } else {
-        // Generate mock rank data for MVP
-        generateMockRankData(username, platform, (rankData) => {
-          // Update cache
-          cachedRanks[cacheKey] = {
-            timestamp: Date.now(),
-            data: rankData
-          };
-          
-          chrome.storage.local.set({ cachedRanks }, () => {
-            sendResponse({ rank: rankData });
+        // Fetch rank data from backend
+        fetchRankFromBackend(username, platform)
+          .then(rankData => {
+            // Update cache
+            cachedRanks[cacheKey] = {
+              timestamp: Date.now(),
+              data: rankData
+            };
+            
+            chrome.storage.local.set({ cachedRanks }, () => {
+              sendResponse({ rank: rankData });
+            });
+          })
+          .catch(error => {
+            console.error('Error fetching rank data:', error);
+            // Fallback to mock data if backend fails
+            generateMockRankData(username, platform, (rankData) => {
+              sendResponse({ rank: rankData, isMock: true });
+            });
           });
-        });
       }
     });
+    
+    return true; // Keep the message channel open for async response
+  }
+  
+  if (message.action === 'get_user_rank_by_puuid') {
+    const { puuid, summonerId, region } = message;
+    
+    // Check if we have a valid token
+    RiotAuth.getValidToken()
+      .then(token => {
+        // Get rank data using the League V4 API via backend
+        getRankBySummonerId(token, summonerId, region)
+          .then(rankData => {
+            sendResponse({ rank: rankData });
+          })
+          .catch(error => {
+            console.error('Error getting rank data:', error);
+            sendResponse({ error: error.message });
+          });
+      })
+      .catch(error => {
+        console.error('Error getting valid token:', error);
+        sendResponse({ error: error.message });
+      });
     
     return true; // Keep the message channel open for async response
   }
@@ -115,41 +141,113 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Helper functions
 
-// Mock Riot authentication for MVP
-// In a real implementation, this would use Riot RSO
-function initiateRiotAuth(region, sendResponse) {
-  // Use consistent mock values for testing
-  const mockGameName = 'RiotUser';
-  const mockTagLine = region.toUpperCase().replace('1', '');
-  const mockRiotId = `${mockGameName}#${mockTagLine}`;
-  
-  const mockRiotAuth = {
-    accessToken: 'mock_riot_token',
-    riotId: mockRiotId, // New Riot ID format (gameName#tagLine)
-    summonerName: mockGameName,
-    puuid: 'mock-puuid-123456789',
-    region: region
-  };
-  
-  chrome.storage.local.set({ 
-    riotAuth: mockRiotAuth,
-    selectedRegion: region 
-  }, () => {
-    // Generate mock rank data
-    generateMockRankData(mockRiotAuth.riotId, region, (rankData) => {
-      chrome.storage.local.set({ userRank: rankData }, () => {
-        sendResponse({ 
-          success: true,
-          auth: mockRiotAuth
-        });
+/**
+ * Checks if a streamer has an active subscription
+ * @param {string} streamerName - The streamer's Twitch username
+ * @returns {Promise<boolean>} - Resolves with subscription status
+ */
+function checkStreamerSubscription(streamerName) {
+  return new Promise((resolve, reject) => {
+    // For MVP, check against mock list
+    // In production, this would call the backend API
+    if (ACTIVE_STREAMERS.includes(streamerName.toLowerCase())) {
+      resolve(true);
+      return;
+    }
+    
+    // Call backend API to check subscription
+    fetch(`${API_BASE_URL}/api/subscription/verify?channel=${streamerName}`)
+      .then(response => {
+        if (!response.ok) {
+          // If API fails, fall back to mock list
+          return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
+        }
+        return response.json();
+      })
+      .then(data => {
+        resolve(data.subscribed);
+      })
+      .catch(error => {
+        console.error('Error checking subscription:', error);
+        // If API fails, fall back to mock list
+        resolve(ACTIVE_STREAMERS.includes(streamerName.toLowerCase()));
       });
-    });
   });
 }
 
-// Get user rank data (mock implementation for MVP)
-function getUserRankData(username, region, callback) {
-  generateMockRankData(username, region, callback);
+/**
+ * Fetches rank data from the backend
+ * @param {string} username - The username to fetch rank for
+ * @param {string} platform - The platform code
+ * @returns {Promise} - Resolves with the rank data
+ */
+function fetchRankFromBackend(username, platform) {
+  return new Promise((resolve, reject) => {
+    fetch(`${API_BASE_URL}/api/rank?username=${encodeURIComponent(username)}&platform=${platform}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Rank fetch failed: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.rank) {
+          resolve(data.rank);
+        } else {
+          // If no rank data, generate mock data
+          generateMockRankData(username, platform, resolve);
+        }
+      })
+      .catch(error => {
+        reject(error);
+      });
+  });
+}
+
+/**
+ * Gets rank data for a summoner using the League V4 API via backend
+ * @param {string} token - The access token
+ * @param {string} summonerId - The encrypted summoner ID
+ * @param {string} platform - The platform code (e.g., 'na1')
+ * @returns {Promise} - Resolves with the rank data
+ */
+function getRankBySummonerId(token, summonerId, platform) {
+  return new Promise((resolve, reject) => {
+    fetch(`${API_BASE_URL}/riot/league/entries?platform=${platform}&summonerId=${summonerId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`League request failed: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then(leagueEntries => {
+      // Find the Solo/Duo queue entry
+      const soloQueueEntry = leagueEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      
+      if (soloQueueEntry) {
+        // Format the rank data
+        const rankData = {
+          tier: soloQueueEntry.tier,
+          division: soloQueueEntry.rank,
+          leaguePoints: soloQueueEntry.leaguePoints,
+          wins: soloQueueEntry.wins,
+          losses: soloQueueEntry.losses
+        };
+        
+        resolve(rankData);
+      } else {
+        // No ranked data found
+        resolve(null);
+      }
+    })
+    .catch(error => {
+      reject(error);
+    });
+  });
 }
 
 // Generate mock rank data for testing
@@ -189,18 +287,6 @@ function generateMockRankData(username, region, callback) {
   setTimeout(() => {
     callback(rankData);
   }, 300);
-}
-
-// Helper function to get PUUID from Riot ID (mock implementation)
-function getPUUIDFromRiotId(gameName, tagLine, region, callback) {
-  // In a real implementation, this would call the Riot API
-  callback(`mock-puuid-${gameName}-${tagLine}`);
-}
-
-// Helper function to get rank from PUUID (mock implementation)
-function getRankFromPUUID(puuid, platform, callback) {
-  // In a real implementation, this would call the Riot API
-  generateMockRankData(puuid, platform, callback);
 }
 
 // Helper function to get rank icon URL

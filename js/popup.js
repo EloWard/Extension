@@ -1,4 +1,6 @@
 // EloWard Popup Script
+import { EloWardConfig } from './config.js';
+import { RiotAuth } from './riotAuth.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM elements
@@ -32,6 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show rank if available
         if (result.userRank) {
           displayRank(result.userRank);
+        } else {
+          // Fetch rank data if not available
+          fetchUserRank(result.riotAuth);
         }
       }
       
@@ -46,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.get('riotAuth', (result) => {
       if (result.riotAuth) {
         // Disconnect flow
-        chrome.storage.local.remove(['riotAuth', 'userRank'], () => {
+        RiotAuth.logout().then(() => {
           riotConnectionStatus.textContent = 'Not Connected';
           riotConnectionStatus.classList.remove('connected');
           connectRiotBtn.textContent = 'Connect';
@@ -54,6 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
           // Reset rank display
           currentRank.textContent = 'Unknown';
           rankBadgePreview.style.backgroundImage = 'none';
+        }).catch(error => {
+          console.error('Logout error:', error);
         });
       } else {
         // Connect flow - show loading state
@@ -63,37 +70,33 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get selected region
         const region = regionSelect.value;
         
-        // In real implementation, this would involve Riot RSO
-        // For MVP, we'll simulate authentication with a delay
-        setTimeout(() => {
-          chrome.runtime.sendMessage({ action: 'authenticate_riot', region: region }, (response) => {
+        // Use the Riot RSO authentication module
+        RiotAuth.authenticate(region)
+          .then(userData => {
+            // Update UI
+            riotConnectionStatus.textContent = userData.riotId;
+            riotConnectionStatus.classList.add('connected');
+            connectRiotBtn.textContent = 'Disconnect';
             connectRiotBtn.disabled = false;
             
-            if (response && response.success) {
-              // Always use the Riot ID or summoner name from the auth response
-              if (response.auth.riotId) {
-                riotConnectionStatus.textContent = response.auth.riotId;
-              } else {
-                riotConnectionStatus.textContent = response.auth.summonerName;
-              }
-              riotConnectionStatus.classList.add('connected');
-              connectRiotBtn.textContent = 'Disconnect';
-              
-              // Fetch and display rank for the authenticated account
-              chrome.runtime.sendMessage({ 
-                action: 'get_user_rank', 
-                username: response.auth.riotId || response.auth.summonerName,
-                region: region
-              }, (rankResponse) => {
-                if (rankResponse && rankResponse.rank) {
-                  displayRank(rankResponse.rank);
-                }
-              });
-            } else {
-              connectRiotBtn.textContent = 'Connect';
-            }
+            // Fetch and display rank for the authenticated account
+            fetchUserRank(userData);
+          })
+          .catch(error => {
+            console.error('Authentication error:', error);
+            connectRiotBtn.textContent = 'Connect';
+            connectRiotBtn.disabled = false;
+            
+            // Show error message
+            riotConnectionStatus.textContent = 'Authentication Failed';
+            riotConnectionStatus.classList.add('error');
+            
+            // Reset error state after 3 seconds
+            setTimeout(() => {
+              riotConnectionStatus.textContent = 'Not Connected';
+              riotConnectionStatus.classList.remove('error');
+            }, 3000);
           });
-        }, 1000); // Simulate network delay
       }
     });
   }
@@ -101,6 +104,24 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
     chrome.storage.local.set({ selectedRegion });
+  }
+
+  function fetchUserRank(userData) {
+    // Request rank data from background script
+    chrome.runtime.sendMessage({
+      action: 'get_user_rank_by_puuid',
+      puuid: userData.puuid,
+      summonerId: userData.summonerId,
+      region: userData.region
+    }, (response) => {
+      if (response && response.rank) {
+        // Store rank data
+        chrome.storage.local.set({ userRank: response.rank });
+        
+        // Display rank
+        displayRank(response.rank);
+      }
+    });
   }
 
   function displayRank(rankData) {

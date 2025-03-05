@@ -12,20 +12,20 @@ This separation follows industry best practices (similar to 7TV and BetterTTV) b
 ### Chrome Extension
 - **Frontend**: JavaScript, HTML, CSS
 - **Storage**: Browser local storage for user preferences and caching
-- **APIs Used**: Riot Games API (via backend proxy)
+- **APIs Used**: Riot Games API (via Cloudflare Workers proxy)
 
 ### Streamer Web Application
-- **Frontend**: React.js with Material UI
-- **Backend**: Node.js with Express
-- **Database**: MongoDB (streamer accounts and subscription data)
+- **Frontend**: React.js with Material UI (deployed on Cloudflare Pages)
+- **Backend**: Cloudflare Workers and Functions
+- **Database**: Cloudflare D1 (SQLite database)
 - **Authentication**: Twitch OAuth
 - **Payment Processing**: Stripe
 
 ### Shared Backend Services
-- **API Server**: Node.js with Express
-- **Caching Layer**: Redis for performance optimization
-- **Rate Limiting**: Intelligent throttling for Riot API requests
-- **Deployment**: Docker containers on AWS/Google Cloud
+- **API Server**: Cloudflare Workers
+- **Caching Layer**: Cloudflare KV for performance optimization
+- **Rate Limiting**: Built-in Cloudflare rate limiting for Riot API requests
+- **Deployment**: Cloudflare Pages and Workers
 
 ## Implementation Steps
 
@@ -43,10 +43,11 @@ This separation follows industry best practices (similar to 7TV and BetterTTV) b
 - **Popup Interface**: User settings and account linking
 
 #### 1.3 Authentication System (Viewers)
-- Implement Riot RSO integration
-  - Register application with Riot Developer Portal
+- Implement Riot RSO integration via secure backend proxy
+  - Register application with Riot Developer Portal (admin only)
   - Set up OAuth flow for League account verification
   - Store credentials in local storage with appropriate security
+  - Use backend proxy to protect client credentials
 
 #### 1.4 Twitch Integration
 - Create content script system to identify and modify chat:
@@ -74,7 +75,8 @@ This separation follows industry best practices (similar to 7TV and BetterTTV) b
 #### 2.1 Project Setup
 - Create separate GitHub repository for web app
 - Set up React project with necessary dependencies
-- Configure build system and development environment
+- Configure Cloudflare Pages for automatic deployment
+- Set up Cloudflare Pages Functions for backend functionality
 
 #### 2.2 Authentication System (Streamers)
 - Implement Twitch OAuth integration
@@ -104,27 +106,29 @@ This separation follows industry best practices (similar to 7TV and BetterTTV) b
 ### 3. Backend Services Development
 
 #### 3.1 Shared API Server
-- Set up Express.js server
+- Set up Cloudflare Workers for API endpoints
 - Implement authentication and authorization
-- Create shared database models
-- Configure security measures
+- Create shared data models
+- Configure security measures using Cloudflare's built-in protections
 
 #### 3.2 Riot API Proxy
-- Create proxy server to:
-  - Protect Riot API key
-  - Handle rate limiting
-  - Cache common requests
-- Implement efficient data storage strategy
+- Create Cloudflare Worker to:
+  - Protect Riot API key and client credentials
+  - Handle rate limiting using Cloudflare's built-in features
+  - Cache common requests in Cloudflare KV
+- Implement efficient data storage strategy with Cloudflare D1
+- Set up secure OAuth proxy for Riot RSO
 
 #### 3.3 Subscription Verification API
-- Create fast endpoint for subscription checks
-- Implement multi-level caching strategy
-- Design efficient database queries
+- Create fast Cloudflare Worker endpoint for subscription checks
+- Implement multi-level caching strategy with Cloudflare KV
+- Design efficient database queries for Cloudflare D1
 
 #### 3.4 Database Setup
-- Configure MongoDB with appropriate schemas
+- Configure Cloudflare D1 with appropriate schemas
 - Implement data validation
 - Set up backup and recovery procedures
+- Utilize Cloudflare's built-in security features
 
 ### 4. Integration and Testing
 
@@ -148,20 +152,20 @@ This separation follows industry best practices (similar to 7TV and BetterTTV) b
 ### 5. Deployment
 
 #### 5.1 Extension Deployment
-- Set up CI/CD pipeline
+- Set up CI/CD pipeline with GitHub Actions
 - Publish to Chrome Web Store
-- Implement monitoring system
+- Implement monitoring system using Cloudflare Analytics
 
 #### 5.2 Web Application Deployment
-- Configure production environment
-- Set up SSL certificates
-- Deploy to cloud provider
-- Configure monitoring and alerting
+- Configure Cloudflare Pages for production environment
+- Utilize automatic SSL certificates from Cloudflare
+- Set up custom domain with Cloudflare DNS
+- Configure monitoring and alerting through Cloudflare Dashboard
 
 #### 5.3 Backend Deployment
-- Deploy API server to production
-- Configure database production environment
-- Set up logging and monitoring
+- Deploy Workers to Cloudflare's global network
+- Configure Cloudflare D1 for production environment
+- Set up logging and monitoring through Cloudflare Dashboard
 
 ### 6. Post-Launch
 - Monitor for Twitch interface changes
@@ -302,7 +306,146 @@ app.get('/api/subscription/verify', async (req, res) => {
 });
 ```
 
+### Riot RSO Proxy Endpoints
+```javascript
+// Example API endpoints for the Riot RSO proxy
+
+// Initialize authentication flow
+app.post('/auth/riot/init', async (req, res) => {
+  const { region, state, redirectUri } = req.body;
+  
+  if (!region || !state || !redirectUri) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+  
+  try {
+    // Construct the authorization URL with our client ID (stored securely on the server)
+    const params = new URLSearchParams({
+      client_id: process.env.RIOT_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid offline_access lol-account',
+      state: state
+    });
+    
+    const authUrl = `https://auth.riotgames.com/authorize?${params.toString()}`;
+    
+    return res.json({ authUrl });
+  } catch (error) {
+    console.error('Auth initialization error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Exchange code for token
+app.post('/auth/riot/token', async (req, res) => {
+  const { code, redirectUri } = req.body;
+  
+  if (!code || !redirectUri) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+  
+  try {
+    // Exchange the code for a token using our client credentials
+    const tokenResponse = await fetch('https://auth.riotgames.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: redirectUri,
+        client_id: process.env.RIOT_CLIENT_ID,
+        client_secret: process.env.RIOT_CLIENT_SECRET
+      }).toString()
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error(`Token exchange failed: ${tokenResponse.status}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    
+    return res.json(tokenData);
+  } catch (error) {
+    console.error('Token exchange error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Refresh token
+app.post('/auth/riot/token/refresh', async (req, res) => {
+  const { refreshToken } = req.body;
+  
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Missing refresh token' });
+  }
+  
+  try {
+    // Refresh the token using our client credentials
+    const tokenResponse = await fetch('https://auth.riotgames.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: process.env.RIOT_CLIENT_ID,
+        client_secret: process.env.RIOT_CLIENT_SECRET
+      }).toString()
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error(`Token refresh failed: ${tokenResponse.status}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    
+    return res.json(tokenData);
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Proxy for Riot API requests
+app.get('/riot/account/me', async (req, res) => {
+  const { region } = req.query;
+  const authHeader = req.headers.authorization;
+  
+  if (!region || !authHeader) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+  
+  try {
+    const response = await fetch(`https://${region}.api.riotgames.com/riot/account/v1/accounts/me`, {
+      headers: {
+        'Authorization': authHeader
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Account request failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    return res.json(data);
+  } catch (error) {
+    console.error('Account request error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+```
+
 ## Technical Challenges and Solutions
+
+### Securing Riot Client Credentials
+- **Challenge**: Protecting Riot client ID and secret
+- **Solution**: Backend proxy server to handle OAuth flow
+- **Implementation**: All sensitive credentials stored server-side only
 
 ### Twitch DOM Integration
 - **Challenge**: Reliably identifying and modifying chat elements
@@ -343,6 +486,57 @@ app.get('/api/subscription/verify', async (req, res) => {
 - **Challenge**: Protecting API keys and user data
 - **Solution**: Minimize data collection, use secure storage
 - **Implementation**: Proxy sensitive API calls through backend
+
+## Cloudflare Implementation Strategy
+
+### Primary Approach: Full Cloudflare Stack
+- **Implementation**:
+  - Use Cloudflare Workers for all API endpoints and backend services
+  - Use Cloudflare Pages for the streamer web application frontend
+  - Use Cloudflare D1 (SQLite database) for all data storage needs
+  - Implement Cloudflare KV for caching and state management
+  - Utilize Cloudflare Durable Objects for coordination when needed
+- **Benefits**:
+  - Leverages existing Cloudflare subscription for cost efficiency
+  - Global distribution for optimal performance worldwide
+  - Simplified deployment and management through a single platform
+  - Strong security features built into the platform
+  - Seamless scaling without infrastructure management
+  - Reduced operational complexity with unified monitoring and logging
+
+### Implementation Details
+
+#### Cloudflare Workers
+- Implement all API endpoints as Workers
+- Use Workers for authentication proxy and Riot API integration
+- Utilize Workers for subscription verification
+- Take advantage of built-in security headers and protection
+
+#### Cloudflare Pages
+- Host the React frontend application
+- Use Pages Functions for server-side operations
+- Implement automatic deployments from GitHub
+- Utilize built-in analytics and performance monitoring
+
+#### Cloudflare D1
+- Store all structured data including:
+  - Streamer accounts and subscription information
+  - User preferences and settings
+  - Analytics data
+- Implement efficient query patterns for optimal performance
+
+#### Cloudflare KV
+- Cache frequently accessed data:
+  - Subscription status for popular channels
+  - Riot API responses
+  - Authentication tokens
+- Implement tiered caching strategy for optimal performance
+
+#### Cloudflare Durable Objects
+- Use for coordination when needed:
+  - Rate limit tracking
+  - Global state management
+  - Concurrent operation handling
 
 ## Future Expansion Possibilities
 - Support for additional games (Valorant, CS:GO, etc.)

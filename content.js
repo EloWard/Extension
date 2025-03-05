@@ -1,5 +1,6 @@
 // EloWard Content Script
 // This script runs on Twitch pages and adds rank badges to chat messages
+import { EloWardConfig } from './js/config.js';
 
 // Global state
 let isChannelSubscribed = false;
@@ -50,9 +51,8 @@ function initializeExtension() {
       // Remove any existing notification
       removeActivationNotification();
       
-      // Re-initialize for the new channel
+      // Check if the new channel is subscribed
       if (channelName) {
-        console.log(`EloWard: Channel changed to ${channelName}`);
         chrome.runtime.sendMessage(
           { action: 'check_streamer_subscription', streamer: channelName },
           (response) => {
@@ -73,21 +73,20 @@ function initializeExtension() {
   }).observe(document, { subtree: true, childList: true });
 }
 
-// Initialize the observer for chat messages
 function initializeObserver() {
   if (observerInitialized) return;
   
-  // Find the chat container
   function findChatContainer() {
-    // Twitch chat container selectors (may need updates if Twitch changes their DOM)
-    const selectors = [
+    // Try to find the chat container
+    // Twitch's DOM structure can change, so we need to be flexible
+    const chatContainerSelectors = [
       '.chat-scrollable-area__message-container',
       '.chat-list--default',
-      '.chat-list__list',
-      '[data-test-selector="chat-scrollable-area__message-container"]'
+      '.chat-list',
+      '[data-test-selector="chat-scrollable-area-container"]'
     ];
     
-    for (const selector of selectors) {
+    for (const selector of chatContainerSelectors) {
       const container = document.querySelector(selector);
       if (container) return container;
     }
@@ -103,37 +102,37 @@ function initializeObserver() {
     setupChatObserver(chatContainer);
     observerInitialized = true;
   } else {
-    // Chat container not found yet, retry after a delay
+    // Chat container not found yet, wait and try again
+    console.log('EloWard: Chat container not found, waiting...');
     setTimeout(() => {
       chatContainer = findChatContainer();
       if (chatContainer) {
         setupChatObserver(chatContainer);
         observerInitialized = true;
+      } else {
+        console.log('EloWard: Chat container still not found after delay');
       }
     }, 2000);
   }
 }
 
-// Set up the observer for chat messages
 function setupChatObserver(chatContainer) {
   console.log('EloWard: Setting up chat observer');
   
-  // Process existing messages
-  const existingMessages = chatContainer.querySelectorAll('.chat-line__message');
-  existingMessages.forEach(processNewMessage);
-  
-  // Create an observer for new messages
+  // Create a MutationObserver to watch for new chat messages
   const chatObserver = new MutationObserver((mutations) => {
     if (!isChannelSubscribed) return;
     
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        // Check if the node is a chat message
-        if (node.classList && node.classList.contains('chat-line__message')) {
-          processNewMessage(node);
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            // Process the new message
+            processNewMessage(node);
+          }
         }
-      });
-    });
+      }
+    }
   });
   
   // Start observing the chat container
@@ -141,72 +140,87 @@ function setupChatObserver(chatContainer) {
     childList: true,
     subtree: false
   });
+  
+  // Also process any existing messages
+  const existingMessages = chatContainer.children;
+  for (const message of existingMessages) {
+    processNewMessage(message);
+  }
 }
 
-// Process a new chat message
 function processNewMessage(messageNode) {
-  if (!isChannelSubscribed) return;
+  // Skip if we've already processed this message
+  if (processedMessages.has(messageNode.id) || processedMessages.size > 1000) {
+    // If we have too many processed messages, clear the set to prevent memory issues
+    if (processedMessages.size > 1000) {
+      processedMessages.clear();
+    }
+    return;
+  }
   
-  // Check if we've already processed this message
-  if (processedMessages.has(messageNode)) return;
+  // Mark this message as processed
+  if (messageNode.id) {
+    processedMessages.add(messageNode.id);
+  }
   
-  // Mark as processed
-  processedMessages.add(messageNode);
-  
-  // Find the username element
+  // Find the username element in the message
   const usernameElement = messageNode.querySelector('.chat-author__display-name');
   if (!usernameElement) return;
   
   // Get the username
   const username = usernameElement.textContent.trim();
   
-  // Get the platform (region) - for MVP we'll use NA1 as default
-  // In a real implementation, we would try to match Twitch usernames to Riot IDs
-  const platform = 'na1';
+  // Check if we already have rank data for this user in the cache
+  if (cachedUserMap[username.toLowerCase()]) {
+    addBadgeToMessage(usernameElement, cachedUserMap[username.toLowerCase()]);
+    return;
+  }
   
-  // Request rank data from background script
-  chrome.runtime.sendMessage(
-    { action: 'get_rank_for_user', username, platform },
-    (response) => {
-      if (response && response.rank) {
-        addBadgeToMessage(usernameElement, response.rank);
-      }
+  // Request rank data from the background script
+  chrome.runtime.sendMessage({
+    action: 'get_rank_for_user',
+    username: username,
+    platform: EloWardConfig.riot.platformRouting[regionSelect.value || 'na1'].region
+  }, (response) => {
+    if (response && response.rank) {
+      // Cache the rank data
+      cachedUserMap[username.toLowerCase()] = response.rank;
+      
+      // Add the badge to the message
+      addBadgeToMessage(usernameElement, response.rank);
     }
-  );
+  });
 }
 
-// Add a rank badge to a chat message
 function addBadgeToMessage(usernameElement, rankData) {
-  if (!rankData || !rankData.tier) return;
-  
   // Check if badge already exists
-  if (usernameElement.parentNode.querySelector('.eloward-badge')) return;
+  if (usernameElement.parentNode.querySelector('.eloward-rank-badge')) return;
   
-  // Create badge element
-  const badge = document.createElement('div');
-  badge.className = 'eloward-badge';
-  badge.title = formatRankText(rankData);
+  // Create the badge element
+  const badgeElement = document.createElement('div');
+  badgeElement.className = 'eloward-rank-badge';
   
-  // Set badge background image
-  badge.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${rankData.tier.toLowerCase()}.png`)}`;
+  // Set the background image to the rank icon
+  const rankTier = rankData ? rankData.tier.toLowerCase() : 'unranked';
+  badgeElement.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${rankTier}.png`)})`;
   
-  // Insert badge after username
-  usernameElement.parentNode.insertBefore(badge, usernameElement.nextSibling);
+  // Add tooltip with rank information
+  badgeElement.setAttribute('data-tooltip', formatRankText(rankData));
   
-  // Add a small space after username
-  usernameElement.style.marginRight = '4px';
+  // Insert the badge after the username
+  usernameElement.parentNode.insertBefore(badgeElement, usernameElement.nextSibling);
+  
+  // Add event listeners for tooltip
+  badgeElement.addEventListener('mouseenter', showTooltip);
+  badgeElement.addEventListener('mouseleave', hideTooltip);
 }
 
-// Format rank text for tooltip
 function formatRankText(rankData) {
   if (!rankData) return 'Unranked';
   
   let rankText = rankData.tier;
-  
-  if (rankData.division && 
-      rankData.tier !== 'Master' && 
-      rankData.tier !== 'Grandmaster' && 
-      rankData.tier !== 'Challenger') {
+  if (rankData.division && rankData.tier !== 'Master' && 
+      rankData.tier !== 'Grandmaster' && rankData.tier !== 'Challenger') {
     rankText += ' ' + rankData.division;
   }
   
@@ -214,154 +228,101 @@ function formatRankText(rankData) {
     rankText += ` (${rankData.leaguePoints} LP)`;
   }
   
+  if (rankData.wins !== undefined && rankData.losses !== undefined) {
+    const winRate = Math.round((rankData.wins / (rankData.wins + rankData.losses)) * 100);
+    rankText += ` | ${rankData.wins}W ${rankData.losses}L (${winRate}%)`;
+  }
+  
   return rankText;
 }
 
-// Show a subtle notification that EloWard is active
 function showActivationNotification() {
   // Check if notification already exists
-  if (document.getElementById('eloward-notification')) return;
+  if (document.querySelector('.eloward-notification')) return;
   
   // Create notification element
   const notification = document.createElement('div');
-  notification.id = 'eloward-notification';
   notification.className = 'eloward-notification';
   
   // Create logo element
-  const logo = document.createElement('div');
+  const logo = document.createElement('img');
+  logo.src = chrome.runtime.getURL('images/logo/icon48.png');
+  logo.alt = 'EloWard';
   logo.className = 'eloward-notification-logo';
-  logo.style.backgroundImage = `url(${chrome.runtime.getURL('images/logo/icon48.png')})`;
   
   // Create text element
-  const text = document.createElement('div');
+  const text = document.createElement('span');
+  text.textContent = 'EloWard Active';
   text.className = 'eloward-notification-text';
-  text.innerHTML = `
-    <span class="eloward-notification-title">EloWard Active</span>
-    <span class="eloward-notification-subtitle">This streamer has enabled League rank badges in chat</span>
-  `;
-  
-  // Create close button
-  const closeButton = document.createElement('div');
-  closeButton.className = 'eloward-notification-close';
-  closeButton.innerHTML = '×';
-  closeButton.addEventListener('click', () => {
-    notification.classList.add('eloward-notification-hiding');
-    setTimeout(() => {
-      notification.remove();
-    }, 300);
-  });
   
   // Add elements to notification
   notification.appendChild(logo);
   notification.appendChild(text);
-  notification.appendChild(closeButton);
   
-  // Add notification to page
+  // Add notification to the page
   document.body.appendChild(notification);
   
-  // Add styles
-  const style = document.createElement('style');
-  style.textContent = `
-    .eloward-badge {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      background-size: contain;
-      background-repeat: no-repeat;
-      background-position: center;
-      vertical-align: middle;
-      margin-left: 4px;
-    }
-    
-    .eloward-notification {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: rgba(28, 30, 48, 0.95);
-      border: 1px solid rgba(217, 163, 54, 0.3);
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      z-index: 9999;
-      max-width: 300px;
-      animation: eloward-notification-enter 0.3s ease-out;
-    }
-    
-    .eloward-notification-hiding {
-      animation: eloward-notification-exit 0.3s ease-in forwards;
-    }
-    
-    @keyframes eloward-notification-enter {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    
-    @keyframes eloward-notification-exit {
-      from { transform: translateY(0); opacity: 1; }
-      to { transform: translateY(20px); opacity: 0; }
-    }
-    
-    .eloward-notification-logo {
-      width: 32px;
-      height: 32px;
-      background-size: contain;
-      background-repeat: no-repeat;
-      background-position: center;
-      margin-right: 12px;
-    }
-    
-    .eloward-notification-text {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    .eloward-notification-title {
-      font-weight: 600;
-      font-size: 14px;
-      color: #D9A336;
-      margin-bottom: 2px;
-    }
-    
-    .eloward-notification-subtitle {
-      font-size: 12px;
-      color: #A09B8C;
-    }
-    
-    .eloward-notification-close {
-      font-size: 20px;
-      color: #A09B8C;
-      cursor: pointer;
-      margin-left: 12px;
-      line-height: 1;
-    }
-    
-    .eloward-notification-close:hover {
-      color: #D9A336;
-    }
-  `;
-  
-  document.head.appendChild(style);
-  
-  // Auto-hide notification after 8 seconds
+  // Show the notification
   setTimeout(() => {
-    if (document.getElementById('eloward-notification')) {
-      notification.classList.add('eloward-notification-hiding');
+    notification.classList.add('visible');
+    
+    // Hide the notification after 5 seconds
+    setTimeout(() => {
+      notification.classList.remove('visible');
+      
+      // Remove the notification after the fade-out animation
       setTimeout(() => {
         if (notification.parentNode) {
-          notification.remove();
+          notification.parentNode.removeChild(notification);
         }
-      }, 300);
-    }
-  }, 8000);
+      }, 500);
+    }, 5000);
+  }, 100);
 }
 
-// Remove the activation notification
 function removeActivationNotification() {
-  const notification = document.getElementById('eloward-notification');
+  const notification = document.querySelector('.eloward-notification');
   if (notification) {
-    notification.remove();
+    notification.classList.remove('visible');
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 500);
+  }
+}
+
+// Tooltip functions
+function showTooltip(event) {
+  const tooltip = document.createElement('div');
+  tooltip.className = 'eloward-tooltip';
+  tooltip.textContent = event.target.getAttribute('data-tooltip');
+  
+  // Position the tooltip
+  const rect = event.target.getBoundingClientRect();
+  tooltip.style.left = `${rect.left + rect.width / 2}px`;
+  tooltip.style.top = `${rect.bottom + 5}px`;
+  
+  // Add the tooltip to the page
+  document.body.appendChild(tooltip);
+  
+  // Store the tooltip element on the badge
+  event.target.tooltip = tooltip;
+  
+  // Show the tooltip
+  setTimeout(() => {
+    tooltip.classList.add('visible');
+  }, 10);
+}
+
+function hideTooltip(event) {
+  const tooltip = event.target.tooltip;
+  if (tooltip) {
+    tooltip.classList.remove('visible');
+    setTimeout(() => {
+      if (tooltip.parentNode) {
+        tooltip.parentNode.removeChild(tooltip);
+      }
+    }, 200);
   }
 } 

@@ -36,6 +36,7 @@ EloWard uses a dual approach for monetization:
   - No Twitch login required
   - One-time League of Legends account verification via Riot RSO
   - Local storage of verification token
+  - Secure backend proxy to protect client credentials
 - **For Streamers (Web App)**:
   - Twitch OAuth authentication required
   - Subscription management through secure web dashboard
@@ -62,6 +63,14 @@ EloWard uses a dual approach for monetization:
 - **API Server**: Handles requests from both extension and web app
 - **Riot API Proxy**: Manages rate limits and caches rank data
 - **Subscription Verification**: Fast endpoint for checking channel subscription status
+- **Authentication Proxy**: Securely handles Riot RSO authentication without exposing client credentials
+
+### Security Architecture
+- **Client Credential Protection**: Riot client ID and secret stored only on the backend
+- **OAuth Proxy**: Backend handles sensitive parts of the OAuth flow
+- **Token Management**: Secure handling of access and refresh tokens
+- **Rate Limit Management**: Centralized control of API rate limits
+- **Data Minimization**: Only essential data stored in the extension
 
 ## User Experience
 
@@ -110,3 +119,38 @@ EloWard uses a dual approach for monetization:
 - **User Identity**: Reliably connecting Twitch usernames to League accounts
 - **Privacy Concerns**: Implementing appropriate privacy controls
 - **Extension-Web App Communication**: Ensuring efficient and secure communication between components
+- **Client Credential Security**: Protecting Riot client credentials through backend proxy
+
+## Backend Deployment Options
+
+### Cloudflare Workers (Recommended)
+- **Benefits**:
+  - Global distribution for low-latency responses
+  - Serverless architecture for easy scaling
+  - Built-in security features
+  - Simple deployment process
+  - Works well with existing Cloudflare subscription
+- **Implementation**:
+  - Implement authentication proxy as Cloudflare Workers
+  - Use Cloudflare KV for caching
+  - Connect to external database or use Cloudflare D1 for data storage
+
+### Traditional Server Deployment
+- **Benefits**:
+  - More control over server environment
+  - No execution time limits
+  - Potentially lower costs for high-volume operations
+- **Implementation**:
+  - Deploy Node.js server on cloud provider
+  - Set up load balancing for high availability
+  - Implement caching layer with Redis
+
+### Hybrid Approach
+- **Benefits**:
+  - Optimized for different types of operations
+  - Cost-effective scaling
+  - Leverages strengths of both approaches
+- **Implementation**:
+  - Use Cloudflare Workers for high-performance endpoints
+  - Use traditional servers for complex operations
+  - Implement shared caching strategy

@@ -1,6 +1,23 @@
 // EloWard Configuration
 
-const EloWardConfig = {
+export const EloWardConfig = {
+  // API Configuration
+  api: {
+    baseUrl: 'https://api.eloward.xyz',
+    endpoints: {
+      checkSubscription: '/subscription/verify',
+      fetchRank: '/rank/fetch'
+    }
+  },
+  
+  // Badge Configuration
+  badges: {
+    refreshInterval: 30 * 60 * 1000, // 30 minutes
+    cacheExpiry: 24 * 60 * 60 * 1000, // 24 hours
+    showUnranked: true,
+    defaultSize: 16
+  },
+  
   // Riot API Configuration
   riot: {
     // API endpoints
@@ -24,24 +41,24 @@ const EloWardConfig = {
       }
     },
     
-    // Platform routing values
+    // Platform routing for Riot API
     platformRouting: {
-      'na1': { region: 'americas', name: 'North America' },
-      'euw1': { region: 'europe', name: 'EU West' },
-      'eun1': { region: 'europe', name: 'EU Nordic & East' },
-      'kr': { region: 'asia', name: 'Korea' },
-      'br1': { region: 'americas', name: 'Brazil' },
-      'jp1': { region: 'asia', name: 'Japan' },
-      'la1': { region: 'americas', name: 'LAN' },
-      'la2': { region: 'americas', name: 'LAS' },
-      'oc1': { region: 'sea', name: 'Oceania' },
-      'ru': { region: 'europe', name: 'Russia' },
-      'tr1': { region: 'europe', name: 'Turkey' },
-      'ph2': { region: 'sea', name: 'Philippines' },
-      'sg2': { region: 'sea', name: 'Singapore' },
-      'th2': { region: 'sea', name: 'Thailand' },
-      'tw2': { region: 'sea', name: 'Taiwan' },
-      'vn2': { region: 'sea', name: 'Vietnam' }
+      'na1': { region: 'americas', platform: 'na1' },
+      'br1': { region: 'americas', platform: 'br1' },
+      'la1': { region: 'americas', platform: 'la1' },
+      'la2': { region: 'americas', platform: 'la2' },
+      'euw1': { region: 'europe', platform: 'euw1' },
+      'eun1': { region: 'europe', platform: 'eun1' },
+      'tr1': { region: 'europe', platform: 'tr1' },
+      'ru': { region: 'europe', platform: 'ru' },
+      'kr': { region: 'asia', platform: 'kr' },
+      'jp1': { region: 'asia', platform: 'jp1' },
+      'oc1': { region: 'sea', platform: 'oc1' },
+      'ph2': { region: 'sea', platform: 'ph2' },
+      'sg2': { region: 'sea', platform: 'sg2' },
+      'th2': { region: 'sea', platform: 'th2' },
+      'tw2': { region: 'sea', platform: 'tw2' },
+      'vn2': { region: 'sea', platform: 'vn2' }
     },
     
     // Data Dragon (for assets)
@@ -74,8 +91,8 @@ const EloWardConfig = {
   
   // Extension Configuration
   extension: {
-    refreshInterval: 30 * 60 * 1000, // 30 minutes
-    version: '0.1.0'
+    version: '1.0.0',
+    debug: false
   }
 };
 

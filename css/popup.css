@@ -126,6 +126,12 @@ header h1 {
   color: var(--success);
 }
 
+/* Error state for connection status */
+.connection-status.error {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
 /* Button Styling */
 .btn {
   background-color: var(--primary);

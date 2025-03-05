@@ -1,3 +1,82 @@
+/* EloWard Styles for Twitch Chat */
+
+/* Rank Badge */
+.eloward-rank-badge {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  vertical-align: middle;
+  margin-left: 4px;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.eloward-rank-badge:hover {
+  transform: scale(1.2);
+}
+
+/* Tooltip */
+.eloward-tooltip {
+  position: fixed;
+  background: rgba(28, 30, 48, 0.95);
+  border: 1px solid rgba(217, 163, 54, 0.3);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #fff;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(0);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.eloward-tooltip.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Notification */
+.eloward-notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(28, 30, 48, 0.95);
+  border: 1px solid rgba(217, 163, 54, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  z-index: 9999;
+  max-width: 300px;
+  transform: translateY(20px);
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.eloward-notification.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.eloward-notification-logo {
+  width: 32px;
+  height: 32px;
+  margin-right: 12px;
+}
+
+.eloward-notification-text {
+  font-weight: 600;
+  font-size: 14px;
+  color: #D9A336;
+}
+
 /* EloWard Rank Badges for Twitch Chat */
 
 .eloward-badge {
