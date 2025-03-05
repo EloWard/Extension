@@ -5,6 +5,8 @@ import { EloWardConfig } from './config.js';
  * Riot RSO (Riot Sign On) Authentication Module
  * This module handles the authentication flow with Riot Games API
  * using the OAuth 2.0 protocol via a secure backend proxy.
+ * 
+ * Note: This implementation uses the public client flow which only requires a client ID.
  */
 
 export const RiotAuth = {
