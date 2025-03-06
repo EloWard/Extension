@@ -9,3 +9,4 @@
 Pricing:
 
 - Paid for streamers
+- Free for users
