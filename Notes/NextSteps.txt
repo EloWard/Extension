@@ -12,4 +12,4 @@ Pricing:
 - Free for users
 - Upsell users with Pro features
     - link op.gg
-    - Add main champion icon as bad
+    - Add main champion icon as badge
