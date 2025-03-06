@@ -11,3 +11,4 @@ Pricing:
 - Paid for streamers
 - Free for users
 - Upsell users with Pro features
+    - link op.gg
