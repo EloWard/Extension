@@ -26,7 +26,8 @@
     "https://*.api.riotgames.com/*",
     "https://ddragon.leagueoflegends.com/*",
     "https://id.twitch.tv/*",
-    "https://auth.riotgames.com/*"
+    "https://auth.riotgames.com/*",
+    "https://eloward-riotrso.unleashai-inquiries.workers.dev/*"
   ],
   "content_scripts": [
     {

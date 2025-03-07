@@ -3,7 +3,7 @@
 export const EloWardConfig = {
   // API Configuration
   api: {
-    baseUrl: 'https://api.eloward.xyz',
+    baseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev',
     endpoints: {
       checkSubscription: '/subscription/verify',
       fetchRank: '/rank/fetch'

@@ -24,48 +24,41 @@
 }
 
 body {
-  font-family: 'neue-haas-grotesk-display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: var(--text-primary);
-  background-color: var(--background);
-  width: 340px;
-  min-height: 420px;
+  font-family: 'Inter', sans-serif;
+  color: #FFFFFF;
+  background-color: #0E1015;
+  width: 360px;
+  min-height: 480px;
   font-size: 14px;
   line-height: 1.5;
 }
 
 .container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  height: 100%;
+  padding: 20px;
 }
 
 /* Header Styling */
 header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-bottom: 8px;
+  margin-bottom: 20px;
 }
 
 .logo-container {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .logo {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
+  width: 40px;
+  height: 40px;
+  margin-right: 10px;
 }
 
-header h1 {
-  font-size: 20px;
+h1 {
+  margin: 0;
+  font-family: 'Cinzel', serif;
   font-weight: 700;
   color: #DC2123;
-  margin: 0;
+  font-size: 24px;
 }
 
 .subtitle {
@@ -76,20 +69,18 @@ header h1 {
 
 /* Card Styling */
 .card {
-  background-color: var(--surface);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  background-color: #1A1E23;
+  border-radius: 8px;
   padding: 16px;
-  margin-bottom: 4px;
-  border: 1px solid var(--border);
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.card h2 {
-  font-size: 16px;
+h2 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: #D9A336;
   font-weight: 600;
-  margin-bottom: 16px;
-  color: var(--primary);
-  font-family: 'Cinzel', serif;
 }
 
 /* Connection Item Styling */
@@ -97,13 +88,6 @@ header h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.connection-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
 }
 
 .connection-info {
@@ -112,18 +96,19 @@ header h1 {
 }
 
 .connection-label {
-  font-weight: 500;
-  margin-bottom: 2px;
+  font-size: 14px;
+  color: #9AA0A6;
+  margin-bottom: 4px;
 }
 
 .connection-status {
-  color: var(--error);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
+  color: #F44336;
 }
 
 .connection-status.connected {
-  color: var(--success);
+  color: #4CAF50;
 }
 
 /* Error state for connection status */
@@ -134,49 +119,50 @@ header h1 {
 
 /* Button Styling */
 .btn {
-  background-color: var(--primary);
-  color: var(--text-primary);
+  background-color: #DC2123;
+  color: white;
   border: none;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: background-color 0.2s, transform 0.1s;
+  transition: background-color 0.3s;
 }
 
 .btn:hover {
-  background-color: var(--primary-dark);
-}
-
-.btn:active {
-  transform: scale(0.98);
+  background-color: #B01B1C;
 }
 
 .btn:disabled {
-  background-color: var(--text-secondary);
+  background-color: #6B6F74;
   cursor: not-allowed;
-  opacity: 0.7;
+}
+
+/* Test button */
+.test-btn {
+  background-color: #2196F3;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.test-btn:hover {
+  background-color: #1976D2;
 }
 
 /* Rank Display Styling */
 .rank-container {
   display: flex;
   align-items: center;
-  gap: 16px;
   margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
 }
 
 .rank-badge {
-  width: 70px;
-  height: 70px;
+  width: 40px;
+  height: 40px;
   background-size: contain;
-  background-position: center;
   background-repeat: no-repeat;
-  position: relative;
-  transform: translateY(-3px);
+  background-position: center;
+  margin-right: 12px;
 }
 
 .rank-info {
@@ -185,70 +171,60 @@ header h1 {
 }
 
 .rank-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  margin-bottom: 2px;
+  font-size: 14px;
+  color: #9AA0A6;
+  margin-bottom: 4px;
 }
 
 .rank-value {
-  font-weight: 600;
   font-size: 16px;
-  color: var(--primary);
+  font-weight: 600;
 }
 
 /* Region Selector Styling */
 .region-selector {
-  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
 }
 
 .region-selector label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 6px;
-  color: var(--text-primary);
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #9AA0A6;
 }
 
 .select-wrapper {
   position: relative;
 }
 
+.select-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background-color: #272B30;
+  color: #FFFFFF;
+  border: 1px solid #3E4248;
+  appearance: none;
+  cursor: pointer;
+}
+
 .select-wrapper::after {
-  content: '';
+  content: '▼';
   position: absolute;
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 5px solid var(--text-secondary);
   pointer-events: none;
-}
-
-.select-input {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background-color: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  font-size: 14px;
-  appearance: none;
-  outline: none;
-}
-
-.select-input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(217, 163, 54, 0.2);
+  font-size: 12px;
+  color: #9AA0A6;
 }
 
 /* Footer Styling */
 footer {
-  margin-top: auto;
   text-align: center;
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding-top: 8px;
+  margin-top: 20px;
+  font-size: 12px;
+  color: #6B6F74;
 }
 
 /* Animations */
@@ -284,30 +260,15 @@ footer {
 
 /* Tip Card Styling */
 .tip-card {
-  background-color: var(--surface);
-  border: 1px solid rgba(217, 163, 54, 0.3);
-  position: relative;
-  overflow: hidden;
-}
-
-.tip-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background-color: var(--primary);
+  background-color: #2D3035;
 }
 
 .tip-content {
-  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .tip-content p {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-secondary);
   margin: 0;
 }
 

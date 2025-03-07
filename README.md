@@ -13,6 +13,25 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
   <img src="screenshots/preview.png" alt="EloWard Preview" width="500">
 </div>
 
+## Integration with Riot RSO Worker
+
+This extension connects to a Cloudflare Worker that serves as a secure proxy for Riot RSO (Riot Sign On) authentication. The worker is currently deployed at:
+
+```
+https://eloward-riotrso.unleashai-inquiries.workers.dev
+```
+
+### Worker Endpoints
+
+The Riot RSO Worker provides the following endpoints:
+
+- `POST /auth/riot/init`: Initialize the authentication flow
+- `POST /auth/riot/token`: Exchange authorization code for tokens
+- `POST /auth/riot/token/refresh`: Refresh an expired token
+- `GET /riot/account/me`: Proxy for Riot account API
+- `GET /riot/summoner/me`: Proxy for Riot summoner API
+- `GET /riot/league/entries`: Proxy for Riot league API
+
 ## Features
 
 - 🎮 **Twitch Integration**: Automatically shows rank badges in any Twitch chat
@@ -20,6 +39,7 @@ EloWard is a Chrome extension that displays League of Legends rank badges next t
 - 🌍 **Region Support**: Supports all major LoL regions
 - 🔗 **Account Linking**: Easily connect your Twitch and Riot accounts
 - 🎨 **Clean Design**: Modern, unobtrusive UI that fits with Twitch's design
+- 🔒 **Secure Authentication**: Uses Riot RSO for secure authentication
 
 ## Installation
 

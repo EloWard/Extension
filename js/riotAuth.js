@@ -13,7 +13,7 @@ export const RiotAuth = {
   // Riot RSO Configuration
   config: {
     // Backend proxy endpoints
-    proxyBaseUrl: 'https://api.eloward.xyz', // Replace with your actual backend URL
+    proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev', // Updated worker URL
     
     // API endpoints
     endpoints: {

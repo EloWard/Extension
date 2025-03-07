@@ -4,7 +4,7 @@ import './js/riotAuth.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const API_BASE_URL = 'https://api.eloward.xyz'; // Replace with your actual backend URL
+const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated worker URL
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -70,6 +70,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => {
         console.error('Error checking streamer subscription:', error);
         sendResponse({ subscribed: false, error: error.message });
+      });
+    
+    return true; // Keep the message channel open for async response
+  }
+  
+  if (message.action === 'complete_auth') {
+    // Complete the authentication flow
+    const { code, state } = message;
+    
+    // Use the RiotAuth module to complete authentication
+    RiotAuth.completeAuth(code, state)
+      .then(() => {
+        // Get account info to display in popup
+        return RiotAuth.fetchAccountInfo();
+      })
+      .then((accountInfo) => {
+        console.log('Authentication successful:', accountInfo);
+        sendResponse({ success: true });
+      })
+      .catch(error => {
+        console.error('Error completing authentication:', error);
+        sendResponse({ success: false, error: error.message });
       });
     
     return true; // Keep the message channel open for async response
