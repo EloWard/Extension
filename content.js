@@ -176,19 +176,25 @@ function processNewMessage(messageNode) {
     return;
   }
   
-  // Request rank data from the background script
-  chrome.runtime.sendMessage({
-    action: 'get_rank_for_user',
-    username: username,
-    platform: EloWardConfig.riot.platformRouting[regionSelect.value || 'na1'].region
-  }, (response) => {
-    if (response && response.rank) {
-      // Cache the rank data
-      cachedUserMap[username.toLowerCase()] = response.rank;
-      
-      // Add the badge to the message
-      addBadgeToMessage(usernameElement, response.rank);
-    }
+  // Get the user's selected region from storage
+  chrome.storage.local.get('selectedRegion', (data) => {
+    const selectedRegion = data.selectedRegion || 'na1';
+    const platformRegion = EloWardConfig.riot.platformRouting[selectedRegion].region;
+    
+    // Request rank data from the background script
+    chrome.runtime.sendMessage({
+      action: 'get_rank_for_user',
+      username: username,
+      platform: platformRegion
+    }, (response) => {
+      if (response && response.rank) {
+        // Cache the rank data
+        cachedUserMap[username.toLowerCase()] = response.rank;
+        
+        // Add the badge to the message
+        addBadgeToMessage(usernameElement, response.rank);
+      }
+    });
   });
 }
 

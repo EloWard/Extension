@@ -45,9 +45,10 @@
       "resources": [
         "images/*.png",
         "images/ranks/*.png",
-        "js/*.js"
+        "js/*.js",
+        "callback.html"
       ],
-      "matches": ["https://*.twitch.tv/*"]
+      "matches": ["https://*.twitch.tv/*", "https://auth.riotgames.com/*"]
     }
   ]
 } 

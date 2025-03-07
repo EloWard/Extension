@@ -13,7 +13,7 @@ export const RiotAuth = {
   // Riot RSO Configuration
   config: {
     // Backend proxy endpoints
-    proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev', // Updated worker URL
+    proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev', // Updated to use deployed worker
     
     // API endpoints
     endpoints: {
@@ -34,6 +34,152 @@ export const RiotAuth = {
       accountInfo: 'eloward_riot_account_info',
       summonerInfo: 'eloward_riot_summoner_info',
       rankInfo: 'eloward_riot_rank_info'
+    }
+  },
+  
+  /**
+   * High-level authentication method for popup.js
+   * Initiates the Riot authentication flow and handles the entire process
+   * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
+   * @returns {Promise<object>} - Resolves with user data on success
+   */
+  async authenticate(region) {
+    try {
+      // Map platform region to API region if needed
+      const apiRegion = EloWardConfig.riot.platformRouting[region]?.region || 'americas';
+      
+      // Start authentication flow
+      const authUrl = await this.initAuth(apiRegion);
+      
+      // Open auth window and wait for response
+      const responseData = await this._openAuthWindow(authUrl);
+      
+      if (!responseData || !responseData.code) {
+        throw new Error('Authentication cancelled or failed');
+      }
+      
+      // Complete authentication with the received code
+      const isAuthenticated = await this.completeAuth(responseData.code, responseData.state);
+      
+      if (!isAuthenticated) {
+        throw new Error('Failed to complete authentication');
+      }
+      
+      // Get account info
+      const accountInfo = await this.fetchAccountInfo();
+      
+      // Store auth data in chrome.storage for popup access
+      const userData = {
+        puuid: accountInfo.puuid,
+        riotId: `${accountInfo.gameName}#${accountInfo.tagLine}`,
+        summonerId: (await this.getSummonerInfo())?.id,
+        region: region,
+        platform: EloWardConfig.riot.platformRouting[region]?.platform
+      };
+      
+      // Save to chrome.storage.local
+      chrome.storage.local.set({ riotAuth: userData });
+      
+      return userData;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Opens a popup window for authentication and returns the result
+   * @param {string} authUrl - The authorization URL
+   * @returns {Promise<object>} - The response data containing code and state
+   */
+  _openAuthWindow(authUrl) {
+    return new Promise((resolve, reject) => {
+      // Create a unique message identifier
+      const messageId = `eloward_auth_${Date.now()}`;
+      
+      // Create the authentication window
+      const width = 600;
+      const height = 700;
+      const left = (screen.width - width) / 2;
+      const top = (screen.height - height) / 2;
+      
+      const authWindow = window.open(
+        authUrl,
+        'EloWard Riot Authentication',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+      );
+      
+      if (!authWindow) {
+        reject(new Error('Failed to open authentication window. Please allow popups for this site.'));
+        return;
+      }
+      
+      // Set up message listener for the callback
+      const messageListener = (event) => {
+        // Make sure the message is from our callback page
+        const extensionId = chrome.runtime.id;
+        if (event.origin !== `chrome-extension://${extensionId}`) {
+          return;
+        }
+        
+        const data = event.data;
+        
+        // Check if this is our auth response
+        if (data && data.type === 'eloward_auth_callback') {
+          // Clean up
+          window.removeEventListener('message', messageListener);
+          
+          // Close the auth window
+          if (authWindow) {
+            authWindow.close();
+          }
+          
+          // Resolve with the auth data
+          resolve({
+            code: data.code,
+            state: data.state
+          });
+        }
+      };
+      
+      // Listen for the callback message
+      window.addEventListener('message', messageListener);
+      
+      // Check if window was closed
+      const checkClosed = setInterval(() => {
+        if (!authWindow || authWindow.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', messageListener);
+          resolve(null); // User closed the window
+        }
+      }, 500);
+    });
+  },
+  
+  /**
+   * Logout method for popup.js
+   * Clears all authentication data
+   * @returns {Promise<boolean>} - Resolves with true on success
+   */
+  async logout() {
+    try {
+      // Clear all stored tokens and user data
+      localStorage.removeItem(this.config.storageKeys.accessToken);
+      localStorage.removeItem(this.config.storageKeys.refreshToken);
+      localStorage.removeItem(this.config.storageKeys.tokenExpiry);
+      localStorage.removeItem(this.config.storageKeys.accountInfo);
+      localStorage.removeItem(this.config.storageKeys.summonerInfo);
+      localStorage.removeItem(this.config.storageKeys.rankInfo);
+      
+      // Clear chrome.storage data
+      await new Promise((resolve) => {
+        chrome.storage.local.remove(['riotAuth', 'userRank'], resolve);
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Logout error:', error);
+      return false;
     }
   },
   

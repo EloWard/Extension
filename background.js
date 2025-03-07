@@ -4,7 +4,7 @@ import './js/riotAuth.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated worker URL
+const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -70,28 +70,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => {
         console.error('Error checking streamer subscription:', error);
         sendResponse({ subscribed: false, error: error.message });
-      });
-    
-    return true; // Keep the message channel open for async response
-  }
-  
-  if (message.action === 'complete_auth') {
-    // Complete the authentication flow
-    const { code, state } = message;
-    
-    // Use the RiotAuth module to complete authentication
-    RiotAuth.completeAuth(code, state)
-      .then(() => {
-        // Get account info to display in popup
-        return RiotAuth.fetchAccountInfo();
-      })
-      .then((accountInfo) => {
-        console.log('Authentication successful:', accountInfo);
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        console.error('Error completing authentication:', error);
-        sendResponse({ success: false, error: error.message });
       });
     
     return true; // Keep the message channel open for async response
@@ -178,13 +156,14 @@ function checkStreamerSubscription(streamerName) {
     }
     
     // Call backend API to check subscription
-    fetch(`${API_BASE_URL}/api/subscription/verify?channel=${streamerName}`)
+    // For now, just use the health endpoint since the worker doesn't have a subscription endpoint yet
+    fetch(`${API_BASE_URL}/health`)
       .then(response => {
         if (!response.ok) {
           // If API fails, fall back to mock list
           return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
         }
-        return response.json();
+        return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
       })
       .then(data => {
         resolve(data.subscribed);
@@ -205,24 +184,18 @@ function checkStreamerSubscription(streamerName) {
  */
 function fetchRankFromBackend(username, platform) {
   return new Promise((resolve, reject) => {
-    fetch(`${API_BASE_URL}/api/rank?username=${encodeURIComponent(username)}&platform=${platform}`)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Rank fetch failed: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then(data => {
-        if (data.rank) {
-          resolve(data.rank);
-        } else {
-          // If no rank data, generate mock data
-          generateMockRankData(username, platform, resolve);
-        }
-      })
-      .catch(error => {
-        reject(error);
-      });
+    // Since the worker doesn't have a direct rank fetch endpoint yet,
+    // we'll use mock data for now until the user links their account
+    generateMockRankData(username, platform, (rankData) => {
+      resolve(rankData);
+    });
+    
+    // In a real implementation with authenticated users, we would use:
+    // fetch(`${API_BASE_URL}/riot/league/entries?platform=${platform}&summonerId=${summonerId}`, {
+    //   headers: {
+    //     'Authorization': `Bearer ${token}`
+    //   }
+    // })
   });
 }
 

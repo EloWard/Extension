@@ -3,129 +3,99 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EloWard - Authentication</title>
-  <link rel="stylesheet" href="css/popup.css">
+  <title>EloWard Authentication</title>
   <style>
     body {
-      width: 100%;
+      font-family: 'Inter', sans-serif;
+      background-color: #0A0A0A;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       min-height: 100vh;
       margin: 0;
       padding: 20px;
-      box-sizing: border-box;
-      font-family: 'Inter', sans-serif;
-      background-color: #0E1015;
-      color: #FFFFFF;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    
-    .container {
-      width: 100%;
-      max-width: 400px;
-      padding: 30px;
-      background-color: #1A1E23;
-      border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
       text-align: center;
     }
-    
+    .logo {
+      width: 100px;
+      height: auto;
+      margin-bottom: 20px;
+    }
     h1 {
-      color: #DC2123;
-      margin-bottom: 20px;
+      color: #D9A336;
+      margin-bottom: 10px;
     }
-    
-    .status {
-      font-size: 18px;
-      margin-bottom: 20px;
-    }
-    
-    .success {
-      color: #4CAF50;
-    }
-    
-    .error {
-      color: #F44336;
-    }
-    
-    .message {
-      margin-bottom: 30px;
+    p {
+      margin: 10px 0;
       font-size: 16px;
       line-height: 1.5;
     }
-    
-    .btn {
-      background-color: #DC2123;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 4px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background-color 0.3s;
+    .spinner {
+      margin: 20px auto;
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(217, 163, 54, 0.3);
+      border-radius: 50%;
+      border-top-color: #D9A336;
+      animation: spin 1s ease-in-out infinite;
     }
-    
-    .btn:hover {
-      background-color: #B01B1C;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .success {
+      color: #4CAF50;
+    }
+    .error {
+      color: #FF5252;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>EloWard Authentication</h1>
-    <div id="status" class="status">Processing...</div>
-    <div id="message" class="message">Please wait while we process your authentication...</div>
-    <button id="close-btn" class="btn" style="display: none;">Close Window</button>
+  <img src="images/logo/icon128.png" alt="EloWard Logo" class="logo">
+  <h1>EloWard Authentication</h1>
+  <div id="status-container">
+    <div class="spinner"></div>
+    <p id="status-message">Processing your authentication...</p>
   </div>
 
-  <script type="module">
+  <script>
+    // Parse URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const error = urlParams.get('error');
+    
     document.addEventListener('DOMContentLoaded', () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      const state = params.get('state');
-      const error = params.get('error');
-      
-      const statusElement = document.getElementById('status');
-      const messageElement = document.getElementById('message');
-      const closeButton = document.getElementById('close-btn');
-      
-      // Show close button
-      closeButton.style.display = 'inline-block';
-      closeButton.addEventListener('click', () => {
-        window.close();
-      });
+      const statusContainer = document.getElementById('status-container');
+      const statusMessage = document.getElementById('status-message');
       
       if (error) {
-        // Handle error
-        statusElement.textContent = 'Authentication Failed';
-        statusElement.className = 'status error';
-        messageElement.textContent = `Error: ${error}. Please try again.`;
+        // Handle authentication error
+        statusContainer.innerHTML = '<p class="error">Authentication failed: ' + error + '</p>';
+        setTimeout(() => window.close(), 3000);
         return;
       }
       
-      if (!code || !state) {
-        // Missing parameters
-        statusElement.textContent = 'Authentication Failed';
-        statusElement.className = 'status error';
-        messageElement.textContent = 'Missing required parameters. Please try again.';
-        return;
+      if (code && state) {
+        // Post message to the extension popup
+        window.opener.postMessage({
+          type: 'eloward_auth_callback',
+          code: code,
+          state: state
+        }, `chrome-extension://${chrome.runtime.id}`);
+        
+        // Update UI
+        statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
+        
+        // Close window automatically after 3 seconds
+        setTimeout(() => window.close(), 3000);
+      } else {
+        // No code or state found
+        statusContainer.innerHTML = '<p class="error">Authentication failed: Missing parameters</p>';
+        setTimeout(() => window.close(), 3000);
       }
-      
-      // Complete authentication
-      chrome.runtime.sendMessage(
-        { action: 'complete_auth', code, state },
-        (response) => {
-          if (response && response.success) {
-            statusElement.textContent = 'Authentication Successful!';
-            statusElement.className = 'status success';
-            messageElement.textContent = 'Your League of Legends account has been successfully linked. You can now close this window.';
-          } else {
-            statusElement.textContent = 'Authentication Failed';
-            statusElement.className = 'status error';
-            messageElement.textContent = response?.error || 'An error occurred during authentication. Please try again.';
-          }
-        }
-      );
     });
   </script>
 </body>
