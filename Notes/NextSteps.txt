@@ -38,7 +38,5 @@ Pricing:
     - Streamer Annual: 20% discount for annual payment
     - Viewer Group Discount: 5 viewers can bundle for $3.99/month each
 
-- Monetization Expansion:
-    - API Access: $99/month for third-party developers
-    - White-Label Solution: For tournament organizers and esports broadcasts
-    - In-App Purchases: One-time purchases for special badge themes
+
+ - In-App Purchases: One-time purchases for special badge themes
