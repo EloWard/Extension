@@ -27,13 +27,6 @@ Pricing:
     - Favorite streamer badge for channels you subscribe to
     - Priority badge visibility in busy chats
 
-Pricing Model Options:
-
-- Streamer Subscription Tiers:
-    - Basic: $9.99/month - Core rank badge functionality
-    - Pro: $19.99/month - Additional analytics, customization options
-    - Enterprise: $49.99/month - White-label options, priority support, API access
-
 - User Premium Models:
     - Monthly: $4.99/month for all Pro features
     - Annual: $39.99/year (33% savings)
@@ -45,11 +38,7 @@ Pricing Model Options:
     - Streamer Annual: 20% discount for annual payment
     - Viewer Group Discount: 5 viewers can bundle for $3.99/month each
 
-- Special Programs:
-    - Esports Team Package: Custom pricing for entire organizations
-    - Streamer-Viewer Revenue Share: Streamers get 20% of their viewers' Pro subscriptions
-    - Partner Program: Free for top 100 LoL streamers (marketing strategy)
-    - Early Adopter Discount: 50% off first year for launch partners
+
 
 - Monetization Expansion:
     - API Access: $99/month for third-party developers
