@@ -1,9 +1,10 @@
-/* Modern, clean styling for EloWard extension */
+/* EloWard Popup Styles */
 
 :root {
-  --primary: #D9A336;
-  --primary-dark: #C08226;
-  --background: #1C1E30;
+  --primary: #DC2123;
+  --primary-dark: #B01B1C;
+  --secondary: #D9A336;
+  --background: #0E1015;
   --surface: #22313F;
   --text-primary: #FFFFFF;
   --text-secondary: #A09B8C;
@@ -24,70 +25,86 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
-  color: #FFFFFF;
-  background-color: #0E1015;
-  width: 360px;
-  min-height: 480px;
+  font-family: 'neue-haas-grotesk-display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text-primary);
+  background-color: var(--background);
+  width: 340px;
+  min-height: 420px;
   font-size: 14px;
   line-height: 1.5;
 }
 
 .container {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
 }
 
 /* Header Styling */
 header {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 8px;
 }
 
 .logo-container {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .logo {
-  width: 40px;
-  height: 40px;
-  margin-right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
 }
 
-h1 {
-  margin: 0;
-  font-family: 'Cinzel', serif;
+header h1 {
+  font-size: 20px;
   font-weight: 700;
   color: #DC2123;
-  font-size: 24px;
+  margin: 0;
 }
 
 .subtitle {
-  color: var(--text-secondary);
   font-size: 12px;
-  margin-top: 2px;
+  color: var(--text-secondary);
+  margin-top: 4px;
 }
 
 /* Card Styling */
 .card {
-  background-color: #1A1E23;
-  border-radius: 8px;
+  background-color: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 4px;
+  border: 1px solid var(--border);
 }
 
-h2 {
-  margin: 0 0 12px 0;
-  font-size: 18px;
-  color: #D9A336;
+.card h2 {
+  font-size: 16px;
   font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--primary);
+  font-family: 'Cinzel', serif;
 }
 
-/* Connection Item Styling */
+/* Connection Styling */
 .connection-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.connection-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .connection-info {
@@ -96,73 +113,69 @@ h2 {
 }
 
 .connection-label {
-  font-size: 14px;
-  color: #9AA0A6;
-  margin-bottom: 4px;
+  font-weight: 500;
+  margin-bottom: 2px;
 }
 
 .connection-status {
-  font-size: 16px;
-  font-weight: 600;
-  color: #F44336;
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .connection-status.connected {
-  color: #4CAF50;
+  color: var(--success);
 }
 
-/* Error state for connection status */
 .connection-status.error {
-  color: #e74c3c;
-  font-weight: 600;
+  animation: fadeIn 0.3s ease;
 }
 
 /* Button Styling */
 .btn {
-  background-color: #DC2123;
-  color: white;
+  background-color: var(--primary);
+  color: var(--text-primary);
   border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background-color 0.3s;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.2s, transform 0.1s;
 }
 
 .btn:hover {
-  background-color: #B01B1C;
+  background-color: var(--primary-dark);
+}
+
+.btn:active {
+  transform: scale(0.98);
 }
 
 .btn:disabled {
-  background-color: #6B6F74;
+  background-color: var(--text-secondary);
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
-/* Test button */
-.test-btn {
-  background-color: #2196F3;
-  margin-bottom: 16px;
-  width: 100%;
-}
-
-.test-btn:hover {
-  background-color: #1976D2;
-}
-
-/* Rank Display Styling */
+/* Rank Styling */
 .rank-container {
   display: flex;
   align-items: center;
+  gap: 16px;
   margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .rank-badge {
-  width: 40px;
-  height: 40px;
+  width: 70px;
+  height: 70px;
   background-size: contain;
-  background-repeat: no-repeat;
   background-position: center;
-  margin-right: 12px;
+  background-repeat: no-repeat;
+  position: relative;
+  transform: translateY(-3px);
 }
 
 .rank-info {
@@ -171,60 +184,70 @@ h2 {
 }
 
 .rank-label {
-  font-size: 14px;
-  color: #9AA0A6;
-  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 2px;
 }
 
 .rank-value {
-  font-size: 16px;
   font-weight: 600;
+  font-size: 16px;
+  color: var(--primary);
 }
 
 /* Region Selector Styling */
 .region-selector {
-  display: flex;
-  flex-direction: column;
+  margin-top: 8px;
 }
 
 .region-selector label {
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: #9AA0A6;
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text-primary);
 }
 
 .select-wrapper {
   position: relative;
 }
 
-.select-input {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 4px;
-  background-color: #272B30;
-  color: #FFFFFF;
-  border: 1px solid #3E4248;
-  appearance: none;
-  cursor: pointer;
-}
-
 .select-wrapper::after {
-  content: '▼';
+  content: '';
   position: absolute;
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--text-secondary);
   pointer-events: none;
-  font-size: 12px;
-  color: #9AA0A6;
+}
+
+.select-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-size: 14px;
+  appearance: none;
+  outline: none;
+}
+
+.select-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(217, 163, 54, 0.2);
 }
 
 /* Footer Styling */
 footer {
+  margin-top: auto;
   text-align: center;
-  margin-top: 20px;
-  font-size: 12px;
-  color: #6B6F74;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-top: 8px;
 }
 
 /* Animations */
@@ -234,22 +257,21 @@ footer {
 }
 
 .card {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.3s ease;
 }
 
-/* Guide Card Styling */
+/* Guide Card */
 .guide-card {
-  background-color: var(--background);
-  border: 1px dashed var(--border);
+  padding: 16px;
 }
 
 .guide-list {
-  padding-left: 24px;
-  margin-bottom: 4px;
+  margin-top: 12px;
+  padding-left: 20px;
 }
 
 .guide-list li {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-size: 13px;
   color: var(--text-secondary);
 }
@@ -260,26 +282,40 @@ footer {
 
 /* Tip Card Styling */
 .tip-card {
-  background-color: #2D3035;
+  background-color: var(--surface);
+  border: 1px solid rgba(217, 163, 54, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.tip-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-color: var(--primary);
 }
 
 .tip-content {
-  font-size: 14px;
-  line-height: 1.5;
+  padding: 0 4px;
 }
 
 .tip-content p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .tip-content a {
-  color: #D9A336;
-  font-weight: 600;
+  color: var(--secondary);
   text-decoration: none;
-  transition: color 0.2s ease;
+  font-weight: 600;
+  transition: color 0.2s;
 }
 
 .tip-content a:hover {
-  color: #E5B550;
-  text-decoration: underline;
+  color: var(--primary);
 } 

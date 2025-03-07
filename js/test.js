@@ -1,34 +1,9 @@
-// Test file to verify connection with the Riot RSO worker
+// Test file for Riot RSO authentication flow
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // Add a test button to the extension popup
-  const testButton = document.createElement('button');
-  testButton.textContent = 'Test Worker Connection';
-  testButton.className = 'btn test-btn';
-  document.querySelector('footer').before(testButton);
-  
-  // Add event listener to test button
-  testButton.addEventListener('click', async () => {
-    try {
-      // Test connection to the worker
-      const response = await fetch('https://eloward-riotrso.unleashai-inquiries.workers.dev/health');
-      const data = await response.json();
-      
-      // Show result
-      if (data.status === 'ok') {
-        alert('Connection successful! Worker is online.');
-      } else {
-        alert('Connection successful, but worker returned unexpected response.');
-        console.log('Worker response:', data);
-      }
-    } catch (error) {
-      alert(`Connection failed: ${error.message}`);
-      console.error('Worker connection error:', error);
-    }
-  });
-});
-
-// Function to test the Riot RSO auth flow
+/**
+ * Test the Riot RSO auth flow
+ * @returns {Promise<boolean>} - Whether the flow was initiated successfully
+ */
 export async function testRiotAuthFlow() {
   try {
     // Get the extension ID for the redirect URI
