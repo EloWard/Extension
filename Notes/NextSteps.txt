@@ -38,5 +38,4 @@ Pricing:
     - Streamer Annual: 20% discount for annual payment
     - Viewer Group Discount: 5 viewers can bundle for $3.99/month each
 
-
 - In-App Purchases: One-time purchases for special badge themes
