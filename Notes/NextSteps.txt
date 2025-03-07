@@ -13,3 +13,16 @@ Pricing:
 - Upsell users with Pro features
     - link op.gg
     - Add main champion icon as badge
+    - Customizable badge styles and themes
+    - Profile popover with detailed stats on hover
+    - Match history quick view
+    - Champion mastery information display
+    - Rank history graph (seasonal progression)
+    - Custom badge animations for high ranks
+    - Personal win/loss streak indicator
+    - MMR estimate display
+    - Integration with other game stats (Valorant, TFT)
+    - Viewable match history with other chat users
+    - "Compare with me" feature for direct comparison
+    - Favorite streamer badge for channels you subscribe to
+    - Priority badge visibility in busy chats
