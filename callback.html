@@ -146,7 +146,7 @@
       try {
         window.opener.postMessage({
           type: 'eloward_auth_retry'
-        }, `chrome-extension://${chrome.runtime.id}`);
+        }, '*');
       } catch (error) {
         console.error('Error sending retry message:', error);
       }
@@ -201,7 +201,7 @@
             type: 'eloward_auth_callback',
             code: code,
             state: state
-          }, `chrome-extension://${chrome.runtime.id}`);
+          }, '*');
           
           // Update UI
           statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';

@@ -48,9 +48,9 @@ export const RiotAuth = {
     // API endpoints
     endpoints: {
       // Backend proxy endpoints
-      authInit: '/auth/riot/init',
-      authToken: '/auth/riot/token',
-      tokenRefresh: '/auth/riot/token/refresh',
+      authInit: '/auth/init',
+      authToken: '/auth/token',
+      tokenRefresh: '/auth/token/refresh',
       accountInfo: '/riot/account/me',
       summonerInfo: '/riot/summoner/me',
       leagueEntries: '/riot/league/entries'
@@ -149,9 +149,6 @@ export const RiotAuth = {
     return new Promise((resolve, reject) => {
       console.log('Opening auth window with URL:', authUrl);
       
-      // Create a unique message identifier
-      const messageId = `eloward_auth_${Date.now()}`;
-      
       // Create the authentication window
       const width = 600;
       const height = 700;
@@ -177,25 +174,18 @@ export const RiotAuth = {
       
       // Set up message listener for the callback
       const messageListener = (event) => {
-        // Make sure the message is from our callback page
+        console.log('Received message from:', event.origin);
+        
+        // We'll accept messages from our backend or our extension
         const extensionId = chrome.runtime.id;
-        const expectedOrigin = `chrome-extension://${extensionId}`;
-        
-        console.log('Received message from:', event.origin, 'Expected:', expectedOrigin);
-        
-        if (event.origin !== expectedOrigin) {
-          console.warn('Message origin mismatch:', event.origin, 'Expected:', expectedOrigin);
-          return;
-        }
-        
-        const data = event.data;
-        console.log('Received message data:', data);
+        const extensionOrigin = `chrome-extension://${extensionId}`;
+        const backendOrigin = this.config.proxyBaseUrl;
         
         // Check if this is our auth response
-        if (data && data.type === 'eloward_auth_callback') {
+        if (event.data && event.data.type === 'eloward_auth_callback') {
           console.log('Auth callback received:', { 
-            hasCode: !!data.code, 
-            hasState: !!data.state
+            hasCode: !!event.data.code, 
+            hasState: !!event.data.state
           });
           
           // Clean up
@@ -208,8 +198,8 @@ export const RiotAuth = {
           
           // Resolve with the auth data
           resolve({
-            code: data.code,
-            state: data.state
+            code: event.data.code,
+            state: event.data.state
           });
         }
       };
@@ -248,13 +238,6 @@ export const RiotAuth = {
       // Clear chrome.storage data
       await new Promise((resolve) => {
         chrome.storage.local.remove([
-          this.config.storageKeys.accessToken,
-          this.config.storageKeys.refreshToken,
-          this.config.storageKeys.tokenExpiry,
-          this.config.storageKeys.accountInfo,
-          this.config.storageKeys.summonerInfo,
-          this.config.storageKeys.rankInfo,
-          this.config.storageKeys.authState,
           'riotAuth',
           'userRank'
         ], resolve);
@@ -270,10 +253,10 @@ export const RiotAuth = {
   
   /**
    * Initialize the authentication flow
-   * @param {string} region - The Riot region (e.g., 'na', 'euw')
+   * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
    * @returns {Promise<string>} - The authorization URL
    */
-  async initAuth(region = 'americas') {
+  async initAuth(region = 'na1') {
     try {
       // Generate a random state for security
       const state = this._generateRandomState();
@@ -300,34 +283,16 @@ export const RiotAuth = {
         extensionId
       });
       
-      // The different combinations of scopes we might try
-      const scopeOptions = [
-        // Most specific scope combination for League of Legends
-        'openid offline_access lol-account cpid ban profile',
-        // More generic scope combination
-        'openid offline_access lol-account',
-        // Minimal scope combination
-        'openid offline_access'
-      ];
+      // Request authorization URL from the backend using GET with query parameters
+      const url = new URL(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`);
+      url.searchParams.append('redirect_uri', redirectUri);
+      url.searchParams.append('state', state);
       
-      // Log the scope options we're trying
-      console.log('Will try these scope combinations:', scopeOptions);
-      
-      // First attempt - use the most comprehensive scopes
-      const scopes = scopeOptions[0];
-      
-      // Request authorization URL from the backend
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
-        method: 'POST',
+      const response = await fetch(url.toString(), {
+        method: 'GET',
         headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          region,
-          state,
-          redirectUri,
-          scopes
-        })
+          'Accept': 'application/json'
+        }
       });
       
       if (!response.ok) {
@@ -388,8 +353,7 @@ export const RiotAuth = {
         },
         body: JSON.stringify({
           code,
-          state,
-          redirectUri
+          redirect_uri: redirectUri
         })
       });
       
