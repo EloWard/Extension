@@ -35,6 +35,31 @@ const ACTIVE_STREAMERS = [
   'tyler1'
 ];
 
+// Listen for OAuth redirects from Riot
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  // Check if this is a navigation to our callback URL
+  if (details.url.includes('chromiumapp.org/callback')) {
+    console.log('Detected OAuth redirect to callback URL:', details.url);
+    
+    // Parse the URL to get the code and state
+    const url = new URL(details.url);
+    const code = url.searchParams.get('code');
+    const state = url.searchParams.get('state');
+    
+    // Forward the auth callback to the opener window
+    try {
+      console.log('Sending auth callback message with code and state');
+      chrome.runtime.sendMessage({
+        type: 'eloward_auth_callback',
+        code: code,
+        state: state
+      });
+    } catch (error) {
+      console.error('Error forwarding auth data:', error);
+    }
+  }
+});
+
 // Initialize
 chrome.runtime.onInstalled.addListener(() => {
   console.log('EloWard extension installed');

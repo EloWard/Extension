@@ -131,8 +131,7 @@ export const RiotAuth = {
    */
   _openAuthWindow(authUrl) {
     return new Promise((resolve, reject) => {
-      // Create a unique message identifier
-      const messageId = `eloward_auth_${Date.now()}`;
+      console.log('Opening auth window with URL:', authUrl);
       
       // Create the authentication window
       const width = 600;
@@ -151,42 +150,39 @@ export const RiotAuth = {
         return;
       }
       
-      // Set up message listener for the callback
-      const messageListener = (event) => {
-        // Make sure the message is from our callback page
-        const extensionId = chrome.runtime.id;
-        if (event.origin !== `chrome-extension://${extensionId}`) {
-          return;
-        }
-        
-        const data = event.data;
+      // Set up message listener for background script runtime messages
+      const messageListener = (message) => {
+        console.log('Received message:', message);
         
         // Check if this is our auth response
-        if (data && data.type === 'eloward_auth_callback') {
+        if (message && message.type === 'eloward_auth_callback') {
           // Clean up
-          window.removeEventListener('message', messageListener);
+          chrome.runtime.onMessage.removeListener(messageListener);
+          
+          console.log('Received auth callback with code', message.code ? 'present' : 'missing');
           
           // Close the auth window
-          if (authWindow) {
+          if (authWindow && !authWindow.closed) {
             authWindow.close();
           }
           
           // Resolve with the auth data
           resolve({
-            code: data.code,
-            state: data.state
+            code: message.code,
+            state: message.state
           });
         }
       };
       
-      // Listen for the callback message
-      window.addEventListener('message', messageListener);
+      // Listen for the callback message from the background script
+      chrome.runtime.onMessage.addListener(messageListener);
       
       // Check if window was closed
       const checkClosed = setInterval(() => {
         if (!authWindow || authWindow.closed) {
           clearInterval(checkClosed);
-          window.removeEventListener('message', messageListener);
+          chrome.runtime.onMessage.removeListener(messageListener);
+          console.log('Auth window was closed by user');
           resolve(null); // User closed the window
         }
       }, 500);
@@ -235,7 +231,10 @@ export const RiotAuth = {
       
       // Get the extension ID for the redirect URI
       const extensionId = chrome.runtime.id;
-      const redirectUri = `chrome-extension://${extensionId}/callback.html`;
+      
+      // The redirect URI must be properly formatted for chrome extensions
+      // Use the format recommended by Chrome for extension redirects
+      const redirectUri = `https://${extensionId}.chromiumapp.org/callback`;
       
       // For debugging - log values we're sending
       console.log('Auth Init Request:', {
@@ -253,7 +252,7 @@ export const RiotAuth = {
         body: JSON.stringify({
           region,
           state,
-          redirectUri: encodeURI(redirectUri)
+          redirectUri: redirectUri // Use the properly formatted URI
         })
       });
       
@@ -292,7 +291,8 @@ export const RiotAuth = {
       
       // Get the extension ID for the redirect URI
       const extensionId = chrome.runtime.id;
-      const redirectUri = `chrome-extension://${extensionId}/callback.html`;
+      // Use the same redirect URI format as in initAuth
+      const redirectUri = `https://${extensionId}.chromiumapp.org/callback`;
       
       console.log('Exchanging code for token with parameters:', {
         code: code ? 'present' : 'missing',
