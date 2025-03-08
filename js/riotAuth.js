@@ -9,6 +9,36 @@ import { EloWardConfig } from './config.js';
  * Note: This implementation uses the public client flow which only requires a client ID.
  */
 
+// Safe localStorage wrapper to handle cases where localStorage is not available (service workers)
+const safeStorage = {
+  getItem: (key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      console.warn('localStorage not available, falling back to chrome.storage');
+      return null;
+    }
+  },
+  setItem: (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.warn('localStorage not available, falling back to chrome.storage');
+      return false;
+    }
+  },
+  removeItem: (key) => {
+    try {
+      localStorage.removeItem(key);
+      return true;
+    } catch (error) {
+      console.warn('localStorage not available');
+      return false;
+    }
+  }
+};
+
 export const RiotAuth = {
   // Riot RSO Configuration
   config: {
@@ -33,7 +63,8 @@ export const RiotAuth = {
       tokenExpiry: 'eloward_riot_token_expiry',
       accountInfo: 'eloward_riot_account_info',
       summonerInfo: 'eloward_riot_summoner_info',
-      rankInfo: 'eloward_riot_rank_info'
+      rankInfo: 'eloward_riot_rank_info',
+      authState: 'eloward_auth_state'
     }
   },
   
@@ -45,6 +76,28 @@ export const RiotAuth = {
    */
   async authenticate(region) {
     try {
+      // Check if already authenticated
+      const isAlreadyAuthenticated = await this.isAuthenticated();
+      if (isAlreadyAuthenticated) {
+        console.log('User is already authenticated, retrieving existing data');
+        
+        // Get account info
+        const accountInfo = await this.getAccountInfo();
+        
+        if (accountInfo) {
+          // Return existing user data
+          const userData = {
+            puuid: accountInfo.puuid,
+            riotId: `${accountInfo.gameName}#${accountInfo.tagLine}`,
+            summonerId: (await this.getSummonerInfo())?.id,
+            region: region,
+            platform: EloWardConfig.riot.platformRouting[region]?.platform
+          };
+          
+          return userData;
+        }
+      }
+      
       // Map platform region to API region if needed
       const apiRegion = EloWardConfig.riot.platformRouting[region]?.region || 'americas';
       
@@ -183,19 +236,31 @@ export const RiotAuth = {
    */
   async logout() {
     try {
-      // Clear all stored tokens and user data
-      localStorage.removeItem(this.config.storageKeys.accessToken);
-      localStorage.removeItem(this.config.storageKeys.refreshToken);
-      localStorage.removeItem(this.config.storageKeys.tokenExpiry);
-      localStorage.removeItem(this.config.storageKeys.accountInfo);
-      localStorage.removeItem(this.config.storageKeys.summonerInfo);
-      localStorage.removeItem(this.config.storageKeys.rankInfo);
+      // Clear all stored tokens and user data from localStorage
+      safeStorage.removeItem(this.config.storageKeys.accessToken);
+      safeStorage.removeItem(this.config.storageKeys.refreshToken);
+      safeStorage.removeItem(this.config.storageKeys.tokenExpiry);
+      safeStorage.removeItem(this.config.storageKeys.accountInfo);
+      safeStorage.removeItem(this.config.storageKeys.summonerInfo);
+      safeStorage.removeItem(this.config.storageKeys.rankInfo);
+      safeStorage.removeItem(this.config.storageKeys.authState);
       
       // Clear chrome.storage data
       await new Promise((resolve) => {
-        chrome.storage.local.remove(['riotAuth', 'userRank'], resolve);
+        chrome.storage.local.remove([
+          this.config.storageKeys.accessToken,
+          this.config.storageKeys.refreshToken,
+          this.config.storageKeys.tokenExpiry,
+          this.config.storageKeys.accountInfo,
+          this.config.storageKeys.summonerInfo,
+          this.config.storageKeys.rankInfo,
+          this.config.storageKeys.authState,
+          'riotAuth',
+          'userRank'
+        ], resolve);
       });
       
+      console.log('Logged out successfully');
       return true;
     } catch (error) {
       console.error('Logout error:', error);
@@ -213,8 +278,16 @@ export const RiotAuth = {
       // Generate a random state for security
       const state = this._generateRandomState();
       
-      // Store the state in local storage for verification later
-      localStorage.setItem('eloward_auth_state', state);
+      // Store the state in storage for verification later
+      const stateStored = safeStorage.setItem(this.config.storageKeys.authState, state);
+      
+      // If localStorage is not available, also store in chrome.storage
+      if (!stateStored) {
+        await new Promise((resolve) => {
+          chrome.storage.local.set({ [this.config.storageKeys.authState]: state }, resolve);
+        });
+        console.log('Stored auth state in chrome.storage.local');
+      }
       
       // Get the extension ID for the redirect URI
       const extensionId = chrome.runtime.id;
@@ -281,7 +354,17 @@ export const RiotAuth = {
   async completeAuth(code, state) {
     try {
       // Verify the state parameter
-      const storedState = localStorage.getItem('eloward_auth_state');
+      let storedState = safeStorage.getItem(this.config.storageKeys.authState);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!storedState) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([this.config.storageKeys.authState], resolve);
+        });
+        storedState = data[this.config.storageKeys.authState];
+        console.log('Retrieved auth state from chrome.storage.local');
+      }
+      
       if (state !== storedState) {
         console.error('State mismatch', { received: state, stored: storedState });
         throw new Error('State mismatch. Possible CSRF attack.');
@@ -323,13 +406,25 @@ export const RiotAuth = {
         expiresIn: tokens.expires_in
       });
       
-      // Store tokens
-      localStorage.setItem(this.config.storageKeys.accessToken, tokens.access_token);
-      localStorage.setItem(this.config.storageKeys.refreshToken, tokens.refresh_token);
+      // Store tokens in both localStorage (if available) and chrome.storage
+      const accessTokenStored = safeStorage.setItem(this.config.storageKeys.accessToken, tokens.access_token);
+      const refreshTokenStored = safeStorage.setItem(this.config.storageKeys.refreshToken, tokens.refresh_token);
       
       // Calculate expiry time (current time + expires_in seconds)
       const expiryTime = Date.now() + (tokens.expires_in * 1000);
-      localStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
+      const expiryStored = safeStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
+      
+      // If any localStorage operations failed, store in chrome.storage
+      if (!accessTokenStored || !refreshTokenStored || !expiryStored) {
+        await new Promise((resolve) => {
+          chrome.storage.local.set({
+            [this.config.storageKeys.accessToken]: tokens.access_token,
+            [this.config.storageKeys.refreshToken]: tokens.refresh_token,
+            [this.config.storageKeys.tokenExpiry]: expiryTime.toString()
+          }, resolve);
+        });
+        console.log('Stored tokens in chrome.storage.local');
+      }
       
       return true;
     } catch (error) {
@@ -340,21 +435,46 @@ export const RiotAuth = {
   
   /**
    * Check if the user is authenticated
-   * @returns {boolean} - Whether the user is authenticated
+   * @returns {Promise<boolean>} - Whether the user is authenticated
    */
-  isAuthenticated() {
-    const accessToken = localStorage.getItem(this.config.storageKeys.accessToken);
-    const expiryTime = localStorage.getItem(this.config.storageKeys.tokenExpiry);
-    
-    if (!accessToken || !expiryTime) {
+  async isAuthenticated() {
+    try {
+      // Try to get from localStorage first
+      let accessToken = safeStorage.getItem(this.config.storageKeys.accessToken);
+      let tokenExpiry = safeStorage.getItem(this.config.storageKeys.tokenExpiry);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!accessToken || !tokenExpiry) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([
+            this.config.storageKeys.accessToken,
+            this.config.storageKeys.tokenExpiry
+          ], resolve);
+        });
+        
+        if (data) {
+          accessToken = data[this.config.storageKeys.accessToken];
+          tokenExpiry = data[this.config.storageKeys.tokenExpiry];
+          
+          if (accessToken) {
+            console.log('Retrieved token from chrome.storage.local for authentication check');
+          }
+        }
+      }
+      
+      if (!accessToken || !tokenExpiry) {
+        return false;
+      }
+      
+      // Check if the token is expired
+      const now = Date.now();
+      const expiry = parseInt(tokenExpiry, 10);
+      
+      return now < expiry;
+    } catch (error) {
+      console.error('Error checking authentication status:', error);
       return false;
     }
-    
-    // Check if the token is expired
-    const now = Date.now();
-    const expiry = parseInt(expiryTime, 10);
-    
-    return now < expiry;
   },
   
   /**
@@ -362,65 +482,29 @@ export const RiotAuth = {
    * @returns {Promise<boolean>} - Whether the token was refreshed successfully
    */
   async refreshTokenIfNeeded() {
-    if (this.isAuthenticated()) {
-      return true; // Token is still valid
-    }
-    
-    const refreshToken = localStorage.getItem(this.config.storageKeys.refreshToken);
-    if (!refreshToken) {
-      return false; // No refresh token available
-    }
-    
     try {
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.tokenRefresh}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          refreshToken
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to refresh token: ${response.status}`);
-      }
-      
-      const tokenData = await response.json();
-      
-      // Store the new tokens
-      localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
-      localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
-      
-      // Calculate and store the new expiry time
-      const expiryTime = Date.now() + (tokenData.expires_in * 1000);
-      localStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
-      
+      // Try to get a valid token, which will refresh if needed
+      await this.getValidToken();
       return true;
     } catch (error) {
-      console.error('Error refreshing token:', error);
+      console.error('Error refreshing token if needed:', error);
       return false;
     }
   },
   
   /**
-   * Fetch the user's Riot account information
+   * Fetches the user's Riot account information
    * @returns {Promise<object>} - The account information
    */
   async fetchAccountInfo() {
     try {
-      // Ensure we have a valid token
-      const isValid = await this.refreshTokenIfNeeded();
-      if (!isValid) {
-        throw new Error('Not authenticated');
-      }
+      // Get a valid token
+      const token = await this.getValidToken();
       
-      const accessToken = localStorage.getItem(this.config.storageKeys.accessToken);
-      
-      // Fetch account information from Riot API via our backend
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}?region=americas`, {
+      // Call the account info endpoint
+      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
@@ -430,15 +514,22 @@ export const RiotAuth = {
       
       const accountInfo = await response.json();
       
-      // Store the account information
-      localStorage.setItem(this.config.storageKeys.accountInfo, JSON.stringify(accountInfo));
+      // Store the account info
+      const infoStored = safeStorage.setItem(this.config.storageKeys.accountInfo, JSON.stringify(accountInfo));
       
-      // Fetch summoner information
-      await this.fetchSummonerInfo(accountInfo.puuid);
+      // If localStorage operation failed, store in chrome.storage
+      if (!infoStored) {
+        await new Promise((resolve) => {
+          chrome.storage.local.set({
+            [this.config.storageKeys.accountInfo]: JSON.stringify(accountInfo)
+          }, resolve);
+        });
+        console.log('Stored account info in chrome.storage.local');
+      }
       
       return accountInfo;
     } catch (error) {
-      console.error('Error fetching account information:', error);
+      console.error('Error fetching account info:', error);
       throw error;
     }
   },
@@ -450,18 +541,13 @@ export const RiotAuth = {
    */
   async fetchSummonerInfo(puuid) {
     try {
-      // Ensure we have a valid token
-      const isValid = await this.refreshTokenIfNeeded();
-      if (!isValid) {
-        throw new Error('Not authenticated');
-      }
-      
-      const accessToken = localStorage.getItem(this.config.storageKeys.accessToken);
+      // Get a valid token
+      const token = await this.getValidToken();
       
       // Fetch summoner information from Riot API via our backend
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}?region=na`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
@@ -471,11 +557,18 @@ export const RiotAuth = {
       
       const summonerInfo = await response.json();
       
-      // Store the summoner information
-      localStorage.setItem(this.config.storageKeys.summonerInfo, JSON.stringify(summonerInfo));
+      // Store the summoner info
+      const infoStored = safeStorage.setItem(this.config.storageKeys.summonerInfo, JSON.stringify(summonerInfo));
       
-      // Fetch rank information
-      await this.fetchRankInfo(summonerInfo.id);
+      // If localStorage operation failed, store in chrome.storage
+      if (!infoStored) {
+        await new Promise((resolve) => {
+          chrome.storage.local.set({
+            [this.config.storageKeys.summonerInfo]: JSON.stringify(summonerInfo)
+          }, resolve);
+        });
+        console.log('Stored summoner info in chrome.storage.local');
+      }
       
       return summonerInfo;
     } catch (error) {
@@ -491,18 +584,13 @@ export const RiotAuth = {
    */
   async fetchRankInfo(summonerId) {
     try {
-      // Ensure we have a valid token
-      const isValid = await this.refreshTokenIfNeeded();
-      if (!isValid) {
-        throw new Error('Not authenticated');
-      }
-      
-      const accessToken = localStorage.getItem(this.config.storageKeys.accessToken);
+      // Get a valid token
+      const token = await this.getValidToken();
       
       // Fetch rank information from Riot API via our backend
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}?region=na&summonerId=${summonerId}`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
@@ -515,8 +603,18 @@ export const RiotAuth = {
       // Find the solo queue rank
       const soloQueueRank = rankEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null;
       
-      // Store the rank information
-      localStorage.setItem(this.config.storageKeys.rankInfo, JSON.stringify(soloQueueRank));
+      // Store the rank info
+      const infoStored = safeStorage.setItem(this.config.storageKeys.rankInfo, JSON.stringify(soloQueueRank));
+      
+      // If localStorage operation failed, store in chrome.storage
+      if (!infoStored) {
+        await new Promise((resolve) => {
+          chrome.storage.local.set({
+            [this.config.storageKeys.rankInfo]: JSON.stringify(soloQueueRank)
+          }, resolve);
+        });
+        console.log('Stored rank info in chrome.storage.local');
+      }
       
       return soloQueueRank;
     } catch (error) {
@@ -526,43 +624,95 @@ export const RiotAuth = {
   },
   
   /**
-   * Get the user's stored account information
-   * @returns {object|null} - The account information or null if not available
+   * Gets the stored account information
+   * @returns {Promise<object|null>} - The account information or null if not available
    */
-  getAccountInfo() {
-    const accountInfoStr = localStorage.getItem(this.config.storageKeys.accountInfo);
-    return accountInfoStr ? JSON.parse(accountInfoStr) : null;
+  async getAccountInfo() {
+    try {
+      // Try to get from localStorage first
+      let accountInfoStr = safeStorage.getItem(this.config.storageKeys.accountInfo);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!accountInfoStr) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([this.config.storageKeys.accountInfo], resolve);
+        });
+        
+        if (data && data[this.config.storageKeys.accountInfo]) {
+          accountInfoStr = data[this.config.storageKeys.accountInfo];
+          console.log('Retrieved account info from chrome.storage.local');
+        }
+      }
+      
+      return accountInfoStr ? JSON.parse(accountInfoStr) : null;
+    } catch (error) {
+      console.error('Error getting account info:', error);
+      return null;
+    }
   },
   
   /**
-   * Get the user's stored summoner information
-   * @returns {object|null} - The summoner information or null if not available
+   * Gets the stored summoner information
+   * @returns {Promise<object|null>} - The summoner information or null if not available
    */
-  getSummonerInfo() {
-    const summonerInfoStr = localStorage.getItem(this.config.storageKeys.summonerInfo);
-    return summonerInfoStr ? JSON.parse(summonerInfoStr) : null;
+  async getSummonerInfo() {
+    try {
+      // Try to get from localStorage first
+      let summonerInfoStr = safeStorage.getItem(this.config.storageKeys.summonerInfo);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!summonerInfoStr) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([this.config.storageKeys.summonerInfo], resolve);
+        });
+        
+        if (data && data[this.config.storageKeys.summonerInfo]) {
+          summonerInfoStr = data[this.config.storageKeys.summonerInfo];
+          console.log('Retrieved summoner info from chrome.storage.local');
+        }
+      }
+      
+      return summonerInfoStr ? JSON.parse(summonerInfoStr) : null;
+    } catch (error) {
+      console.error('Error getting summoner info:', error);
+      return null;
+    }
   },
   
   /**
-   * Get the user's stored rank information
-   * @returns {object|null} - The rank information or null if not available
+   * Gets the stored rank information
+   * @returns {Promise<object|null>} - The rank information or null if not available
    */
-  getRankInfo() {
-    const rankInfoStr = localStorage.getItem(this.config.storageKeys.rankInfo);
-    return rankInfoStr ? JSON.parse(rankInfoStr) : null;
+  async getRankInfo() {
+    try {
+      // Try to get from localStorage first
+      let rankInfoStr = safeStorage.getItem(this.config.storageKeys.rankInfo);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!rankInfoStr) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([this.config.storageKeys.rankInfo], resolve);
+        });
+        
+        if (data && data[this.config.storageKeys.rankInfo]) {
+          rankInfoStr = data[this.config.storageKeys.rankInfo];
+          console.log('Retrieved rank info from chrome.storage.local');
+        }
+      }
+      
+      return rankInfoStr ? JSON.parse(rankInfoStr) : null;
+    } catch (error) {
+      console.error('Error getting rank info:', error);
+      return null;
+    }
   },
   
   /**
-   * Sign out the user
+   * Sign out the user (alias for logout)
+   * @returns {Promise<boolean>} - Resolves with true on success
    */
-  signOut() {
-    // Remove all stored authentication data
-    localStorage.removeItem(this.config.storageKeys.accessToken);
-    localStorage.removeItem(this.config.storageKeys.refreshToken);
-    localStorage.removeItem(this.config.storageKeys.tokenExpiry);
-    localStorage.removeItem(this.config.storageKeys.accountInfo);
-    localStorage.removeItem(this.config.storageKeys.summonerInfo);
-    localStorage.removeItem(this.config.storageKeys.rankInfo);
+  async signOut() {
+    return await this.logout();
   },
   
   /**
@@ -574,5 +724,124 @@ export const RiotAuth = {
     const array = new Uint8Array(16);
     crypto.getRandomValues(array);
     return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  },
+  
+  /**
+   * Gets a valid access token, refreshing if necessary
+   * @returns {Promise<string>} - The access token
+   */
+  async getValidToken() {
+    try {
+      // Check if we have a token
+      let accessToken = safeStorage.getItem(this.config.storageKeys.accessToken);
+      let tokenExpiry = safeStorage.getItem(this.config.storageKeys.tokenExpiry);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!accessToken || !tokenExpiry) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([
+            this.config.storageKeys.accessToken,
+            this.config.storageKeys.tokenExpiry
+          ], resolve);
+        });
+        
+        accessToken = data[this.config.storageKeys.accessToken];
+        tokenExpiry = data[this.config.storageKeys.tokenExpiry];
+        
+        if (accessToken) {
+          console.log('Retrieved token from chrome.storage.local');
+        }
+      }
+      
+      if (!accessToken) {
+        throw new Error('No access token found. Please authenticate first.');
+      }
+      
+      // Check if token is expired
+      const now = Date.now();
+      const expiryTime = parseInt(tokenExpiry, 10);
+      
+      // If token is expired or will expire in the next 5 minutes, refresh it
+      if (now >= expiryTime - 5 * 60 * 1000) {
+        console.log('Token expired or will expire soon. Refreshing...');
+        return await this.refreshToken();
+      }
+      
+      return accessToken;
+    } catch (error) {
+      console.error('Error getting valid token:', error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Refreshes the access token using the refresh token
+   * @returns {Promise<string>} - The new access token
+   */
+  async refreshToken() {
+    try {
+      // Get the refresh token
+      let refreshToken = safeStorage.getItem(this.config.storageKeys.refreshToken);
+      
+      // If not found in localStorage, try chrome.storage
+      if (!refreshToken) {
+        const data = await new Promise((resolve) => {
+          chrome.storage.local.get([this.config.storageKeys.refreshToken], resolve);
+        });
+        
+        refreshToken = data[this.config.storageKeys.refreshToken];
+        
+        if (refreshToken) {
+          console.log('Retrieved refresh token from chrome.storage.local');
+        }
+      }
+      
+      if (!refreshToken) {
+        throw new Error('No refresh token found. Please authenticate first.');
+      }
+      
+      // Call the token refresh endpoint
+      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.tokenRefresh}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to refresh token: ${response.status}`);
+      }
+      
+      const tokens = await response.json();
+      
+      // Store the new tokens
+      const accessTokenStored = safeStorage.setItem(this.config.storageKeys.accessToken, tokens.access_token);
+      
+      // Store the new refresh token if provided
+      if (tokens.refresh_token) {
+        const refreshTokenStored = safeStorage.setItem(this.config.storageKeys.refreshToken, tokens.refresh_token);
+      }
+      
+      // Calculate and store the new expiry time
+      const expiryTime = Date.now() + (tokens.expires_in * 1000);
+      const expiryStored = safeStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
+      
+      // If any localStorage operations failed, store in chrome.storage
+      await new Promise((resolve) => {
+        chrome.storage.local.set({
+          [this.config.storageKeys.accessToken]: tokens.access_token,
+          ...(tokens.refresh_token && { [this.config.storageKeys.refreshToken]: tokens.refresh_token }),
+          [this.config.storageKeys.tokenExpiry]: expiryTime.toString()
+        }, resolve);
+      });
+      
+      return tokens.access_token;
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      throw error;
+    }
   }
 }; 

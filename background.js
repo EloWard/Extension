@@ -67,22 +67,20 @@ function clearAllStoredData() {
     console.log('Cleared all chrome.storage.local data');
   });
   
-  // Clear localStorage for any extension pages
-  chrome.runtime.sendMessage({ action: 'clear_local_storage' });
-  
-  // Try to clear Riot auth data
+  // Try to send a message to any open extension pages
+  // This will fail silently if no receivers exist
   try {
-    localStorage.removeItem('eloward_riot_access_token');
-    localStorage.removeItem('eloward_riot_refresh_token');
-    localStorage.removeItem('eloward_riot_token_expiry');
-    localStorage.removeItem('eloward_riot_account_info');
-    localStorage.removeItem('eloward_riot_summoner_info');
-    localStorage.removeItem('eloward_riot_rank_info');
-    localStorage.removeItem('eloward_auth_state');
-    console.log('Cleared Riot auth data from localStorage');
+    chrome.runtime.sendMessage({ action: 'clear_local_storage' })
+      .catch(error => {
+        // It's normal for this to fail if no popup is open to receive the message
+        console.log('No receivers for clear_local_storage message (this is normal if popup is closed)');
+      });
   } catch (error) {
-    console.error('Error clearing localStorage:', error);
+    console.log('No receivers for clear_local_storage message (this is normal if popup is closed)');
   }
+  
+  // Note: Service workers don't have access to localStorage
+  // We'll handle localStorage clearing in the popup instead
 }
 
 // Handle messages from popup and content scripts
