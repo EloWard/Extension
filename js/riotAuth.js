@@ -158,6 +158,58 @@ export const RiotAuth = {
       const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
       console.log('Window features:', windowFeatures);
       
+      // Try using chrome.identity API first if available
+      if (chrome.identity && chrome.identity.launchWebAuthFlow) {
+        console.log('Using chrome.identity.launchWebAuthFlow for authentication');
+        
+        chrome.identity.launchWebAuthFlow({
+          url: authUrl,
+          interactive: true
+        }, (responseUrl) => {
+          if (chrome.runtime.lastError) {
+            console.error('Auth flow error:', chrome.runtime.lastError);
+            reject(new Error(`Auth flow error: ${chrome.runtime.lastError.message}`));
+            return;
+          }
+          
+          if (!responseUrl) {
+            console.error('No response URL received');
+            reject(new Error('Authentication failed or was cancelled'));
+            return;
+          }
+          
+          console.log('Auth response received:', responseUrl);
+          
+          // Parse the response URL
+          const url = new URL(responseUrl);
+          const code = url.searchParams.get('code');
+          const state = url.searchParams.get('state');
+          const error = url.searchParams.get('error');
+          
+          if (error) {
+            console.error('Auth error:', error);
+            reject(new Error(`Authentication error: ${error}`));
+            return;
+          }
+          
+          if (!code) {
+            console.error('No code in response URL');
+            reject(new Error('No authorization code received'));
+            return;
+          }
+          
+          resolve({
+            code,
+            state
+          });
+        });
+        
+        return;
+      }
+      
+      // Fallback to window.open method
+      console.log('Falling back to window.open method for authentication');
+      
       const authWindow = window.open(
         authUrl,
         'EloWard Riot Authentication',
@@ -216,6 +268,16 @@ export const RiotAuth = {
           resolve(null); // User closed the window
         }
       }, 500);
+      
+      // Set a timeout to prevent hanging if something goes wrong
+      setTimeout(() => {
+        clearInterval(checkClosed);
+        window.removeEventListener('message', messageListener);
+        console.log('Auth timeout reached');
+        
+        // Don't close the window automatically, let the user see any error messages
+        reject(new Error('Authentication timed out. Please check the authentication window for errors.'));
+      }, 300000); // 5 minutes timeout
     });
   },
   
@@ -302,7 +364,39 @@ export const RiotAuth = {
       }
       
       const data = await response.json();
+      
+      // Verify the authUrl is properly formed
+      if (!data.authUrl || !data.authUrl.includes('auth.riotgames.com')) {
+        console.error('Invalid auth URL received:', data);
+        throw new Error('Invalid authentication URL received from server');
+      }
+      
+      // Log the full URL for debugging
       console.log('Auth URL received:', data.authUrl);
+      
+      // Ensure the URL has all required parameters
+      const authUrlObj = new URL(data.authUrl);
+      const requiredParams = ['client_id', 'redirect_uri', 'response_type', 'scope', 'state'];
+      const missingParams = requiredParams.filter(param => !authUrlObj.searchParams.has(param));
+      
+      if (missingParams.length > 0) {
+        console.error('Auth URL is missing required parameters:', missingParams);
+        console.error('Current params:', Object.fromEntries(authUrlObj.searchParams.entries()));
+        
+        // Try to fix the URL if possible
+        if (!authUrlObj.searchParams.has('response_type')) {
+          authUrlObj.searchParams.append('response_type', 'code');
+        }
+        if (!authUrlObj.searchParams.has('scope')) {
+          authUrlObj.searchParams.append('scope', 'openid offline_access lol-account cpid');
+        }
+        if (!authUrlObj.searchParams.has('state') && state) {
+          authUrlObj.searchParams.append('state', state);
+        }
+        
+        return authUrlObj.toString();
+      }
+      
       return data.authUrl;
     } catch (error) {
       console.error('Error initializing authentication:', error);
