@@ -144,31 +144,11 @@
       window.close();
       // Notify the popup to retry authentication
       try {
-        window.opener.postMessage({
-          type: 'eloward_auth_retry'
-        }, '*');
+        chrome.runtime.sendMessage({
+          action: 'initiate_riot_auth'
+        });
       } catch (error) {
         console.error('Error sending retry message:', error);
-      }
-    }
-    
-    // Function to send message to extension
-    function sendMessageToExtension(data) {
-      try {
-        // Try window.opener first (for popup flow)
-        if (window.opener) {
-          console.log('Sending message to opener window');
-          window.opener.postMessage(data, '*');
-          return true;
-        }
-        
-        // Try chrome.runtime.sendMessage as fallback (for chrome.identity flow)
-        console.log('Sending message via chrome.runtime.sendMessage');
-        chrome.runtime.sendMessage(data);
-        return true;
-      } catch (error) {
-        console.error('Error sending message:', error);
-        return false;
       }
     }
     
@@ -218,25 +198,30 @@
       if (code && state) {
         console.log('Sending message to extension with auth code and state');
         
-        const messageSent = sendMessageToExtension({
-          type: 'eloward_auth_callback',
+        // Send the code and state to the background script
+        chrome.runtime.sendMessage({
+          action: 'eloward_auth_callback',
           code: code,
           state: state
-        });
-        
-        if (messageSent) {
-          // Update UI
-          statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
+        }, (response) => {
+          console.log('Received response from background script:', response);
           
-          // Close window automatically after 3 seconds
-          setTimeout(() => window.close(), 3000);
-        } else {
-          // Message sending failed
-          statusContainer.innerHTML = `<p class="error">Error communicating with extension</p>
-                                     <p>Could not send authentication data back to the extension.</p>`;
-          retryButton.style.display = 'block';
-          setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
-        }
+          if (response && response.success) {
+            // Update UI
+            statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
+            
+            // Close window automatically after 3 seconds
+            setTimeout(() => window.close(), 3000);
+          } else {
+            // Authentication failed
+            const errorMessage = response && response.error ? response.error : 'Unknown error';
+            statusContainer.innerHTML = `<p class="error">Authentication failed</p><p>${errorMessage}</p>`;
+            retryButton.style.display = 'block';
+            
+            // Keep window open longer to allow debugging
+            setTimeout(() => window.close(), 30000);
+          }
+        });
       } else {
         // No code or state found
         console.error('Missing authentication parameters');
