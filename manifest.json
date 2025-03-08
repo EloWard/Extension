@@ -19,8 +19,7 @@
   "permissions": [
     "storage",
     "identity",
-    "scripting",
-    "webNavigation"
+    "scripting"
   ],
   "host_permissions": [
     "https://*.twitch.tv/*",
@@ -28,8 +27,7 @@
     "https://ddragon.leagueoflegends.com/*",
     "https://id.twitch.tv/*",
     "https://auth.riotgames.com/*",
-    "https://eloward-riotrso.unleashai-inquiries.workers.dev/*",
-    "https://*.chromiumapp.org/callback*"
+    "https://eloward-riotrso.unleashai-inquiries.workers.dev/*"
   ],
   "content_scripts": [
     {
