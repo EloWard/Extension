@@ -16,6 +16,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
+  
+  // Listen for messages from the auth window
+  window.addEventListener('message', function(event) {
+    // Verify origin (from our extension)
+    if (event.origin !== `chrome-extension://${chrome.runtime.id}`) {
+      return;
+    }
+    
+    const data = event.data;
+    console.log('Received message in popup:', data);
+    
+    // Handle retry authentication
+    if (data && data.type === 'eloward_auth_retry') {
+      console.log('Retrying authentication...');
+      connectRiotAccount();
+    }
+  });
 
   // Functions
   function checkAuthStatus() {

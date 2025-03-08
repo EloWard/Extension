@@ -237,8 +237,8 @@ export const RiotAuth = {
           region,
           state,
           redirectUri,
-          // Add the required scopes for League of Legends
-          scopes: 'openid offline_access lol.read summoner cpid ban profile'
+          // Use the correct format for Riot RSO scopes
+          scopes: 'openid offline_access lol-account cpid ban profile'
         })
       });
       

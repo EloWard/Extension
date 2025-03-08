@@ -72,6 +72,29 @@
       cursor: pointer;
       border-radius: 4px;
     }
+    .error-container {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: rgba(255, 82, 82, 0.1);
+      border: 1px solid #FF5252;
+      border-radius: 5px;
+      text-align: left;
+      max-width: 600px;
+    }
+    .error-container h3 {
+      color: #FF5252;
+      margin-top: 0;
+    }
+    .retry-button {
+      background-color: #D9A336;
+      color: #000000;
+      border: none;
+      padding: 10px 20px;
+      margin-top: 20px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -83,6 +106,7 @@
   </div>
   <button id="show-details-btn" class="show-details" style="display: none;">Show Details</button>
   <div id="details" class="details"></div>
+  <button id="retry-button" class="retry-button" style="display: none;">Retry Authentication</button>
 
   <script>
     // Parse URL parameters
@@ -99,7 +123,9 @@
       state: state ? 'present' : 'missing',
       error: error || 'none',
       error_description: error_description || 'none',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      extensionId: chrome.runtime.id
     };
     
     console.log('Callback page loaded with params:', debugInfo);
@@ -107,25 +133,63 @@
     // Function to show error details
     function showDetails() {
       const detailsElement = document.getElementById('details');
-      detailsElement.style.display = 'block';
+      detailsElement.style.display = detailsElement.style.display === 'block' ? 'none' : 'block';
+      document.getElementById('show-details-btn').textContent = 
+        detailsElement.style.display === 'block' ? 'Hide Details' : 'Show Details';
       detailsElement.textContent = JSON.stringify(debugInfo, null, 2);
+    }
+    
+    // Function to retry authentication
+    function retryAuthentication() {
+      window.close();
+      // Notify the popup to retry authentication
+      try {
+        window.opener.postMessage({
+          type: 'eloward_auth_retry'
+        }, `chrome-extension://${chrome.runtime.id}`);
+      } catch (error) {
+        console.error('Error sending retry message:', error);
+      }
     }
     
     document.addEventListener('DOMContentLoaded', () => {
       const statusContainer = document.getElementById('status-container');
       const statusMessage = document.getElementById('status-message');
       const showDetailsBtn = document.getElementById('show-details-btn');
+      const retryButton = document.getElementById('retry-button');
       
       // Set up details button
       showDetailsBtn.addEventListener('click', showDetails);
+      retryButton.addEventListener('click', retryAuthentication);
       
       if (error) {
         // Handle authentication error
         console.error('Authentication error:', error, error_description);
-        statusContainer.innerHTML = `<p class="error">Authentication failed: ${error}</p>
-                                     <p>${error_description || 'No additional details available'}</p>`;
+        
+        let errorHTML = `<div class="error-container">
+          <h3>Authentication Error</h3>
+          <p><strong>Error:</strong> ${error}</p>`;
+          
+        if (error_description) {
+          errorHTML += `<p><strong>Description:</strong> ${error_description}</p>`;
+        }
+        
+        if (error === 'invalid_request' || error === 'invalid_client') {
+          errorHTML += `<p><strong>Possible Solution:</strong> There might be an issue with the client configuration. Try again with the correct settings.</p>`;
+        } else if (error === 'access_denied') {
+          errorHTML += `<p><strong>Possible Solution:</strong> You declined the authorization request. Please try again and accept the permissions.</p>`;
+        } else if (error === 'unauthorized_client') {
+          errorHTML += `<p><strong>Possible Solution:</strong> This app doesn't have permission to use Riot Sign On. Contact the developer.</p>`;
+        }
+        
+        errorHTML += `</div>`;
+        
+        statusContainer.innerHTML = errorHTML;
         showDetailsBtn.style.display = 'block';
-        setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
+        retryButton.style.display = 'block';
+        
+        // Keep window open longer to allow debugging
+        setTimeout(() => window.close(), 60000);
         return;
       }
       
@@ -149,6 +213,7 @@
           statusContainer.innerHTML = `<p class="error">Error communicating with extension</p>
                                        <p>${error.message}</p>`;
           showDetailsBtn.style.display = 'block';
+          retryButton.style.display = 'block';
           setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
         }
       } else {
@@ -156,6 +221,7 @@
         console.error('Missing authentication parameters');
         statusContainer.innerHTML = '<p class="error">Authentication failed: Missing parameters</p>';
         showDetailsBtn.style.display = 'block';
+        retryButton.style.display = 'block';
         setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
       }
     });
