@@ -94,6 +94,8 @@ export const RiotAuth = {
    */
   _openAuthWindow(authUrl) {
     return new Promise((resolve, reject) => {
+      console.log('Opening auth window with URL:', authUrl);
+      
       // Create a unique message identifier
       const messageId = `eloward_auth_${Date.now()}`;
       
@@ -103,29 +105,46 @@ export const RiotAuth = {
       const left = (screen.width - width) / 2;
       const top = (screen.height - height) / 2;
       
+      const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
+      console.log('Window features:', windowFeatures);
+      
       const authWindow = window.open(
         authUrl,
         'EloWard Riot Authentication',
-        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+        windowFeatures
       );
       
       if (!authWindow) {
+        console.error('Failed to open authentication window');
         reject(new Error('Failed to open authentication window. Please allow popups for this site.'));
         return;
       }
+      
+      console.log('Auth window opened successfully');
       
       // Set up message listener for the callback
       const messageListener = (event) => {
         // Make sure the message is from our callback page
         const extensionId = chrome.runtime.id;
-        if (event.origin !== `chrome-extension://${extensionId}`) {
+        const expectedOrigin = `chrome-extension://${extensionId}`;
+        
+        console.log('Received message from:', event.origin, 'Expected:', expectedOrigin);
+        
+        if (event.origin !== expectedOrigin) {
+          console.warn('Message origin mismatch:', event.origin, 'Expected:', expectedOrigin);
           return;
         }
         
         const data = event.data;
+        console.log('Received message data:', data);
         
         // Check if this is our auth response
         if (data && data.type === 'eloward_auth_callback') {
+          console.log('Auth callback received:', { 
+            hasCode: !!data.code, 
+            hasState: !!data.state
+          });
+          
           // Clean up
           window.removeEventListener('message', messageListener);
           
@@ -150,6 +169,7 @@ export const RiotAuth = {
         if (!authWindow || authWindow.closed) {
           clearInterval(checkClosed);
           window.removeEventListener('message', messageListener);
+          console.log('Auth window was closed by user');
           resolve(null); // User closed the window
         }
       }, 500);
@@ -200,6 +220,13 @@ export const RiotAuth = {
       const extensionId = chrome.runtime.id;
       const redirectUri = `chrome-extension://${extensionId}/callback.html`;
       
+      console.log('Initializing Riot RSO auth with:', {
+        region,
+        state,
+        redirectUri,
+        extensionId
+      });
+      
       // Request authorization URL from the backend
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
         method: 'POST',
@@ -214,10 +241,13 @@ export const RiotAuth = {
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to initialize authentication: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Auth initialization failed:', response.status, errorText);
+        throw new Error(`Failed to initialize authentication: ${response.status} - ${errorText}`);
       }
       
       const data = await response.json();
+      console.log('Auth URL received:', data.authUrl);
       return data.authUrl;
     } catch (error) {
       console.error('Error initializing authentication:', error);
@@ -236,12 +266,19 @@ export const RiotAuth = {
       // Verify the state parameter
       const storedState = localStorage.getItem('eloward_auth_state');
       if (state !== storedState) {
+        console.error('State mismatch', { received: state, stored: storedState });
         throw new Error('State mismatch. Possible CSRF attack.');
       }
       
       // Get the extension ID for the redirect URI
       const extensionId = chrome.runtime.id;
       const redirectUri = `chrome-extension://${extensionId}/callback.html`;
+      
+      console.log('Completing Riot RSO auth with:', {
+        codeLength: code ? code.length : 0,
+        state,
+        redirectUri
+      });
       
       // Exchange the code for tokens
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
@@ -251,33 +288,35 @@ export const RiotAuth = {
         },
         body: JSON.stringify({
           code,
+          state,
           redirectUri
         })
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to exchange code for token: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Token exchange failed:', response.status, errorText);
+        throw new Error(`Failed to exchange token: ${response.status} - ${errorText}`);
       }
       
-      const tokenData = await response.json();
+      const tokens = await response.json();
+      console.log('Tokens received successfully', { 
+        hasAccessToken: !!tokens.access_token,
+        hasRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expires_in
+      });
       
-      // Store the tokens in local storage
-      localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
-      localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
+      // Store tokens
+      localStorage.setItem(this.config.storageKeys.accessToken, tokens.access_token);
+      localStorage.setItem(this.config.storageKeys.refreshToken, tokens.refresh_token);
       
-      // Calculate and store the expiry time
-      const expiryTime = Date.now() + (tokenData.expires_in * 1000);
+      // Calculate expiry time (current time + expires_in seconds)
+      const expiryTime = Date.now() + (tokens.expires_in * 1000);
       localStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
-      
-      // Clean up the state
-      localStorage.removeItem('eloward_auth_state');
-      
-      // Fetch account information
-      await this.fetchAccountInfo();
       
       return true;
     } catch (error) {
-      console.error('Error completing authentication:', error);
+      console.error('Complete auth error:', error);
       throw error;
     }
   },

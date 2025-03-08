@@ -50,6 +50,28 @@
     .error {
       color: #FF5252;
     }
+    .details {
+      max-width: 600px;
+      background-color: #1A1A1A;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 20px;
+      font-family: monospace;
+      text-align: left;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      display: none;
+    }
+    .show-details {
+      background-color: transparent;
+      border: 1px solid #D9A336;
+      color: #D9A336;
+      padding: 8px 16px;
+      margin-top: 10px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -59,6 +81,8 @@
     <div class="spinner"></div>
     <p id="status-message">Processing your authentication...</p>
   </div>
+  <button id="show-details-btn" class="show-details" style="display: none;">Show Details</button>
+  <div id="details" class="details"></div>
 
   <script>
     // Parse URL parameters
@@ -66,35 +90,73 @@
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
+    const error_description = urlParams.get('error_description');
+    
+    // Debug info
+    const debugInfo = {
+      url: window.location.href,
+      code: code ? 'present' : 'missing',
+      state: state ? 'present' : 'missing',
+      error: error || 'none',
+      error_description: error_description || 'none',
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('Callback page loaded with params:', debugInfo);
+    
+    // Function to show error details
+    function showDetails() {
+      const detailsElement = document.getElementById('details');
+      detailsElement.style.display = 'block';
+      detailsElement.textContent = JSON.stringify(debugInfo, null, 2);
+    }
     
     document.addEventListener('DOMContentLoaded', () => {
       const statusContainer = document.getElementById('status-container');
       const statusMessage = document.getElementById('status-message');
+      const showDetailsBtn = document.getElementById('show-details-btn');
+      
+      // Set up details button
+      showDetailsBtn.addEventListener('click', showDetails);
       
       if (error) {
         // Handle authentication error
-        statusContainer.innerHTML = '<p class="error">Authentication failed: ' + error + '</p>';
-        setTimeout(() => window.close(), 3000);
+        console.error('Authentication error:', error, error_description);
+        statusContainer.innerHTML = `<p class="error">Authentication failed: ${error}</p>
+                                     <p>${error_description || 'No additional details available'}</p>`;
+        showDetailsBtn.style.display = 'block';
+        setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
         return;
       }
       
       if (code && state) {
-        // Post message to the extension popup
-        window.opener.postMessage({
-          type: 'eloward_auth_callback',
-          code: code,
-          state: state
-        }, `chrome-extension://${chrome.runtime.id}`);
-        
-        // Update UI
-        statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
-        
-        // Close window automatically after 3 seconds
-        setTimeout(() => window.close(), 3000);
+        console.log('Sending message to extension with auth code and state');
+        try {
+          // Post message to the extension popup
+          window.opener.postMessage({
+            type: 'eloward_auth_callback',
+            code: code,
+            state: state
+          }, `chrome-extension://${chrome.runtime.id}`);
+          
+          // Update UI
+          statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
+          
+          // Close window automatically after 3 seconds
+          setTimeout(() => window.close(), 3000);
+        } catch (error) {
+          console.error('Error posting message to extension:', error);
+          statusContainer.innerHTML = `<p class="error">Error communicating with extension</p>
+                                       <p>${error.message}</p>`;
+          showDetailsBtn.style.display = 'block';
+          setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
+        }
       } else {
         // No code or state found
+        console.error('Missing authentication parameters');
         statusContainer.innerHTML = '<p class="error">Authentication failed: Missing parameters</p>';
-        setTimeout(() => window.close(), 3000);
+        showDetailsBtn.style.display = 'block';
+        setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
       }
     });
   </script>
