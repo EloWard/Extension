@@ -227,6 +227,22 @@ export const RiotAuth = {
         extensionId
       });
       
+      // The different combinations of scopes we might try
+      const scopeOptions = [
+        // Most specific scope combination for League of Legends
+        'openid offline_access lol-account cpid ban profile',
+        // More generic scope combination
+        'openid offline_access lol-account',
+        // Minimal scope combination
+        'openid offline_access'
+      ];
+      
+      // Log the scope options we're trying
+      console.log('Will try these scope combinations:', scopeOptions);
+      
+      // First attempt - use the most comprehensive scopes
+      const scopes = scopeOptions[0];
+      
       // Request authorization URL from the backend
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
         method: 'POST',
@@ -237,8 +253,7 @@ export const RiotAuth = {
           region,
           state,
           redirectUri,
-          // Use the correct format for Riot RSO scopes
-          scopes: 'openid offline_access lol-account cpid ban profile'
+          scopes
         })
       });
       
