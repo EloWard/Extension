@@ -236,7 +236,9 @@ export const RiotAuth = {
         body: JSON.stringify({
           region,
           state,
-          redirectUri
+          redirectUri,
+          // Add the required scopes for League of Legends
+          scopes: 'openid offline_access lol.read summoner cpid ban profile'
         })
       });
       

@@ -36,8 +36,11 @@ const ACTIVE_STREAMERS = [
 ];
 
 // Initialize
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('EloWard extension installed');
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('EloWard extension installed or updated', details.reason);
+  
+  // Clear all stored data to force a fresh start
+  clearAllStoredData();
   
   // Initialize storage
   chrome.storage.local.set({
@@ -57,9 +60,40 @@ chrome.runtime.onInstalled.addListener(() => {
   }, 5000);
 });
 
+// Function to clear all stored data
+function clearAllStoredData() {
+  // Clear chrome.storage.local
+  chrome.storage.local.clear(() => {
+    console.log('Cleared all chrome.storage.local data');
+  });
+  
+  // Clear localStorage for any extension pages
+  chrome.runtime.sendMessage({ action: 'clear_local_storage' });
+  
+  // Try to clear Riot auth data
+  try {
+    localStorage.removeItem('eloward_riot_access_token');
+    localStorage.removeItem('eloward_riot_refresh_token');
+    localStorage.removeItem('eloward_riot_token_expiry');
+    localStorage.removeItem('eloward_riot_account_info');
+    localStorage.removeItem('eloward_riot_summoner_info');
+    localStorage.removeItem('eloward_riot_rank_info');
+    localStorage.removeItem('eloward_auth_state');
+    console.log('Cleared Riot auth data from localStorage');
+  } catch (error) {
+    console.error('Error clearing localStorage:', error);
+  }
+}
+
 // Handle messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received message:', message);
+  
+  if (message.action === 'clear_local_storage') {
+    // This message is meant for extension pages with localStorage access
+    // Background service worker doesn't have localStorage
+    return;
+  }
   
   if (message.action === 'check_streamer_subscription') {
     // In a real implementation, this would check against a backend API

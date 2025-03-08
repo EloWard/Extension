@@ -81,9 +81,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get selected region
         const region = regionSelect.value;
         
+        // Show connecting status
+        riotConnectionStatus.textContent = 'Connecting...';
+        riotConnectionStatus.classList.remove('error');
+        
+        console.log('Connecting to Riot with region:', region);
+        
         // Use the Riot RSO authentication module
         RiotAuth.authenticate(region)
           .then(userData => {
+            console.log('Authentication successful:', userData);
             // Update UI
             riotConnectionStatus.textContent = userData.riotId;
             riotConnectionStatus.classList.add('connected');
@@ -98,15 +105,30 @@ document.addEventListener('DOMContentLoaded', () => {
             connectRiotBtn.textContent = 'Connect';
             connectRiotBtn.disabled = false;
             
-            // Show error message
-            riotConnectionStatus.textContent = 'Authentication Failed';
+            // Show descriptive error message
+            let errorMessage = 'Authentication Failed';
+            
+            if (error.message.includes('Failed to initialize authentication')) {
+              errorMessage = 'Server Connection Error';
+            } else if (error.message.includes('Authentication cancelled')) {
+              errorMessage = 'Authentication Cancelled';
+            } else if (error.message.includes('State mismatch')) {
+              errorMessage = 'Security Verification Failed';
+            } else if (error.message.includes('Failed to exchange token')) {
+              errorMessage = 'Token Exchange Failed';
+            }
+            
+            riotConnectionStatus.textContent = errorMessage;
             riotConnectionStatus.classList.add('error');
             
-            // Reset error state after 3 seconds
+            // Display more error details in console
+            console.error('Detailed error:', error.message);
+            
+            // Reset error state after 5 seconds
             setTimeout(() => {
               riotConnectionStatus.textContent = 'Not Connected';
               riotConnectionStatus.classList.remove('error');
-            }, 3000);
+            }, 5000);
           });
       }
     });
