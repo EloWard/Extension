@@ -200,6 +200,13 @@ export const RiotAuth = {
       const extensionId = chrome.runtime.id;
       const redirectUri = `chrome-extension://${extensionId}/callback.html`;
       
+      // For debugging - log values we're sending
+      console.log('Auth Init Request:', {
+        region,
+        state,
+        redirectUri
+      });
+      
       // Request authorization URL from the backend
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
         method: 'POST',
@@ -209,15 +216,19 @@ export const RiotAuth = {
         body: JSON.stringify({
           region,
           state,
-          redirectUri
+          redirectUri: encodeURI(redirectUri)
         })
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to initialize authentication: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Auth initialization response error:', response.status, errorText);
+        throw new Error(`Failed to initialize authentication: ${response.status} - ${errorText}`);
       }
       
       const data = await response.json();
+      console.log('Auth URL received:', data);
+      
       return data.authUrl;
     } catch (error) {
       console.error('Error initializing authentication:', error);
