@@ -45,37 +45,74 @@ export const RiotAuth = {
    */
   async authenticate(region) {
     try {
+      console.log('Starting authentication for region:', region);
+      
       // Map platform region to API region if needed
       const apiRegion = EloWardConfig.riot.platformRouting[region]?.region || 'americas';
+      console.log('Mapped to API region:', apiRegion);
       
       // Start authentication flow
+      console.log('Initializing auth flow...');
       const authUrl = await this.initAuth(apiRegion);
+      console.log('Auth URL received:', authUrl?.substring(0, 100) + '...');
+      
+      if (!authUrl) {
+        throw new Error('Failed to get authorization URL');
+      }
       
       // Open auth window and wait for response
+      console.log('Opening auth window...');
       const responseData = await this._openAuthWindow(authUrl);
+      console.log('Auth window response:', responseData);
       
-      if (!responseData || !responseData.code) {
-        throw new Error('Authentication cancelled or failed');
+      if (!responseData) {
+        throw new Error('Authentication window was closed or no response received');
+      }
+      
+      if (!responseData.code || !responseData.state) {
+        throw new Error('Invalid response: missing code or state');
       }
       
       // Complete authentication with the received code
+      console.log('Completing authentication...');
       const isAuthenticated = await this.completeAuth(responseData.code, responseData.state);
+      console.log('Authentication completed:', isAuthenticated);
       
       if (!isAuthenticated) {
         throw new Error('Failed to complete authentication');
       }
       
       // Get account info
+      console.log('Fetching account info...');
       const accountInfo = await this.fetchAccountInfo();
+      console.log('Account info received:', JSON.stringify(accountInfo));
+      
+      if (!accountInfo || !accountInfo.puuid) {
+        throw new Error('Failed to retrieve account information');
+      }
+      
+      // Get summoner info
+      let summonerInfo;
+      try {
+        summonerInfo = await this.getSummonerInfo();
+        console.log('Summoner info received:', summonerInfo ? 'Success' : 'Not available');
+      } catch (err) {
+        console.warn('Failed to fetch summoner info:', err);
+        // Non-fatal, we can continue without summoner info
+      }
       
       // Store auth data in chrome.storage for popup access
       const userData = {
         puuid: accountInfo.puuid,
-        riotId: `${accountInfo.gameName}#${accountInfo.tagLine}`,
-        summonerId: (await this.getSummonerInfo())?.id,
+        riotId: accountInfo.gameName && accountInfo.tagLine 
+          ? `${accountInfo.gameName}#${accountInfo.tagLine}` 
+          : 'Riot Account',
+        summonerId: summonerInfo?.id,
         region: region,
         platform: EloWardConfig.riot.platformRouting[region]?.platform
       };
+      
+      console.log('Setting user data in storage:', userData);
       
       // Save to chrome.storage.local
       chrome.storage.local.set({ riotAuth: userData });
@@ -246,13 +283,21 @@ export const RiotAuth = {
     try {
       // Verify the state parameter
       const storedState = localStorage.getItem('eloward_auth_state');
+      console.log('Verifying state parameter:', { received: state, stored: storedState });
+      
       if (state !== storedState) {
+        console.error('State mismatch', { received: state, stored: storedState });
         throw new Error('State mismatch. Possible CSRF attack.');
       }
       
       // Get the extension ID for the redirect URI
       const extensionId = chrome.runtime.id;
       const redirectUri = `chrome-extension://${extensionId}/callback.html`;
+      
+      console.log('Exchanging code for token with parameters:', {
+        code: code ? 'present' : 'missing',
+        redirectUri
+      });
       
       // Exchange the code for tokens
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
@@ -267,17 +312,30 @@ export const RiotAuth = {
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to exchange code for token: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Token exchange failed:', response.status, errorText);
+        throw new Error(`Failed to exchange code for token: ${response.status} - ${errorText}`);
       }
       
       const tokenData = await response.json();
+      console.log('Token received successfully');
+      
+      if (!tokenData.access_token) {
+        console.error('Invalid token data received:', tokenData);
+        throw new Error('Invalid token data received');
+      }
       
       // Store the tokens in local storage
       localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
-      localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
+      
+      if (tokenData.refresh_token) {
+        localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
+      } else {
+        console.warn('No refresh token received');
+      }
       
       // Calculate and store the expiry time
-      const expiryTime = Date.now() + (tokenData.expires_in * 1000);
+      const expiryTime = Date.now() + ((tokenData.expires_in || 3600) * 1000);
       localStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
       
       // Clean up the state
