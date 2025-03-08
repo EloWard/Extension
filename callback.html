@@ -50,17 +50,6 @@
     .error {
       color: #FF5252;
     }
-    .debug-info {
-      margin-top: 20px;
-      padding: 10px;
-      background: rgba(0,0,0,0.3);
-      border-radius: 5px;
-      font-family: monospace;
-      font-size: 12px;
-      text-align: left;
-      max-width: 80%;
-      overflow-x: auto;
-    }
   </style>
 </head>
 <body>
@@ -70,11 +59,6 @@
     <div class="spinner"></div>
     <p id="status-message">Processing your authentication...</p>
   </div>
-  
-  <div id="debug-container" class="debug-info" style="display:none;">
-    <p>Debug Information:</p>
-    <pre id="debug-info"></pre>
-  </div>
 
   <script>
     // Parse URL parameters
@@ -82,71 +66,35 @@
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
-    const error_description = urlParams.get('error_description');
-    
-    // Show debug info
-    function showDebugInfo(info) {
-      const debugContainer = document.getElementById('debug-container');
-      const debugInfo = document.getElementById('debug-info');
-      
-      debugContainer.style.display = 'block';
-      debugInfo.textContent = JSON.stringify(info, null, 2);
-    }
     
     document.addEventListener('DOMContentLoaded', () => {
       const statusContainer = document.getElementById('status-container');
       const statusMessage = document.getElementById('status-message');
       
-      // Show basic debug info about the callback
-      const debugData = {
-        url: window.location.href,
-        params: {
-          code: code ? 'present' : 'missing',
-          state: state ? 'present' : 'missing',
-          error: error,
-          error_description: error_description
-        }
-      };
-      
-      showDebugInfo(debugData);
-      
       if (error) {
         // Handle authentication error
-        let errorMsg = `Authentication failed: ${error}`;
-        if (error_description) {
-          errorMsg += ` - ${error_description}`;
-        }
-        
-        statusContainer.innerHTML = `<p class="error">${errorMsg}</p>`;
-        setTimeout(() => window.close(), 10000); // Give more time to see the error
+        statusContainer.innerHTML = '<p class="error">Authentication failed: ' + error + '</p>';
+        setTimeout(() => window.close(), 3000);
         return;
       }
       
       if (code && state) {
-        try {
-          // Post message to the extension popup
-          window.opener.postMessage({
-            type: 'eloward_auth_callback',
-            code: code,
-            state: state
-          }, `chrome-extension://${chrome.runtime.id}`);
-          
-          // Update UI
-          statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
-          
-          // Close window automatically after 3 seconds
-          setTimeout(() => window.close(), 3000);
-        } catch (err) {
-          statusContainer.innerHTML = `<p class="error">Error sending authentication response: ${err.message}</p>`;
-          showDebugInfo({
-            error: err.message,
-            stack: err.stack
-          });
-        }
+        // Post message to the extension popup
+        window.opener.postMessage({
+          type: 'eloward_auth_callback',
+          code: code,
+          state: state
+        }, `chrome-extension://${chrome.runtime.id}`);
+        
+        // Update UI
+        statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
+        
+        // Close window automatically after 3 seconds
+        setTimeout(() => window.close(), 3000);
       } else {
         // No code or state found
         statusContainer.innerHTML = '<p class="error">Authentication failed: Missing parameters</p>';
-        setTimeout(() => window.close(), 10000); // Give more time to see the error
+        setTimeout(() => window.close(), 3000);
       }
     });
   </script>
