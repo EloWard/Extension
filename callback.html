@@ -100,150 +100,155 @@
 <body>
   <img src="images/logo/icon128.png" alt="EloWard Logo" class="logo">
   <h1>EloWard Authentication</h1>
-  <div id="status-container">
+  
+  <div id="loading">
+    <p>Processing authentication...</p>
     <div class="spinner"></div>
-    <p id="status-message">Processing your authentication...</p>
   </div>
-  <button id="show-details-btn" class="show-details" style="display: none;">Show Details</button>
-  <div id="details" class="details"></div>
-  <button id="retry-button" class="retry-button" style="display: none;">Retry Authentication</button>
-
+  
+  <div id="success" style="display: none;">
+    <p class="success">✓ Authentication successful!</p>
+    <p>You have successfully connected your Riot account.</p>
+    <p id="username-display"></p>
+    <p>You can close this tab and return to the extension.</p>
+    <button id="close-tab" class="retry-button">Close Tab</button>
+  </div>
+  
+  <div id="error" style="display: none;">
+    <p class="error">✗ Authentication failed</p>
+    <p id="error-message">There was an error during authentication.</p>
+    
+    <div class="error-container">
+      <h3>Error Details</h3>
+      <p id="error-details">Unknown error occurred during authentication.</p>
+    </div>
+    
+    <button id="retry" class="retry-button">Try Again</button>
+  </div>
+  
+  <div id="technical-details" class="details"></div>
+  <button id="toggle-details" class="show-details" style="display: none;">Show Technical Details</button>
+  
   <script>
-    // Parse URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const error = urlParams.get('error');
-    const error_description = urlParams.get('error_description');
+    // Elements
+    const loadingEl = document.getElementById('loading');
+    const successEl = document.getElementById('success');
+    const errorEl = document.getElementById('error');
+    const errorMsgEl = document.getElementById('error-message');
+    const errorDetailsEl = document.getElementById('error-details');
+    const usernameEl = document.getElementById('username-display');
+    const retryBtn = document.getElementById('retry');
+    const closeTabBtn = document.getElementById('close-tab');
+    const technicalDetailsEl = document.getElementById('technical-details');
+    const toggleDetailsBtn = document.getElementById('toggle-details');
     
-    // Debug info
-    const debugInfo = {
-      url: window.location.href,
-      code: code ? 'present' : 'missing',
-      state: state ? 'present' : 'missing',
-      error: error || 'none',
-      error_description: error_description || 'none',
-      timestamp: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      extensionId: chrome.runtime.id
-    };
-    
-    console.log('Callback page loaded with params:', debugInfo);
-    
-    // Function to show error details
-    function showDetails() {
-      const detailsElement = document.getElementById('details');
-      detailsElement.style.display = detailsElement.style.display === 'block' ? 'none' : 'block';
-      document.getElementById('show-details-btn').textContent = 
-        detailsElement.style.display === 'block' ? 'Hide Details' : 'Show Details';
-      detailsElement.textContent = JSON.stringify(debugInfo, null, 2);
+    // Show/hide elements
+    function showElement(element) {
+      if (element) element.style.display = 'block';
     }
     
-    // Function to retry authentication
-    function retryAuthentication() {
+    function hideElement(element) {
+      if (element) element.style.display = 'none';
+    }
+    
+    // Handle auth success
+    function handleSuccess(username) {
+      hideElement(loadingEl);
+      showElement(successEl);
+      
+      if (username) {
+        usernameEl.textContent = `Account: ${username}`;
+      } else {
+        usernameEl.textContent = '';
+      }
+    }
+    
+    // Handle auth error
+    function handleError(message, details) {
+      hideElement(loadingEl);
+      showElement(errorEl);
+      showElement(toggleDetailsBtn);
+      
+      if (message) {
+        errorMsgEl.textContent = message;
+      }
+      
+      if (details) {
+        errorDetailsEl.textContent = details;
+        technicalDetailsEl.textContent = JSON.stringify({ error: message, details: details }, null, 2);
+      }
+    }
+    
+    // Toggle technical details
+    toggleDetailsBtn.addEventListener('click', () => {
+      const isShowing = technicalDetailsEl.style.display === 'block';
+      technicalDetailsEl.style.display = isShowing ? 'none' : 'block';
+      toggleDetailsBtn.textContent = isShowing ? 'Show Technical Details' : 'Hide Technical Details';
+    });
+    
+    // Retry button
+    retryBtn.addEventListener('click', () => {
+      // Open popup to start over
+      chrome.runtime.sendMessage({ action: 'open_popup' });
       window.close();
-      // Notify the popup to retry authentication
-      try {
-        window.opener.postMessage({
-          type: 'eloward_auth_retry'
-        }, '*');
-      } catch (error) {
-        console.error('Error sending retry message:', error);
-      }
-    }
+    });
     
-    // Function to send message to extension
-    function sendMessageToExtension(data) {
-      try {
-        // Try window.opener first (for popup flow)
-        if (window.opener) {
-          console.log('Sending message to opener window');
-          window.opener.postMessage(data, '*');
-          return true;
-        }
-        
-        // Try chrome.runtime.sendMessage as fallback (for chrome.identity flow)
-        console.log('Sending message via chrome.runtime.sendMessage');
-        chrome.runtime.sendMessage(data);
-        return true;
-      } catch (error) {
-        console.error('Error sending message:', error);
-        return false;
-      }
-    }
+    // Close tab button
+    closeTabBtn.addEventListener('click', () => {
+      window.close();
+    });
     
-    document.addEventListener('DOMContentLoaded', () => {
-      const statusContainer = document.getElementById('status-container');
-      const statusMessage = document.getElementById('status-message');
-      const showDetailsBtn = document.getElementById('show-details-btn');
-      const retryButton = document.getElementById('retry-button');
-      
-      // Set up details button
-      showDetailsBtn.addEventListener('click', showDetails);
-      retryButton.addEventListener('click', retryAuthentication);
-      
-      // Always show details button for debugging
-      showDetailsBtn.style.display = 'block';
-      
-      if (error) {
-        // Handle authentication error
-        console.error('Authentication error:', error, error_description);
+    // Main function to process the auth callback
+    async function processAuthCallback() {
+      try {
+        // Parse URL query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        const error = urlParams.get('error');
+        const errorDescription = urlParams.get('error_description');
         
-        let errorHTML = `<div class="error-container">
-          <h3>Authentication Error</h3>
-          <p><strong>Error:</strong> ${error}</p>`;
-          
-        if (error_description) {
-          errorHTML += `<p><strong>Description:</strong> ${error_description}</p>`;
+        // Check for errors in the URL
+        if (error) {
+          throw new Error(`Error from Riot: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`);
         }
         
-        if (error === 'invalid_request' || error === 'invalid_client') {
-          errorHTML += `<p><strong>Possible Solution:</strong> There might be an issue with the client configuration. Try again with the correct settings.</p>`;
-        } else if (error === 'access_denied') {
-          errorHTML += `<p><strong>Possible Solution:</strong> You declined the authorization request. Please try again and accept the permissions.</p>`;
-        } else if (error === 'unauthorized_client') {
-          errorHTML += `<p><strong>Possible Solution:</strong> This app doesn't have permission to use Riot Sign On. Contact the developer.</p>`;
+        // Validate required parameters
+        if (!code || !state) {
+          throw new Error('Missing required parameters: code and state are required');
         }
         
-        errorHTML += `</div>`;
+        // Log the parameters (sanitized)
+        console.log('Received auth callback with code and state');
         
-        statusContainer.innerHTML = errorHTML;
-        retryButton.style.display = 'block';
-        
-        // Keep window open longer to allow debugging
-        setTimeout(() => window.close(), 60000);
-        return;
-      }
-      
-      if (code && state) {
-        console.log('Sending message to extension with auth code and state');
-        
-        const messageSent = sendMessageToExtension({
-          type: 'eloward_auth_callback',
+        // Call the background script to handle the token exchange
+        const result = await chrome.runtime.sendMessage({
+          action: 'handle_auth_callback',
           code: code,
           state: state
         });
         
-        if (messageSent) {
-          // Update UI
-          statusContainer.innerHTML = '<p class="success">Authentication successful!</p><p>You can close this window now.</p>';
-          
-          // Close window automatically after 3 seconds
-          setTimeout(() => window.close(), 3000);
+        if (result && result.success) {
+          handleSuccess(result.username);
         } else {
-          // Message sending failed
-          statusContainer.innerHTML = `<p class="error">Error communicating with extension</p>
-                                     <p>Could not send authentication data back to the extension.</p>`;
-          retryButton.style.display = 'block';
-          setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
+          handleError(
+            'Failed to complete authentication',
+            result && result.error ? result.error : 'Unknown error occurred'
+          );
         }
-      } else {
-        // No code or state found
-        console.error('Missing authentication parameters');
-        statusContainer.innerHTML = '<p class="error">Authentication failed: Missing parameters</p>';
-        retryButton.style.display = 'block';
-        setTimeout(() => window.close(), 30000); // Keep window open longer to allow debugging
+      } catch (error) {
+        console.error('Error in auth callback:', error);
+        handleError(
+          'An unexpected error occurred',
+          error instanceof Error ? error.message : String(error)
+        );
       }
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      // Start processing the callback
+      processAuthCallback();
     });
   </script>
 </body>

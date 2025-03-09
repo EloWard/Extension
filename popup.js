@@ -102,63 +102,94 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function handleRegionChange() {
     const region = regionSelect.value;
     
-    try {
-      await chrome.runtime.sendMessage({ 
-        action: 'update_region',
-        region: region
-      });
-      
-      // Refresh profile if user is authenticated
-      if (riotConnectionStatus.classList.contains('status-connected')) {
-        loadUserProfile();
-      }
-    } catch (error) {
-      console.error('Error updating region:', error);
+    // Save to storage
+    chrome.storage.local.set({ selectedRegion: region });
+    
+    // If authenticated, refresh profile with new region
+    const response = await chrome.runtime.sendMessage({ action: 'check_auth_status' });
+    if (response.authenticated) {
+      loadUserProfile();
     }
   }
   
   /**
-   * Load and display user profile
+   * Load and display user profile and rank
    */
   async function loadUserProfile() {
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'get_user_profile' });
+      // Show loading state
+      currentRank.textContent = 'Loading...';
       
-      if (response.success && response.profile) {
-        const { account, summoner, rank, region } = response.profile;
+      // Get user profile from background script
+      const profileData = await chrome.runtime.sendMessage({ action: 'get_user_profile' });
+      
+      if (!profileData.success) {
+        throw new Error(profileData.error || 'Failed to load profile');
+      }
+      
+      // Display user info
+      const riotId = `${profileData.accountInfo.gameName}#${profileData.accountInfo.tagLine}`;
+      document.getElementById('riot-id').textContent = riotId;
+      
+      // Find the highest ranked queue (Solo/Duo queue is preferred)
+      let highestRank = null;
+      let highestQueueType = '';
+      
+      if (profileData.rankInfo && profileData.rankInfo.length > 0) {
+        // First look for RANKED_SOLO_5x5 queue
+        const soloQueue = profileData.rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
         
-        // Display summoner name if available
-        if (summoner && summoner.name) {
-          // Check if the element exists before setting the text content
-          const summonerNameElement = document.getElementById('summoner-name');
-          if (summonerNameElement) {
-            summonerNameElement.textContent = summoner.name;
+        if (soloQueue && soloQueue.tier) {
+          highestRank = soloQueue;
+          highestQueueType = 'Solo/Duo';
+        } else {
+          // Find any ranked queue
+          highestRank = profileData.rankInfo.find(entry => entry.tier);
+          
+          if (highestRank) {
+            // Map queue type to a readable name
+            const queueTypeMap = {
+              'RANKED_SOLO_5x5': 'Solo/Duo',
+              'RANKED_FLEX_SR': 'Flex',
+              'RANKED_TFT': 'TFT',
+              'RANKED_TFT_TURBO': 'TFT Turbo',
+              'RANKED_TFT_PAIRS': 'TFT Pairs'
+            };
+            
+            highestQueueType = queueTypeMap[highestRank.queueType] || highestRank.queueType;
           }
         }
+      }
+      
+      if (highestRank && highestRank.tier) {
+        // Format the rank
+        const tier = highestRank.tier.charAt(0) + highestRank.tier.slice(1).toLowerCase();
+        const rank = highestRank.rank || '';
+        const lp = highestRank.leaguePoints !== undefined ? ` ${highestRank.leaguePoints} LP` : '';
         
-        // Display rank if available
-        if (rank && rank.soloQueueEntry) {
-          const rankEntry = rank.soloQueueEntry;
-          const tierString = rankEntry.tier || 'Unranked';
-          const divisionString = rankEntry.rank || '';
-          const lpString = rankEntry.leaguePoints !== undefined ? ` ${rankEntry.leaguePoints} LP` : '';
-          
-          // Set rank text
-          currentRank.textContent = divisionString 
-            ? `${tierString} ${divisionString}${lpString}` 
-            : `${tierString}${lpString}`;
-          
-          // Set rank badge image
-          updateRankBadge(rankEntry.tier, rankEntry.rank);
+        // Update rank display
+        currentRank.textContent = `${tier} ${rank}${lp} (${highestQueueType})`;
+        
+        // Update rank badge
+        updateRankBadge(tier, rank);
+        
+        // Show wins/losses if available
+        if (highestRank.wins !== undefined && highestRank.losses !== undefined) {
+          const winRate = Math.round((highestRank.wins / (highestRank.wins + highestRank.losses)) * 100);
+          document.getElementById('win-rate').textContent = 
+            `${highestRank.wins}W ${highestRank.losses}L (${winRate}%)`;
         } else {
-          currentRank.textContent = 'Unranked';
-          updateRankBadge(null, null);
+          document.getElementById('win-rate').textContent = '';
         }
       } else {
-        console.error('Failed to load profile:', response.error);
+        // No rank info found
+        currentRank.textContent = 'Unranked';
+        updateRankBadge('UNRANKED', '');
+        document.getElementById('win-rate').textContent = '';
       }
     } catch (error) {
       console.error('Error loading user profile:', error);
+      currentRank.textContent = 'Error loading rank';
     }
   }
   
@@ -166,22 +197,42 @@ document.addEventListener('DOMContentLoaded', async function() {
    * Update the rank badge image
    */
   function updateRankBadge(tier, division) {
-    if (!tier) {
-      // Unranked or no data
-      rankBadgePreview.style.backgroundImage = `url(${chrome.runtime.getURL('images/ranks/unranked.png')})`;
-      return;
-    }
+    // Format tier for consistent matching
+    const formattedTier = tier.toLowerCase();
     
-    tier = tier.toLowerCase();
-    
-    // For master+ tiers, there's no division
-    if (['master', 'grandmaster', 'challenger'].includes(tier)) {
-      rankBadgePreview.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${tier}.png`)})`;
-    } else {
-      // For other tiers, include the division
-      rankBadgePreview.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${tier}_${division.toLowerCase()}.png`)})`;
-    }
+    // Get rank icon URL from background script
+    chrome.runtime.sendMessage({ 
+      action: 'get_rank_icon_url', 
+      tier: formattedTier 
+    }, (response) => {
+      if (response && response.iconUrl) {
+        // Update badge with the icon URL
+        rankBadgePreview.style.backgroundImage = `url(${response.iconUrl})`;
+      } else {
+        // Use default rank icon as fallback
+        rankBadgePreview.style.backgroundImage = `url(chrome-extension://${chrome.runtime.id}/images/ranks/unranked.png)`;
+      }
+    });
   }
+  
+  // Check if we just returned from an authentication flow
+  chrome.storage.local.get('authInProgress', (data) => {
+    if (data.authInProgress) {
+      // Clear the flag
+      chrome.storage.local.remove('authInProgress');
+      
+      // Refresh the auth status to update UI
+      setTimeout(checkAuthStatus, 500);
+    }
+  });
+  
+  // Listen for messages from background script
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'auth_completed') {
+      // Auth flow completed, refresh UI
+      checkAuthStatus();
+    }
+  });
 });
 
 // Listen for messages from the callback page
