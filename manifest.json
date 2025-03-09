@@ -17,12 +17,14 @@
     }
   },
   "permissions": [
-    "storage",
     "identity",
+    "storage",
+    "tabs",
     "scripting"
   ],
   "host_permissions": [
-    "https://*.twitch.tv/*",
+    "https://eloward.vercel.app/*",
+    "https://*.riotgames.com/*",
     "https://*.api.riotgames.com/*",
     "https://ddragon.leagueoflegends.com/*",
     "https://id.twitch.tv/*",
@@ -31,9 +33,14 @@
   ],
   "content_scripts": [
     {
+      "matches": ["https://eloward.vercel.app/*"],
+      "js": ["js/auth-redirect-handler.js"],
+      "run_at": "document_idle"
+    },
+    {
       "matches": ["https://*.twitch.tv/*"],
       "js": ["content.js"],
-      "css": ["styles.css"]
+      "css": ["css/content.css"]
     }
   ],
   "background": {
