@@ -1,305 +1,260 @@
 // EloWard Popup Script
-document.addEventListener('DOMContentLoaded', async function() {
-  // UI Elements
+import { EloWardConfig } from './config.js';
+import { RiotAuth } from './riotAuth.js';
+
+document.addEventListener('DOMContentLoaded', () => {
+  // DOM elements
   const connectRiotBtn = document.getElementById('connect-riot');
   const riotConnectionStatus = document.getElementById('riot-connection-status');
-  const rankBadgePreview = document.getElementById('rank-badge-preview');
   const currentRank = document.getElementById('current-rank');
+  const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
-  
-  // Check authentication status on load
+
+  // Check authentication status
   checkAuthStatus();
-  
-  // Add event listeners
-  connectRiotBtn.addEventListener('click', handleRiotConnect);
+
+  // Event Listeners
+  connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
   
-  // Initialize region from storage
-  chrome.storage.local.get('selectedRegion', (data) => {
-    if (data.selectedRegion) {
-      regionSelect.value = data.selectedRegion;
-    }
-  });
-  
-  /**
-   * Check if the user is authenticated with Riot
-   */
-  async function checkAuthStatus() {
-    try {
-      // Show loading state
-      riotConnectionStatus.textContent = 'Checking...';
-      riotConnectionStatus.classList.add('status-loading');
-      
-      // Ask background script for auth status
-      const response = await chrome.runtime.sendMessage({ action: 'check_auth_status' });
-      
-      if (response.authenticated) {
-        // User is authenticated, update UI
-        riotConnectionStatus.textContent = 'Connected';
-        riotConnectionStatus.classList.remove('status-loading');
-        riotConnectionStatus.classList.add('status-connected');
-        
-        // Change button to disconnect
-        connectRiotBtn.textContent = 'Disconnect';
-        connectRiotBtn.classList.add('btn-disconnect');
-        
-        // Load and display user profile
-        loadUserProfile();
-      } else {
-        // User is not authenticated, update UI
-        riotConnectionStatus.textContent = 'Not Connected';
-        riotConnectionStatus.classList.remove('status-loading');
-        riotConnectionStatus.classList.remove('status-connected');
-        
-        // Reset button
-        connectRiotBtn.textContent = 'Connect';
-        connectRiotBtn.classList.remove('btn-disconnect');
-        
-        // Clear profile display
-        rankBadgePreview.style.backgroundImage = '';
-        currentRank.textContent = 'Unknown';
-      }
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-      riotConnectionStatus.textContent = 'Error';
-      riotConnectionStatus.classList.remove('status-loading');
-    }
-  }
-  
-  /**
-   * Handle Riot connect/disconnect button click
-   */
-  async function handleRiotConnect() {
-    // Check if already connected
-    if (connectRiotBtn.classList.contains('btn-disconnect')) {
-      // User wants to disconnect
-      try {
-        await chrome.runtime.sendMessage({ action: 'sign_out' });
-        checkAuthStatus(); // Refresh UI
-      } catch (error) {
-        console.error('Error signing out:', error);
-      }
-    } else {
-      // User wants to connect
-      try {
-        const region = regionSelect.value;
-        await chrome.runtime.sendMessage({ 
-          action: 'initiate_riot_auth',
-          region: region
-        });
-        
-        // The auth flow will continue in the new tab that opens
-        // We'll update the UI when the user returns to the popup
-      } catch (error) {
-        console.error('Error initiating auth:', error);
-      }
-    }
-  }
-  
-  /**
-   * Handle region change
-   */
-  async function handleRegionChange() {
-    const region = regionSelect.value;
-    
-    try {
-      await chrome.runtime.sendMessage({ 
-        action: 'update_region',
-        region: region
-      });
-      
-      // Refresh profile if user is authenticated
-      if (riotConnectionStatus.classList.contains('status-connected')) {
-        loadUserProfile();
-      }
-    } catch (error) {
-      console.error('Error updating region:', error);
-    }
-  }
-  
-  /**
-   * Load and display user profile
-   */
-  async function loadUserProfile() {
-    try {
-      const response = await chrome.runtime.sendMessage({ action: 'get_user_profile' });
-      
-      if (response.success && response.profile) {
-        const { account, summoner, rank, region } = response.profile;
-        
-        // Display summoner name if available
-        if (summoner && summoner.name) {
-          // Check if the element exists before setting the text content
-          const summonerNameElement = document.getElementById('summoner-name');
-          if (summonerNameElement) {
-            summonerNameElement.textContent = summoner.name;
-          }
-        }
-        
-        // Display rank if available
-        if (rank && rank.soloQueueEntry) {
-          const rankEntry = rank.soloQueueEntry;
-          const tierString = rankEntry.tier || 'Unranked';
-          const divisionString = rankEntry.rank || '';
-          const lpString = rankEntry.leaguePoints !== undefined ? ` ${rankEntry.leaguePoints} LP` : '';
-          
-          // Set rank text
-          currentRank.textContent = divisionString 
-            ? `${tierString} ${divisionString}${lpString}` 
-            : `${tierString}${lpString}`;
-          
-          // Set rank badge image
-          updateRankBadge(rankEntry.tier, rankEntry.rank);
-        } else {
-          currentRank.textContent = 'Unranked';
-          updateRankBadge(null, null);
-        }
-      } else {
-        console.error('Failed to load profile:', response.error);
-      }
-    } catch (error) {
-      console.error('Error loading user profile:', error);
-    }
-  }
-  
-  /**
-   * Update the rank badge image
-   */
-  function updateRankBadge(tier, division) {
-    if (!tier) {
-      // Unranked or no data
-      rankBadgePreview.style.backgroundImage = `url(${chrome.runtime.getURL('images/ranks/unranked.png')})`;
+  // Listen for messages from the auth window or background script
+  window.addEventListener('message', function(event) {
+    // Verify origin (from our extension)
+    if (event.origin !== `chrome-extension://${chrome.runtime.id}`) {
       return;
     }
     
-    tier = tier.toLowerCase();
+    const data = event.data;
+    console.log('Received message in popup:', data);
     
-    // For master+ tiers, there's no division
-    if (['master', 'grandmaster', 'challenger'].includes(tier)) {
-      rankBadgePreview.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${tier}.png`)})`;
-    } else {
-      // For other tiers, include the division
-      rankBadgePreview.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${tier}_${division.toLowerCase()}.png`)})`;
+    // Handle retry authentication
+    if (data && data.type === 'eloward_auth_retry') {
+      console.log('Retrying authentication...');
+      connectRiotAccount();
     }
-  }
-});
+  });
+  
+  // Listen for messages from the background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('Popup received message:', message);
+    
+    // Handle clear_local_storage message
+    if (message.action === 'clear_local_storage') {
+      console.log('Clearing localStorage in popup context');
+      
+      // Clear Riot auth data from localStorage
+      localStorage.removeItem('eloward_riot_access_token');
+      localStorage.removeItem('eloward_riot_refresh_token');
+      localStorage.removeItem('eloward_riot_token_expiry');
+      localStorage.removeItem('eloward_riot_account_info');
+      localStorage.removeItem('eloward_riot_summoner_info');
+      localStorage.removeItem('eloward_riot_rank_info');
+      localStorage.removeItem('eloward_auth_state');
+      
+      console.log('Cleared Riot auth data from localStorage');
+      sendResponse({ success: true });
+    }
+    
+    return true; // Keep the message channel open for async response
+  });
 
-// Listen for messages from the callback page
-window.addEventListener('message', (event) => {
-  // Verify sender origin for security
-  if (event.data.type === 'eloward_auth_callback') {
-    // Forward the message to the background script
-    chrome.runtime.sendMessage({
-      action: 'eloward_auth_callback',
-      code: event.data.code,
-      state: event.data.state
-    });
-  } else if (event.data.type === 'eloward_auth_retry') {
-    // Retry authentication
-    const regionSelect = document.getElementById('region');
-    const region = regionSelect.value;
-    chrome.runtime.sendMessage({ 
-      action: 'initiate_riot_auth',
-      region: region
-    });
-  }
-});
-
-// Refresh UI when popup becomes visible again after auth
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
-    // Call the checkAuthStatus function in the popup context
-    const checkAuthStatusFn = async function() {
-      try {
-        // Show loading state
-        const riotConnectionStatus = document.getElementById('riot-connection-status');
-        if (riotConnectionStatus) {
-          riotConnectionStatus.textContent = 'Checking...';
-          riotConnectionStatus.classList.add('status-loading');
-        }
-        
-        // Ask background script for auth status
-        const response = await chrome.runtime.sendMessage({ action: 'check_auth_status' });
-        
-        if (response.authenticated) {
-          // User is authenticated, update UI
-          if (riotConnectionStatus) {
-            riotConnectionStatus.textContent = 'Connected';
-            riotConnectionStatus.classList.remove('status-loading');
-            riotConnectionStatus.classList.add('status-connected');
-          }
-          
-          // Change button to disconnect
-          const connectRiotBtn = document.getElementById('connect-riot');
-          if (connectRiotBtn) {
-            connectRiotBtn.textContent = 'Disconnect';
-            connectRiotBtn.classList.add('btn-disconnect');
-          }
-          
-          // Load and display user profile
-          const loadUserProfileFn = window.loadUserProfile;
-          if (typeof loadUserProfileFn === 'function') {
-            loadUserProfileFn();
-          }
+  // Functions
+  function checkAuthStatus() {
+    chrome.storage.local.get(['riotAuth', 'userRank', 'selectedRegion'], async (result) => {
+      // Clear any fake auth state
+      if (result.riotAuth && (!result.riotAuth.puuid || !result.riotAuth.riotId)) {
+        // This is likely a fake/mock auth state from development
+        chrome.storage.local.remove(['riotAuth', 'userRank'], () => {
+          console.log('Cleared invalid auth state');
+          riotConnectionStatus.textContent = 'Not Connected';
+          connectRiotBtn.textContent = 'Connect';
+        });
+        return;
+      }
+      
+      // Check Riot auth
+      if (result.riotAuth) {
+        // Display Riot ID instead of "Connected"
+        if (result.riotAuth.riotId) {
+          riotConnectionStatus.textContent = result.riotAuth.riotId;
         } else {
-          // User is not authenticated, update UI
-          if (riotConnectionStatus) {
-            riotConnectionStatus.textContent = 'Not Connected';
-            riotConnectionStatus.classList.remove('status-loading');
-            riotConnectionStatus.classList.remove('status-connected');
-          }
-          
-          // Reset button
-          const connectRiotBtn = document.getElementById('connect-riot');
-          if (connectRiotBtn) {
-            connectRiotBtn.textContent = 'Connect';
-            connectRiotBtn.classList.remove('btn-disconnect');
-          }
-          
-          // Clear profile display
-          const rankBadgePreview = document.getElementById('rank-badge-preview');
-          const currentRank = document.getElementById('current-rank');
-          if (rankBadgePreview) {
-            rankBadgePreview.style.backgroundImage = '';
-          }
-          if (currentRank) {
-            currentRank.textContent = 'Unknown';
-          }
+          riotConnectionStatus.textContent = result.riotAuth.summonerName || 'Connected';
         }
-      } catch (error) {
-        console.error('Error checking auth status:', error);
-        const riotConnectionStatus = document.getElementById('riot-connection-status');
-        if (riotConnectionStatus) {
-          riotConnectionStatus.textContent = 'Error';
-          riotConnectionStatus.classList.remove('status-loading');
+        riotConnectionStatus.classList.add('connected');
+        connectRiotBtn.textContent = 'Disconnect';
+        
+        // Show rank if available
+        if (result.userRank) {
+          displayRank(result.userRank);
+        } else {
+          // Fetch rank data if not available
+          fetchUserRank(result.riotAuth);
+        }
+      } else {
+        // Check if we have auth data in localStorage via RiotAuth module
+        try {
+          const isAuthenticated = await RiotAuth.isAuthenticated();
+          if (isAuthenticated) {
+            console.log('Found authentication in localStorage but not in chrome.storage');
+            const accountInfo = await RiotAuth.getAccountInfo();
+            if (accountInfo) {
+              console.log('Retrieved account info from localStorage');
+              riotConnectionStatus.textContent = `${accountInfo.gameName}#${accountInfo.tagLine}`;
+              riotConnectionStatus.classList.add('connected');
+              connectRiotBtn.textContent = 'Disconnect';
+              
+              // Try to get rank data
+              const rankInfo = await RiotAuth.getRankInfo();
+              if (rankInfo) {
+                displayRank(rankInfo);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error checking localStorage auth:', error);
         }
       }
-    };
-    
-    checkAuthStatusFn();
+      
+      // Set selected region if available
+      if (result.selectedRegion) {
+        regionSelect.value = result.selectedRegion;
+      }
+    });
   }
-});
 
-// Listen for messages from the background script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Popup received message:', message);
-  
-  // Handle clear_local_storage message
-  if (message.action === 'clear_local_storage') {
-    console.log('Clearing localStorage in popup context');
-    
-    // Clear Riot auth data from localStorage
-    localStorage.removeItem('eloward_riot_access_token');
-    localStorage.removeItem('eloward_riot_refresh_token');
-    localStorage.removeItem('eloward_riot_token_expiry');
-    localStorage.removeItem('eloward_riot_account_info');
-    localStorage.removeItem('eloward_riot_summoner_info');
-    localStorage.removeItem('eloward_riot_rank_info');
-    localStorage.removeItem('eloward_auth_state');
-    
-    console.log('Cleared Riot auth data from localStorage');
-    sendResponse({ success: true });
+  async function connectRiotAccount() {
+    chrome.storage.local.get('riotAuth', async (result) => {
+      if (result.riotAuth) {
+        // Disconnect flow
+        try {
+          await RiotAuth.logout();
+          riotConnectionStatus.textContent = 'Not Connected';
+          riotConnectionStatus.classList.remove('connected');
+          connectRiotBtn.textContent = 'Connect';
+          
+          // Reset rank display
+          currentRank.textContent = 'Unknown';
+          rankBadgePreview.style.backgroundImage = 'none';
+        } catch (error) {
+          console.error('Logout error:', error);
+        }
+      } else {
+        // Connect flow - show loading state
+        connectRiotBtn.textContent = 'Connecting...';
+        connectRiotBtn.disabled = true;
+        
+        // Get selected region
+        const region = regionSelect.value;
+        
+        // Show connecting status
+        riotConnectionStatus.textContent = 'Connecting...';
+        riotConnectionStatus.classList.remove('error');
+        
+        console.log('Connecting to Riot with region:', region);
+        
+        // Use the Riot RSO authentication module
+        try {
+          const userData = await RiotAuth.authenticate(region);
+          console.log('Authentication successful:', userData);
+          
+          // Update UI
+          riotConnectionStatus.textContent = userData.riotId;
+          riotConnectionStatus.classList.add('connected');
+          connectRiotBtn.textContent = 'Disconnect';
+          connectRiotBtn.disabled = false;
+          
+          // Fetch and display rank for the authenticated account
+          fetchUserRank(userData);
+        } catch (error) {
+          console.error('Authentication error:', error);
+          connectRiotBtn.textContent = 'Connect';
+          connectRiotBtn.disabled = false;
+          
+          // Show descriptive error message
+          let errorMessage = 'Authentication Failed';
+          
+          if (error.message.includes('Failed to initialize authentication')) {
+            errorMessage = 'Server Connection Error';
+          } else if (error.message.includes('Authentication cancelled')) {
+            errorMessage = 'Authentication Cancelled';
+          } else if (error.message.includes('State mismatch')) {
+            errorMessage = 'Security Verification Failed';
+          } else if (error.message.includes('Failed to exchange token')) {
+            errorMessage = 'Token Exchange Failed';
+          }
+          
+          riotConnectionStatus.textContent = errorMessage;
+          riotConnectionStatus.classList.add('error');
+          
+          // Display more error details in console
+          console.error('Detailed error:', error.message);
+          
+          // Reset error state after 5 seconds
+          setTimeout(() => {
+            riotConnectionStatus.textContent = 'Not Connected';
+            riotConnectionStatus.classList.remove('error');
+          }, 5000);
+        }
+      }
+    });
   }
-  
-  return true; // Keep the message channel open for async response
+
+  function handleRegionChange() {
+    const selectedRegion = regionSelect.value;
+    chrome.storage.local.set({ selectedRegion });
+  }
+
+  function fetchUserRank(userData) {
+    // Request rank data from background script
+    chrome.runtime.sendMessage({
+      action: 'get_user_rank_by_puuid',
+      puuid: userData.puuid,
+      summonerId: userData.summonerId,
+      region: userData.platform || userData.region
+    }, (response) => {
+      if (response && response.rank) {
+        // Store rank data
+        chrome.storage.local.set({ userRank: response.rank });
+        
+        // Display rank
+        displayRank(response.rank);
+      } else if (response && response.error) {
+        console.error('Error fetching rank:', response.error);
+        
+        // Try to get rank from RiotAuth module
+        RiotAuth.getRankInfo()
+          .then(rankInfo => {
+            if (rankInfo) {
+              console.log('Retrieved rank info from RiotAuth module');
+              displayRank(rankInfo);
+            }
+          })
+          .catch(error => {
+            console.error('Error getting rank from RiotAuth module:', error);
+          });
+      }
+    });
+  }
+
+  function displayRank(rankData) {
+    if (!rankData) {
+      currentRank.textContent = 'Unranked';
+      // Enhanced image URL path to ensure proper loading with transparent background
+      rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+      // Apply custom positioning for unranked badge
+      rankBadgePreview.style.transform = 'translateY(-3px)';
+      return;
+    }
+    
+    let rankText = rankData.tier;
+    if (rankData.division && rankData.tier !== 'Master' && 
+        rankData.tier !== 'Grandmaster' && rankData.tier !== 'Challenger') {
+      rankText += ' ' + rankData.division;
+    }
+    
+    currentRank.textContent = rankText;
+    
+    // Enhanced image path and ensure proper sizing to display transparent PNG
+    rankBadgePreview.style.backgroundImage = `url('../images/ranks/${rankData.tier.toLowerCase()}.png')`;
+  }
 }); 
