@@ -208,9 +208,17 @@
         const error = urlParams.get('error');
         const errorDescription = urlParams.get('error_description');
         
+        // Log URL received for debugging (sanitized)
+        console.log('Auth callback URL received (sanitized):', 
+          window.location.href.replace(/code=([^&]+)/, 'code=[REDACTED]'));
+        
         // Check for errors in the URL
         if (error) {
-          throw new Error(`Error from Riot: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`);
+          if (error === 'invalid_request' && errorDescription?.includes('redirect_uri is not registered')) {
+            throw new Error(`The redirect URL is not registered with Riot. Please check your application settings in the Riot Developer Portal. The extension is using "${chrome.runtime.getURL('callback.html')}" as the redirect URL.`);
+          } else {
+            throw new Error(`Error from Riot: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`);
+          }
         }
         
         // Validate required parameters

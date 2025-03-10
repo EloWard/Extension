@@ -23,7 +23,6 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://eloward.vercel.app/*",
     "https://*.riotgames.com/*",
     "https://*.api.riotgames.com/*",
     "https://ddragon.leagueoflegends.com/*",
@@ -32,11 +31,6 @@
     "https://eloward-riotrso.unleashai-inquiries.workers.dev/*"
   ],
   "content_scripts": [
-    {
-      "matches": ["https://eloward.vercel.app/*"],
-      "js": ["js/auth-redirect-handler.js"],
-      "run_at": "document_idle"
-    },
     {
       "matches": ["https://*.twitch.tv/*"],
       "js": ["content.js"],

@@ -64,7 +64,8 @@ export const RiotAuth = {
       accountInfo: 'eloward_riot_account_info',
       summonerInfo: 'eloward_riot_summoner_info',
       rankInfo: 'eloward_riot_rank_info',
-      authState: 'eloward_auth_state'
+      authState: 'eloward_auth_state',
+      tokens: 'eloward_riot_tokens'
     }
   },
   
@@ -331,11 +332,20 @@ export const RiotAuth = {
    */
   async initAuth(region = 'na1') {
     try {
-      // Generate a random state for security
+      // Generate and store a random state
       const state = this._generateRandomState();
       
-      // Store the state in storage for verification later
-      const stateStored = safeStorage.setItem(this.config.storageKeys.authState, state);
+      // Store state in localStorage if available
+      let stateStored = false;
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(this.config.storageKeys.authState, state);
+          stateStored = true;
+          console.log('Stored auth state in localStorage');
+        } catch (e) {
+          console.error('Failed to store auth state in localStorage:', e);
+        }
+      }
       
       // If localStorage is not available, also store in chrome.storage
       if (!stateStored) {
@@ -345,8 +355,8 @@ export const RiotAuth = {
         console.log('Stored auth state in chrome.storage.local');
       }
       
-      // Use Vercel app as redirect URI instead of chrome-extension
-      const redirectUri = `https://eloward.vercel.app/`;
+      // Use the extension's callback.html as the redirect URI
+      const redirectUri = chrome.runtime.getURL('callback.html');
       
       console.log('Initializing Riot RSO auth with:', {
         region,
@@ -359,65 +369,30 @@ export const RiotAuth = {
       const url = new URL(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`);
       url.searchParams.append('redirect_uri', redirectUri);
       url.searchParams.append('state', state);
+      url.searchParams.append('region', region);
+      url.searchParams.append('extension_id', chrome.runtime.id);
       
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      const response = await fetch(url.toString());
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Auth initialization failed:', response.status, errorText);
-        throw new Error(`Failed to initialize authentication: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to initialize auth: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
       
-      // Verify the authUrl is properly formed
-      if (!data.authUrl || !data.authUrl.includes('auth.riotgames.com')) {
-        console.error('Invalid auth URL received:', data);
-        throw new Error('Invalid authentication URL received from server');
+      if (!data.authorizationUrl) {
+        throw new Error('No authorization URL returned from backend');
       }
       
-      // Log the full URL for debugging
-      console.log('Auth URL received:', data.authUrl);
+      console.log('Got authorization URL:', data.authorizationUrl);
       
-      // Ensure the URL has all required parameters
-      const authUrlObj = new URL(data.authUrl);
-      const requiredParams = ['client_id', 'redirect_uri', 'response_type', 'scope', 'state'];
-      const missingParams = requiredParams.filter(param => !authUrlObj.searchParams.has(param));
+      // Open the authorization window
+      this._openAuthWindow(data.authorizationUrl);
       
-      if (missingParams.length > 0) {
-        console.error('Auth URL is missing required parameters:', missingParams);
-        console.error('Current params:', Object.fromEntries(authUrlObj.searchParams.entries()));
-        
-        // Try to fix the URL if possible
-        if (!authUrlObj.searchParams.has('response_type')) {
-          authUrlObj.searchParams.append('response_type', 'code');
-        }
-        if (!authUrlObj.searchParams.has('scope')) {
-          authUrlObj.searchParams.append('scope', 'openid offline_access lol-account cpid');
-        }
-        if (!authUrlObj.searchParams.has('state') && state) {
-          authUrlObj.searchParams.append('state', state);
-        }
-      }
-      
-      // Open the auth window and wait for the response
-      const authWindowResult = await this._openAuthWindow(data.authUrl);
-      
-      // If we got a code, exchange it for tokens
-      if (authWindowResult) {
-        console.log('Auth code received, proceeding to token exchange');
-        return await this.completeAuth(authWindowResult, state);
-      } else {
-        console.log('No auth code received, authentication cancelled');
-        return false;
-      }
+      // Return the state so the caller can verify it
+      return { state };
     } catch (error) {
-      console.error('Authentication initialization failed:', error);
+      console.error('Error initializing auth:', error);
       throw error;
     }
   },
@@ -430,13 +405,25 @@ export const RiotAuth = {
    */
   async completeAuth(code, state) {
     try {
-      // Verify the state parameter
-      let storedState = safeStorage.getItem(this.config.storageKeys.authState);
+      // Verify state parameter
+      let storedState = null;
       
-      // If not found in localStorage, try chrome.storage
+      // Check localStorage first
+      if (typeof localStorage !== 'undefined') {
+        try {
+          storedState = localStorage.getItem(this.config.storageKeys.authState);
+          if (storedState) {
+            console.log('Retrieved auth state from localStorage');
+          }
+        } catch (e) {
+          console.error('Failed to retrieve auth state from localStorage:', e);
+        }
+      }
+      
+      // If not found in localStorage, check chrome.storage
       if (!storedState) {
         const data = await new Promise((resolve) => {
-          chrome.storage.local.get([this.config.storageKeys.authState], resolve);
+          chrome.storage.local.get(this.config.storageKeys.authState, resolve);
         });
         storedState = data[this.config.storageKeys.authState];
         console.log('Retrieved auth state from chrome.storage.local');
@@ -447,8 +434,8 @@ export const RiotAuth = {
         throw new Error('State mismatch. Possible CSRF attack.');
       }
       
-      // Use Vercel app as redirect URI
-      const redirectUri = `https://eloward.vercel.app/`;
+      // Use the extension's callback.html as the redirect URI
+      const redirectUri = chrome.runtime.getURL('callback.html');
       
       console.log('Completing Riot RSO auth with:', {
         codeLength: code ? code.length : 0,
@@ -464,53 +451,57 @@ export const RiotAuth = {
         },
         body: JSON.stringify({
           code,
-          redirect_uri: redirectUri
+          redirectUri
         })
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Token exchange failed:', response.status, errorText);
-        throw new Error(`Failed to exchange token: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to exchange code for token: ${response.status} ${response.statusText}`);
       }
       
-      const tokens = await response.json();
-      console.log('Tokens received successfully', { 
-        hasAccessToken: !!tokens.access_token,
-        hasRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expires_in
+      const tokenData = await response.json();
+      
+      // Clean up the stored state
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.removeItem(this.config.storageKeys.authState);
+        } catch (e) {
+          console.error('Failed to remove auth state from localStorage:', e);
+        }
+      }
+      
+      // Also clean up chrome.storage
+      await new Promise((resolve) => {
+        chrome.storage.local.remove(this.config.storageKeys.authState, resolve);
       });
       
-      // Store tokens in both localStorage (if available) and chrome.storage
-      const accessTokenStored = safeStorage.setItem(this.config.storageKeys.accessToken, tokens.access_token);
-      const refreshTokenStored = safeStorage.setItem(this.config.storageKeys.refreshToken, tokens.refresh_token);
+      // Store the tokens
+      const authData = {
+        ...tokenData.data,
+        issuedAt: Date.now()
+      };
       
-      // If localStorage failed, store in chrome.storage
-      if (!accessTokenStored || !refreshTokenStored) {
-        await new Promise((resolve) => {
-          chrome.storage.local.set({
-            [this.config.storageKeys.accessToken]: tokens.access_token,
-            [this.config.storageKeys.refreshToken]: tokens.refresh_token
-          }, resolve);
-        });
-        console.log('Stored tokens in chrome.storage.local');
+      // Store in localStorage if available
+      let tokensStored = false;
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(this.config.storageKeys.tokens, JSON.stringify(authData));
+          tokensStored = true;
+          console.log('Stored auth tokens in localStorage');
+        } catch (e) {
+          console.error('Failed to store auth tokens in localStorage:', e);
+        }
       }
-      
-      // Calculate and store the expiry time (current time + expires_in - 5 minute buffer)
-      const expiryTime = Date.now() + ((tokens.expires_in - 300) * 1000);
-      safeStorage.setItem(this.config.storageKeys.tokenExpiry, expiryTime.toString());
       
       // Also store in chrome.storage
       await new Promise((resolve) => {
-        chrome.storage.local.set({
-          [this.config.storageKeys.tokenExpiry]: expiryTime.toString()
-        }, resolve);
+        chrome.storage.local.set({ [this.config.storageKeys.tokens]: authData }, resolve);
       });
+      console.log('Stored auth tokens in chrome.storage.local');
       
-      console.log('Authentication completed successfully');
-      return true;
+      return tokenData;
     } catch (error) {
-      console.error('Error completing authentication:', error);
+      console.error('Error completing auth:', error);
       throw error;
     }
   },

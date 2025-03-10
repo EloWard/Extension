@@ -133,7 +133,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'handle_auth_callback') {
     // This message comes from the callback.html page
-    window.eloward.handleAuthCallback(message.code, message.state)
+    handleAuthCallback(message.code, message.state)
       .then(result => {
         sendResponse(result);
       })
@@ -475,11 +475,13 @@ async function initiateRiotAuth(region) {
     // Store state and region for verification after callback
     await chrome.storage.local.set({
       authState: state,
-      selectedRegion: region
+      selectedRegion: region,
+      authInProgress: true // Add flag to detect when auth flow starts
     });
     
     // Calculate the redirect URL (the extension's callback page)
     const redirectUri = chrome.runtime.getURL('callback.html');
+    console.log('Using redirect URI:', redirectUri);
     
     // Request auth URL from our backend proxy
     const response = await fetch(`${API_BASE_URL}/auth/riot/init`, {
@@ -501,7 +503,16 @@ async function initiateRiotAuth(region) {
     
     const data = await response.json();
     
+    // Verify the redirect URI matches what we sent
+    if (data.redirectUri !== redirectUri) {
+      console.warn('Warning: Redirect URI mismatch', {
+        sent: redirectUri,
+        received: data.redirectUri
+      });
+    }
+    
     // Open the authorization URL in a new tab
+    console.log('Opening auth URL:', data.authorizationUrl);
     chrome.tabs.create({ url: data.authorizationUrl });
     
     return { success: true };
@@ -523,6 +534,7 @@ async function handleAuthCallback(code, state) {
     
     // Calculate the redirect URL (should match what we used in initiateRiotAuth)
     const redirectUri = chrome.runtime.getURL('callback.html');
+    console.log('Using callback redirect URI for token exchange:', redirectUri);
     
     // Exchange code for tokens via our backend proxy
     const response = await fetch(`${API_BASE_URL}/auth/riot/token`, {
@@ -542,21 +554,40 @@ async function handleAuthCallback(code, state) {
     }
     
     const tokenData = await response.json();
+    console.log('Token exchange successful');
     
     // Store the auth data in chrome.storage.local with issued timestamp
     await chrome.storage.local.set({
       riotAuth: {
         ...tokenData.data,
         issued_at: Date.now()
-      }
+      },
+      authInProgress: false // Auth flow is complete
     });
     
     // Clear the auth state since we don't need it anymore
     await chrome.storage.local.remove(['authState']);
     
+    // Notify popup if it's open
+    try {
+      chrome.runtime.sendMessage({
+        action: 'auth_completed',
+        success: true
+      });
+    } catch (e) {
+      // Popup might not be open, that's okay
+      console.log('Could not notify popup of auth completion');
+    }
+    
     return { success: true, username: tokenData.data.user_info?.game_name };
   } catch (error) {
     console.error('Error handling auth callback:', error);
+    
+    // Clear the auth in progress flag
+    await chrome.storage.local.set({
+      authInProgress: false
+    });
+    
     return { success: false, error: error.message };
   }
 }
