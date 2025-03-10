@@ -1,6 +1,6 @@
 - Make sure RIOT RSO backend is working
 - Deploy to Cloudflare Worker
-- Build twitch RSO
+- Build twitch RSO for 
 
 
 
