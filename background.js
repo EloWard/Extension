@@ -5,7 +5,7 @@ import { RiotAuth } from './js/riotAuth.js';
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
-const RIOT_RSO_CLIENT_ID = '38a4b902-7186-44ac-8183-89ba1ac56cf3'; // From wrangler.toml
+const RIOT_RSO_CLIENT_ID = '38a4b902-7186-44ac-8183-89ba1ac56cf3'; // From wrangler.toml - matches the Cloudflare Worker config
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -844,11 +844,24 @@ async function initiateRiotAuth(region) {
 // Handle the authorization callback (called from callback.html)
 async function handleAuthCallback(code, state) {
   try {
-    // Verify state matches what we stored
+    // Verify state matches what we stored (checking both storage mechanisms)
     const storedData = await chrome.storage.local.get(['authState']);
     
-    if (!storedData.authState || storedData.authState !== state) {
-      throw new Error('Security error: State validation failed');
+    // Check chrome.storage first
+    let stateValid = storedData.authState && storedData.authState === state;
+    
+    // If not valid, try localStorage as fallback
+    if (!stateValid) {
+      try {
+        const localStorageState = localStorage.getItem('authState');
+        stateValid = localStorageState && localStorageState === state;
+      } catch (e) {
+        console.warn('Could not access localStorage for state verification fallback');
+      }
+    }
+    
+    if (!stateValid) {
+      throw new Error('Security verification failed: state parameter mismatch');
     }
     
     console.log('State validated, exchanging code for tokens');
@@ -873,7 +886,15 @@ async function handleAuthCallback(code, state) {
     console.log('Token exchange successful');
     
     // Store the auth data in chrome.storage.local with issued timestamp
+    const tokenExpiry = Date.now() + (tokenData.data.expires_in * 1000);
+    
     await chrome.storage.local.set({
+      // Use the standardized storage keys from the technical documentation
+      eloward_riot_access_token: tokenData.data.access_token,
+      eloward_riot_refresh_token: tokenData.data.refresh_token,
+      eloward_riot_token_expiry: tokenExpiry,
+      
+      // Keep the original structure for backward compatibility
       riotAuth: {
         ...tokenData.data,
         issued_at: Date.now()
@@ -911,8 +932,24 @@ async function handleAuthCallback(code, state) {
 // Sign out the user
 async function signOutUser() {
   try {
-    // Remove auth data from storage
-    await chrome.storage.local.remove(['riotAuth']);
+    // Remove auth data from all storage keys
+    await chrome.storage.local.remove([
+      'riotAuth',
+      'eloward_riot_access_token',
+      'eloward_riot_refresh_token',
+      'eloward_riot_token_expiry',
+      'eloward_riot_account_info',
+      'eloward_riot_rank_info'
+    ]);
+    
+    // Also try to clear from localStorage if available
+    try {
+      localStorage.removeItem('authState');
+      localStorage.removeItem('eloward_riot_access_token');
+      localStorage.removeItem('eloward_riot_refresh_token');
+    } catch (e) {
+      console.warn('Could not clear localStorage items');
+    }
     
     return { success: true };
   } catch (error) {
