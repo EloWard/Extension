@@ -10,6 +10,33 @@ This document details the technical implementation of Riot Games Sign On (RSO) a
 4. **Riot Game API** - Services for retrieving player data
 5. **Web Application** - Used for authentication redirection and fallback
 
+## Riot API Credentials
+
+The implementation uses two sets of credentials from the Riot Developer Portal:
+
+1. **EloWard RSO Client**
+   - **Purpose**: Used for authentication (OAuth 2.0)
+   - **Credentials Used**:
+     - **Client ID**: Used in authorization URL construction
+     - **Client Secret**: Used for token exchange and refresh
+   - **Where Used**: 
+     - For initiating the authentication flow (`/auth/init`)
+     - For exchanging authorization code for tokens (`/auth/token`)
+     - For refreshing tokens (`/auth/token/refresh`)
+
+2. **EloWard API Key**
+   - **Purpose**: Used for Riot API data access
+   - **Credentials Used**:
+     - **API Key**: `RGAPI-b9f7a88e-6bce-4c31-8857-58c1042c1a3e`
+   - **Where Used**:
+     - For direct Riot API calls that don't use OAuth
+     - As a fallback for limited data access
+     - For development and testing
+
+3. **Access Token Flow**:
+   - The access token obtained through OAuth is used for authenticated API calls
+   - API key is only needed for endpoints that don't support OAuth authorization
+
 ## Detailed Authentication Flow
 
 ### 1. Initialization
@@ -23,7 +50,7 @@ User → Extension Popup → Background Script → Riot RSO API
 - The state is stored in both `chrome.storage.local` and `localStorage` for redundancy
 - The extension makes a request to the Cloudflare Worker endpoint: `/auth/init`
 - The Worker constructs the Riot authorization URL with:
-  - `client_id`: The registered Riot API client ID (stored securely on the server)
+  - `client_id`: The registered RSO Client ID from Riot Developer Portal (EloWard RSO Client)
   - `redirect_uri`: The standard redirect URI (typically `https://www.eloward.xyz/auth/redirect`)
   - `response_type`: "code" for the authorization code flow
   - `scope`: Minimum required scopes ("openid" or extended with "offline_access lol ban cpid profile email")
@@ -72,7 +99,8 @@ Extension → Worker (/auth/token) → Riot Token API → Worker → Extension
   - `grant_type`: "authorization_code"
   - `code`: The authorization code
   - `redirect_uri`: The same redirect URI used in step 1
-  - `client_id` and `client_secret`: Securely stored on the Worker
+  - `client_id` and `client_secret`: RSO Client credentials from Riot Developer Portal
+  - Basic authentication header with: `base64(client_id:client_secret)`
 - Riot returns access and refresh tokens
 - The Worker forwards these tokens to the extension
 - The extension securely stores the tokens in `chrome.storage.local` with:
@@ -95,6 +123,7 @@ Extension → Worker API → Riot Account API → Worker → Extension
      - `gameName` (string): Player's in-game name (may be excluded if account doesn't have one)
      - `tagLine` (string): Player's tag line (may be excluded if account doesn't have one)
    - Requires Authorization header with the access token
+   - **Auth Method**: OAuth access token (not API key)
 
 2. **Summoner Information**:
    - Multiple endpoint options:
@@ -108,6 +137,9 @@ Extension → Worker API → Riot Account API → Worker → Extension
      - `id` (string): Encrypted summoner ID (max length 63 characters)
      - `puuid` (string): Encrypted PUUID (exact length of 78 characters)
      - `summonerLevel` (long): Summoner level
+   - **Auth Methods**:
+     - `/summoners/me` endpoint: OAuth access token
+     - Other endpoints: Either OAuth token or API key (RGAPI-...)
 
 3. **Rank Information**:
    - Two possible endpoints:
@@ -125,6 +157,7 @@ Extension → Worker API → Riot Account API → Worker → Extension
      - `losses` (int): Number of losses in the queue
      - Additional metadata: `hotStreak`, `veteran`, `freshBlood`, `inactive`
      - `miniSeries` (optional): Information about promotion series if player is in one
+   - **Auth Method**: Either OAuth token or API key (RGAPI-...)
 
 ### 6. Displaying Rank
 After retrieving rank data:
@@ -143,7 +176,10 @@ Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Ext
 
 - The extension detects an expired token
 - Sends the refresh token to the Worker's token refresh endpoint
-- The Worker exchanges the refresh token for a new access token
+- The Worker exchanges the refresh token for a new access token using:
+  - `grant_type`: "refresh_token"
+  - `refresh_token`: The stored refresh token
+  - Basic authentication with Client ID and Client Secret: `base64(client_id:client_secret)`
 - The extension updates its stored tokens
 
 ## Security Considerations
@@ -154,6 +190,7 @@ Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Ext
 4. **Minimal Scopes**: Only requesting the minimum scopes needed for functionality
 5. **Secure Communication**: All API requests use HTTPS
 6. **Multiple Communication Channels**: Redundant methods ensure the extension can receive the authorization code
+7. **API Key Security**: The Riot API key is only used on the server side, never exposed to clients
 
 ## Error Handling
 
@@ -161,6 +198,7 @@ Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Ext
 - Network errors are handled with informative user feedback
 - Token refresh failures trigger re-authentication
 - Invalid or expired tokens are detected and handled appropriately
+- API rate limiting is handled with appropriate backoff strategies
 
 ## Implementation Requirements
 
