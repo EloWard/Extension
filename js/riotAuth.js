@@ -162,14 +162,18 @@ export const RiotAuth = {
         console.log('Received authorization URL from backend');
         
         // Open the authorization URL in a popup window
-        const authCode = await this._openAuthWindow(data.authorizationUrl);
+        await this.openAuthWindow(data.authorizationUrl);
         
-        if (!authCode) {
+        // Wait for auth callback
+        console.log('Waiting for auth callback...');
+        const authResult = await this.waitForAuthCallback();
+        
+        if (!authResult || !authResult.code) {
           throw new Error('Authentication was cancelled or failed');
         }
         
         // Complete the authentication flow
-        await this.completeAuth(authCode, state);
+        await this.completeAuth(authResult.code, state);
         
         return true;
       } catch (error) {
@@ -269,11 +273,12 @@ export const RiotAuth = {
       console.log('Using window.open fallback for auth window');
       const authWindow = window.open(authUrl, 'eloward_auth', 'width=500,height=700');
       
+      if (!authWindow) {
+        throw new Error('Failed to open auth window. Popup blockers enabled?');
+      }
+      
       // Store reference to the window
       this.authWindow = authWindow;
-      
-      // Return promise that resolves when window is opened
-      return Promise.resolve();
     } catch (error) {
       console.error('Error opening auth window:', error);
       throw new Error('Failed to open authentication window');
@@ -281,89 +286,98 @@ export const RiotAuth = {
   },
   
   /**
-   * Sets up polling to check for auth result from external redirect URI
-   * @param {Function} resolve - Promise resolve function
-   * @param {Function} reject - Promise reject function
-   * @returns {number} - Interval ID for the polling
-   * @private
+   * Wait for auth callback by polling various storage locations
+   * @returns {Promise<Object|null>} - Resolves with the auth callback data or null if timed out
    */
-  _setupAuthResultPolling(resolve, reject) {
-    const maxAttempts = 120; // 2 minutes (120 * 1 second)
-    let attempts = 0;
+  async waitForAuthCallback() {
+    console.log('Waiting for auth callback...');
     
-    console.log('Setting up auth result polling');
-    
-    // Check various sources for auth result every second
-    return setInterval(async () => {
-      attempts++;
+    return new Promise((resolve, reject) => {
+      const maxAttempts = 120; // 2 minutes (120 * 1 second)
+      let attempts = 0;
       
-      try {
-        // Try to get the authentication result from chrome.storage
-        const result = await new Promise(r => {
-          chrome.storage.local.get(['eloward_auth_callback_result'], r);
-        });
+      // Set up polling interval
+      const pollInterval = setInterval(async () => {
+        attempts++;
         
-        const authResult = result.eloward_auth_callback_result;
-        
-        if (authResult) {
-          console.log('Auth result found in chrome.storage:', { 
-            hasCode: !!authResult.code,
-            hasError: !!authResult.error
+        try {
+          // Try to get auth callback data from chrome.storage
+          const data = await new Promise(r => {
+            chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
           });
           
-          // Clear the result so we don't use it again
-          chrome.storage.local.remove(['eloward_auth_callback_result']);
+          const callback = data.auth_callback || data.eloward_auth_callback;
           
-          if (authResult.error) {
-            reject(new Error(`Authentication error: ${authResult.error}`));
-          } else if (authResult.code) {
-            resolve(authResult.code);
-          } else {
-            reject(new Error('Invalid authentication result'));
+          if (callback && callback.code) {
+            console.log('Auth callback data found in chrome.storage');
+            clearInterval(pollInterval);
+            
+            // Clear the callback data
+            chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback']);
+            
+            resolve(callback);
+            return;
           }
           
-          // Clear the interval
-          clearInterval(this._authPollId);
-          this._authPollId = null;
-          return;
-        }
-        
-        // Also check localStorage as a backup method (added by the redirect page)
-        if (typeof localStorage !== 'undefined') {
-          try {
-            const storedAuthData = localStorage.getItem('eloward_auth_callback_data');
-            if (storedAuthData) {
-              const authData = JSON.parse(storedAuthData);
-              console.log('Auth result found in localStorage');
-              
-              // Clear the data
-              localStorage.removeItem('eloward_auth_callback_data');
-              
-              if (authData.code) {
-                resolve(authData.code);
-                
-                // Clear the interval
-                clearInterval(this._authPollId);
-                this._authPollId = null;
-                return;
+          // Try localStorage if available
+          if (typeof localStorage !== 'undefined') {
+            try {
+              // Check if we have auth data in localStorage
+              const storedAuthData = localStorage.getItem('eloward_auth_callback_data');
+              if (storedAuthData) {
+                try {
+                  const authData = JSON.parse(storedAuthData);
+                  console.log('Auth result found in localStorage');
+                  
+                  // Clear the data
+                  localStorage.removeItem('eloward_auth_callback_data');
+                  
+                  if (authData.code) {
+                    clearInterval(pollInterval);
+                    resolve(authData);
+                    return;
+                  }
+                } catch (e) {
+                  console.error('Error parsing auth data from localStorage:', e);
+                }
               }
+            } catch (e) {
+              console.error('Error accessing localStorage:', e);
             }
-          } catch (e) {
-            console.error('Error checking localStorage for auth result:', e);
           }
+          
+          // Check if auth window is closed (user might have cancelled)
+          if (this.authWindow && this.authWindow.closed) {
+            console.log('Auth window was closed by user');
+            clearInterval(pollInterval);
+            
+            // Make one final check for callback data
+            const finalCheck = await new Promise(r => {
+              chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
+            });
+            
+            const finalCallback = finalCheck.auth_callback || finalCheck.eloward_auth_callback;
+            
+            if (finalCallback && finalCallback.code) {
+              resolve(finalCallback);
+            } else {
+              resolve(null); // Indicate cancellation
+            }
+            return;
+          }
+          
+          // Give up after max attempts
+          if (attempts >= maxAttempts) {
+            console.log('Auth callback polling timed out after', maxAttempts, 'attempts');
+            clearInterval(pollInterval);
+            resolve(null); // Resolve with null instead of rejecting
+          }
+        } catch (error) {
+          console.error('Error polling for auth callback:', error);
+          // Continue polling despite errors
         }
-        
-        // Give up after max attempts
-        if (attempts >= maxAttempts) {
-          console.error('Auth result polling timed out after', attempts, 'attempts');
-          clearInterval(this._authPollId);
-          this._authPollId = null;
-          reject(new Error('Authentication timed out. Please try again.'));
-        }
-      } catch (err) {
-        console.error('Error polling for auth result:', err);
-      }
-    }, 1000);
+      }, 1000);
+    });
   },
   
   /**
