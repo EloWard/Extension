@@ -89,12 +89,25 @@ Extension → Worker API → Riot Account API → Worker → Extension
 ```
 
 1. **Account Information**:
-   - Endpoint: `/riot/account/me`
-   - Returns: PUUID, Riot ID, game name, tag line
+   - Endpoint: `GET /riot/account/v1/accounts/me` - Gets account by access token
+   - Returns AccountDto object containing:
+     - `puuid` (string): Player's encrypted PUUID
+     - `gameName` (string): Player's in-game name (may be excluded if account doesn't have one)
+     - `tagLine` (string): Player's tag line (may be excluded if account doesn't have one)
+   - Requires Authorization header with the access token
 
 2. **Summoner Information**:
-   - Endpoint: `/riot/summoner/me` or `/riot/summoner/by-puuid/{puuid}`
-   - Returns: Summoner ID, account ID, name, level, profile icon ID
+   - Multiple endpoint options:
+     - `GET /lol/summoner/v4/summoners/me` - Gets summoner by access token
+     - `GET /lol/summoner/v4/summoners/by-puuid/{encryptedPUUID}` - Gets summoner by PUUID
+     - `GET /fulfillment/v1/summoners/by-puuid/{rsoPUUID}` - Gets summoner by RSO encrypted PUUID
+   - Returns SummonerDTO object containing:
+     - `accountId` (string): Encrypted account ID (max length 56 characters)
+     - `profileIconId` (int): ID of the summoner icon
+     - `revisionDate` (long): Date summoner was last modified (epoch milliseconds)
+     - `id` (string): Encrypted summoner ID (max length 63 characters)
+     - `puuid` (string): Encrypted PUUID (exact length of 78 characters)
+     - `summonerLevel` (long): Summoner level
 
 3. **Rank Information**:
    - Two possible endpoints:
