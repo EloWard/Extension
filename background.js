@@ -36,6 +36,9 @@ const ACTIVE_STREAMERS = [
   'tyler1'
 ];
 
+// Define the standard redirect URI to use throughout the app
+const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect";
+
 // Initialize
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('EloWard extension installed or updated', details.reason);
@@ -469,8 +472,10 @@ async function checkRiotAuthStatus() {
 // Initiate Riot authentication
 async function initiateRiotAuth(region) {
   try {
-    // Generate a random state value for security
-    const state = Math.random().toString(36).substring(2, 15);
+    // Generate a random state for CSRF protection
+    const state = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
     
     // Store state and region for verification after callback
     await chrome.storage.local.set({
@@ -479,9 +484,7 @@ async function initiateRiotAuth(region) {
       authInProgress: true // Add flag to detect when auth flow starts
     });
     
-    // Calculate the redirect URL (the registered callback URL)
-    const redirectUri = "https://www.eloward.xyz/auth/redirect";
-    console.log('Using redirect URI:', redirectUri);
+    console.log('Initiating Riot authentication for region:', region);
     
     // Request auth URL from our backend proxy
     const response = await fetch(`${API_BASE_URL}/auth/riot/init`, {
@@ -490,7 +493,6 @@ async function initiateRiotAuth(region) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        redirectUri: redirectUri,
         state: state,
         scopes: 'openid offline_access lol ban cpid profile email'
       })
@@ -502,14 +504,6 @@ async function initiateRiotAuth(region) {
     }
     
     const data = await response.json();
-    
-    // Verify the redirect URI matches what we sent
-    if (data.redirectUri !== redirectUri) {
-      console.warn('Warning: Redirect URI mismatch', {
-        sent: redirectUri,
-        received: data.redirectUri
-      });
-    }
     
     // Open the authorization URL in a new tab
     console.log('Opening auth URL:', data.authorizationUrl);
@@ -532,9 +526,7 @@ async function handleAuthCallback(code, state) {
       throw new Error('Security error: State validation failed');
     }
     
-    // Calculate the redirect URL (should match what we used in initiateRiotAuth)
-    const redirectUri = "https://www.eloward.xyz/auth/redirect";
-    console.log('Using callback redirect URI for token exchange:', redirectUri);
+    console.log('State validated, exchanging code for tokens');
     
     // Exchange code for tokens via our backend proxy
     const response = await fetch(`${API_BASE_URL}/auth/riot/token`, {
@@ -543,8 +535,7 @@ async function handleAuthCallback(code, state) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        code: code,
-        redirectUri: redirectUri
+        code: code
       })
     });
     

@@ -45,6 +45,9 @@ export const RiotAuth = {
     // Backend proxy endpoints
     proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev', // Updated to use deployed worker
     
+    // Standard redirect URI
+    standardRedirectUri: 'https://www.eloward.xyz/auth/redirect',
+    
     // API endpoints
     endpoints: {
       // Backend proxy endpoints
@@ -326,7 +329,6 @@ export const RiotAuth = {
   
   /**
    * Initializes the authentication flow
-   * Gets the authorization URL from the backend and opens an auth window
    * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
    * @returns {Promise<void>} - Resolves once authentication is complete
    */
@@ -355,22 +357,17 @@ export const RiotAuth = {
         console.log('Stored auth state in chrome.storage.local');
       }
       
-      // Use the extension's callback.html as the redirect URI
-      const redirectUri = chrome.runtime.getURL('callback.html');
-      
       console.log('Initializing Riot RSO auth with:', {
         region,
         state,
-        redirectUri,
+        redirectUri: this.config.standardRedirectUri,
         extensionId: chrome.runtime.id
       });
       
       // Request authorization URL from the backend using GET with query parameters
       const url = new URL(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`);
-      url.searchParams.append('redirect_uri', redirectUri);
       url.searchParams.append('state', state);
       url.searchParams.append('region', region);
-      url.searchParams.append('extension_id', chrome.runtime.id);
       
       const response = await fetch(url.toString());
       
@@ -384,28 +381,34 @@ export const RiotAuth = {
         throw new Error('No authorization URL returned from backend');
       }
       
-      console.log('Got authorization URL:', data.authorizationUrl);
+      console.log('Received authorization URL from backend');
       
-      // Open the authorization window
-      this._openAuthWindow(data.authorizationUrl);
+      // Open the authorization URL in a popup window
+      const authCode = await this._openAuthWindow(data.authorizationUrl);
       
-      // Return the state so the caller can verify it
-      return { state };
+      if (!authCode) {
+        throw new Error('Authentication was cancelled or failed');
+      }
+      
+      // Complete the authentication flow
+      await this.completeAuth(authCode, state);
+      
+      return true;
     } catch (error) {
-      console.error('Error initializing auth:', error);
+      console.error('Auth initialization failed:', error);
       throw error;
     }
   },
   
   /**
-   * Complete the authentication flow by exchanging the code for tokens
-   * @param {string} code - The authorization code from the callback
-   * @param {string} state - The state parameter from the callback
-   * @returns {Promise<boolean>} - Whether authentication was successful
+   * Completes the authentication flow after receiving the auth code
+   * @param {string} code - The authorization code
+   * @param {string} state - The state parameter to verify
+   * @returns {Promise<void>} - Resolves once authentication is complete
    */
   async completeAuth(code, state) {
     try {
-      // Verify state parameter
+      // Verify that the state matches what we stored
       let storedState = null;
       
       // Check localStorage first
@@ -434,13 +437,9 @@ export const RiotAuth = {
         throw new Error('State mismatch. Possible CSRF attack.');
       }
       
-      // Use the extension's callback.html as the redirect URI
-      const redirectUri = chrome.runtime.getURL('callback.html');
-      
       console.log('Completing Riot RSO auth with:', {
         codeLength: code ? code.length : 0,
-        state,
-        redirectUri
+        state
       });
       
       // Exchange the code for tokens
@@ -450,8 +449,7 @@ export const RiotAuth = {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          code,
-          redirectUri
+          code
         })
       });
       
