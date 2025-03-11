@@ -97,8 +97,21 @@ Extension → Worker API → Riot Account API → Worker → Extension
    - Returns: Summoner ID, account ID, name, level, profile icon ID
 
 3. **Rank Information**:
-   - Endpoint: `/riot/league/entries/{summonerId}`
-   - Returns: Queue type, tier, rank, league points, wins/losses
+   - Two possible endpoints:
+     - `GET /lol/league/v4/entries/by-puuid/{encryptedPUUID}` - Gets league entries by PUUID
+     - `GET /lol/league/v4/entries/by-summoner/{encryptedSummonerId}` - Gets league entries by summoner ID
+   - Both return a set of LeagueEntryDTO objects containing:
+     - `leagueId` (string): Identifier for the league
+     - `summonerId` (string): Player's encrypted summonerId
+     - `puuid` (string): Player's encrypted puuid
+     - `queueType` (string): Type of queue (e.g., "RANKED_SOLO_5x5", "RANKED_FLEX_SR")
+     - `tier` (string): Tier level (e.g., "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER")
+     - `rank` (string): Division within tier (e.g., "I", "II", "III", "IV")
+     - `leaguePoints` (int): League points within current rank
+     - `wins` (int): Number of wins in the queue
+     - `losses` (int): Number of losses in the queue
+     - Additional metadata: `hotStreak`, `veteran`, `freshBlood`, `inactive`
+     - `miniSeries` (optional): Information about promotion series if player is in one
 
 ### 6. Displaying Rank
 After retrieving rank data:
