@@ -39,49 +39,131 @@ const ACTIVE_STREAMERS = [
 // Define the standard redirect URI to use throughout the app
 const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect";
 
-// Add window message event listeners for auth redirects
-// This needs to be set up early to ensure it catches messages
-let authWindows = [];
+/* Track any open auth windows */
+let authWindows = {};
 
-// Listen for web messages
-window.addEventListener('message', function(event) {
-  // Filter events by source or origin if needed for security
-  console.log('Background script received window message:', event.data);
+/* Handle auth callbacks */
+function handleAuthCallback(params) {
+  console.log('Handling auth callback in background script', params);
   
-  if (event.data && (event.data.source === 'eloward_auth' || event.data.type === 'auth_callback')) {
-    console.log('Processing auth callback message from window:', event.data);
-    
-    // Handle auth callback data
-    if (event.data.code && event.data.state) {
-      // Store the auth callback data
+  // Add the auth data to chrome.storage.local under multiple keys for compatibility
+  chrome.storage.local.set({
+    'auth_callback': params,
+    'eloward_auth_callback': params
+  }, () => {
+    console.log('Stored auth callback data in chrome.storage.local');
+  });
+}
+
+/* Listen for messages from content scripts, popup, and other extension components */
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Background script received message:', message);
+  
+  if (message.type === 'get_auth_callback') {
+    chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], (data) => {
+      const callback = data.auth_callback || data.eloward_auth_callback;
+      sendResponse({ data: callback });
+      
+      // Clear the stored callback after sending it
+      if (callback) {
+        chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback']);
+      }
+    });
+    return true; // Required for async sendResponse
+  }
+  
+  if (message.type === 'open_auth_window') {
+    if (message.url) {
+      // Generate a unique ID for this auth window
+      const windowId = Date.now().toString();
+      
+      // Open the auth window
+      chrome.windows.create({
+        url: message.url,
+        type: 'popup',
+        width: 500,
+        height: 700
+      }, (window) => {
+        // Track this window
+        authWindows[windowId] = {
+          window,
+          state: message.state,
+          createdAt: Date.now()
+        };
+        
+        console.log(`Opened auth window with ID ${windowId}`, window);
+        sendResponse({ success: true, windowId });
+      });
+    } else {
+      sendResponse({ success: false, error: 'No URL provided' });
+    }
+    return true; // Required for async sendResponse
+  }
+  
+  if (message.type === 'check_auth_tokens') {
+    chrome.storage.local.get([
+      'eloward_riot_access_token',
+      'eloward_riot_refresh_token',
+      'eloward_riot_token_expiry',
+      'eloward_riot_tokens',
+      'riotAuth'
+    ], (data) => {
+      console.log('Auth token check results:', data);
+      sendResponse({ data });
+    });
+    return true; // Required for async sendResponse
+  }
+  
+  if (message.type === 'auth_callback') {
+    handleAuthCallback(message.params);
+    sendResponse({ success: true });
+  }
+  
+  if (message.type === 'store_tokens') {
+    if (message.tokens) {
       chrome.storage.local.set({
-        eloward_auth_callback_result: {
-          code: event.data.code,
-          state: event.data.state
+        'eloward_riot_access_token': message.tokens.access_token,
+        'eloward_riot_refresh_token': message.tokens.refresh_token,
+        'eloward_riot_token_expiry': message.tokens.expires_at || (Date.now() + (message.tokens.expires_in * 1000)),
+        'eloward_riot_tokens': message.tokens,
+        'riotAuth': {
+          ...message.tokens,
+          issued_at: Date.now()
         }
       }, () => {
-        console.log('Stored auth callback data from window message');
+        console.log('Stored auth tokens in background script');
+        sendResponse({ success: true });
       });
+    } else {
+      sendResponse({ success: false, error: 'No tokens provided' });
     }
+    return true; // Required for async sendResponse
   }
 });
 
-// Track auth windows we open
-function trackAuthWindow(window) {
-  if (window) {
-    authWindows.push(window);
-    console.log('Tracking new auth window, total open:', authWindows.length);
-  }
-}
+/* Clean up old auth windows periodically */
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = 30 * 60 * 1000; // 30 minutes
+  
+  Object.keys(authWindows).forEach(id => {
+    const windowData = authWindows[id];
+    if (now - windowData.createdAt > maxAge) {
+      console.log(`Cleaning up old auth window ${id}`);
+      delete authWindows[id];
+    }
+  });
+}, 5 * 60 * 1000); // Run every 5 minutes
 
-// Cleanup closed auth windows
-function cleanupAuthWindows() {
-  const initialCount = authWindows.length;
-  authWindows = authWindows.filter(win => win && !win.closed);
-  if (initialCount !== authWindows.length) {
-    console.log('Cleaned up auth windows, remaining:', authWindows.length);
+// Listen for window messages (for callback.html communication)
+window.addEventListener('message', (event) => {
+  console.log('Background script received window message:', event.data);
+  
+  // Check if it's an auth callback message
+  if (event.data && event.data.type === 'auth_callback') {
+    handleAuthCallback(event.data.params);
   }
-}
+});
 
 // Initialize
 chrome.runtime.onInstalled.addListener((details) => {
@@ -162,7 +244,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (win && !win.closed) win.close();
       } catch (e) {}
     });
-    authWindows = [];
+    authWindows = {};
     
     sendResponse({ success: true });
     return true;
