@@ -54,7 +54,7 @@ export const RiotAuth = {
       authInit: '/auth/init',
       authToken: '/auth/token',
       tokenRefresh: '/auth/token/refresh',
-      accountInfo: '/riot/account/me',
+      accountInfo: '/riot/account',
       summonerInfo: '/riot/summoner/me',
       leagueEntries: '/riot/league/entries',
       userInfo: '/riot/user/info'
@@ -89,6 +89,7 @@ export const RiotAuth = {
       
       // Generate a unique state
       const state = this._generateRandomState();
+      console.log(`Generated auth state: ${state}`);
       
       // Store the state in both chrome.storage and localStorage for redundancy
       await this._storeAuthState(state);
@@ -106,22 +107,35 @@ export const RiotAuth = {
         throw new Error('Authentication cancelled or failed');
       }
       
+      console.log('Auth callback received with state:', authResult.state);
+      
       // Verify the state parameter to prevent CSRF attacks
       if (authResult.state !== state) {
-        console.error('State mismatch:', {
+        console.error('State mismatch during authentication:', {
           received: authResult.state,
           expected: state
         });
         
         // Try fallback state check using storage
         const storedState = await this._getStoredAuthState();
+        console.log('Retrieved stored state for fallback check:', storedState);
+        
         if (authResult.state !== storedState) {
-          throw new Error('Security verification failed');
+          console.error('State verification failed using fallback stored state:', {
+            receivedState: authResult.state,
+            retrievedStoredState: storedState,
+            originalState: state
+          });
+          throw new Error('Security verification failed: state parameter mismatch');
+        } else {
+          console.log('State verified using fallback stored state');
         }
       }
       
+      console.log('State verification passed, proceeding with token exchange');
+      
       // Exchange code for tokens
-      await this._exchangeCodeForTokens(authResult.code);
+      const tokenData = await this._exchangeCodeForTokens(authResult.code);
       
       // Get user data
       const userData = await this.getUserData();
@@ -267,6 +281,7 @@ export const RiotAuth = {
       const maxWaitTime = 300000; // 5 minutes
       const checkInterval = 1000; // 1 second
       let elapsedTime = 0;
+      let intervalId; // Declare intervalId variable here
       
       // Function to check for auth callback data
       const checkForCallback = async () => {
@@ -308,7 +323,7 @@ export const RiotAuth = {
       checkForCallback().then(found => {
         if (!found) {
           // If not found, start interval for checking
-          const intervalId = setInterval(checkForCallback, checkInterval);
+          intervalId = setInterval(checkForCallback, checkInterval);
         }
       });
       
@@ -345,31 +360,68 @@ export const RiotAuth = {
     try {
       console.log('Exchanging code for tokens...');
       
+      // Log request details (without the actual code for security)
+      console.log(`Making token exchange request to: ${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`);
+      
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({ code })
       });
       
+      console.log(`Token exchange response status: ${response.status} ${response.statusText}`);
+      
       if (!response.ok) {
-        throw new Error(`Token exchange failed: ${response.status} ${response.statusText}`);
+        const errorData = await response.json();
+        console.error('Token exchange error response:', errorData);
+        throw new Error(`Token exchange failed: ${response.status} ${errorData.message || response.statusText}`);
       }
       
-      const tokenData = await response.json();
+      const responseData = await response.json();
+      console.log('Token exchange response received, status:', 
+                  responseData.status || 'No status field',
+                  'Data fields:', Object.keys(responseData).join(', '));
       
-      if (!tokenData.data || !tokenData.data.access_token) {
-        throw new Error('Invalid token data received');
+      // Check for expected response structure based on different possible formats
+      // Some servers return { data: { access_token: ... } } while others return { access_token: ... } directly
+      let tokenData;
+      
+      if (responseData.data && responseData.data.access_token) {
+        // Format: { data: { access_token: ... } }
+        console.log('Using nested data field for token data');
+        tokenData = responseData.data;
+      } else if (responseData.access_token) {
+        // Format: { access_token: ... }
+        console.log('Using direct response for token data');
+        tokenData = responseData;
+      } else {
+        console.error('Invalid token data format, neither data.access_token nor access_token found:', 
+                     Object.keys(responseData));
+        throw new Error('Invalid token data received: missing access token');
       }
+      
+      // Log token details without exposing the actual token
+      console.log('Token data received:', {
+        hasAccessToken: !!tokenData.access_token,
+        accessTokenLength: tokenData.access_token ? tokenData.access_token.length : 0,
+        hasRefreshToken: !!tokenData.refresh_token,
+        refreshTokenLength: tokenData.refresh_token ? tokenData.refresh_token.length : 0,
+        expiresIn: tokenData.expires_in,
+        tokenType: tokenData.token_type,
+        scope: tokenData.scope
+      });
       
       // Store tokens
-      await this._storeTokens(tokenData.data);
+      await this._storeTokens(tokenData);
+      console.log('Tokens stored successfully');
       
-      return tokenData.data;
+      return tokenData;
     } catch (error) {
       console.error('Error exchanging code for tokens:', error);
-      throw new Error('Failed to exchange code for tokens');
+      throw new Error(`Failed to exchange code for tokens: ${error.message}`);
     }
   },
   
@@ -379,32 +431,98 @@ export const RiotAuth = {
    * @private
    */
   async _storeTokens(tokenData) {
-    const tokenExpiry = Date.now() + (tokenData.expires_in * 1000);
-    
-    // Store in chrome.storage.local
-    await new Promise(resolve => {
-      chrome.storage.local.set({
+    try {
+      console.log('Storing token data with fields:', Object.keys(tokenData).join(', '));
+      
+      // Validate required token fields
+      if (!tokenData.access_token) {
+        throw new Error('Missing access_token in token data');
+      }
+      
+      // Calculate expiry time
+      const expiresIn = tokenData.expires_in || 300; // Default to 5 minutes if not provided
+      const tokenExpiry = Date.now() + (expiresIn * 1000);
+      console.log(`Token will expire at: ${new Date(tokenExpiry).toISOString()} (${expiresIn} seconds from now)`);
+      
+      // Create structured data to store
+      const storageData = {
         [this.config.storageKeys.accessToken]: tokenData.access_token,
-        [this.config.storageKeys.refreshToken]: tokenData.refresh_token,
         [this.config.storageKeys.tokenExpiry]: tokenExpiry.toString(),
         [this.config.storageKeys.tokens]: tokenData,
         'riotAuth': { // For backward compatibility
           ...tokenData,
           issued_at: Date.now()
         }
-      }, resolve);
-    });
-    console.log('Tokens stored in chrome.storage');
-    
-    // Store in localStorage as backup
-    try {
-      localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
-      localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
-      localStorage.setItem(this.config.storageKeys.tokenExpiry, tokenExpiry.toString());
-      localStorage.setItem(this.config.storageKeys.tokens, JSON.stringify(tokenData));
-      console.log('Tokens stored in localStorage');
-    } catch (e) {
-      console.error('Failed to store tokens in localStorage:', e);
+      };
+      
+      // Optional: refreshToken (only if provided)
+      if (tokenData.refresh_token) {
+        storageData[this.config.storageKeys.refreshToken] = tokenData.refresh_token;
+        console.log('Refresh token included in storage data');
+      } else {
+        console.log('No refresh token available to store');
+      }
+      
+      // If we have user info from the token, store that too
+      if (tokenData.user_info) {
+        storageData[this.config.storageKeys.accountInfo] = tokenData.user_info;
+        console.log('User info from token stored');
+      } else if (tokenData.id_token) {
+        // Try to extract user info from ID token if available
+        try {
+          const idTokenParts = tokenData.id_token.split('.');
+          if (idTokenParts.length === 3) {
+            const idTokenPayload = JSON.parse(atob(idTokenParts[1]));
+            console.log('Extracted user info from ID token:', Object.keys(idTokenPayload).join(', '));
+            
+            // Create a user info object matching the expected structure
+            const userInfo = {
+              puuid: idTokenPayload.sub,
+              gameName: idTokenPayload.game_name || idTokenPayload.gameName,
+              tagLine: idTokenPayload.tag_line || idTokenPayload.tagLine
+            };
+            
+            storageData[this.config.storageKeys.accountInfo] = userInfo;
+            console.log('User info extracted from ID token and stored');
+          }
+        } catch (e) {
+          console.error('Failed to extract user info from ID token:', e);
+        }
+      }
+      
+      // Store in chrome.storage.local
+      console.log('Storing tokens in chrome.storage with keys:', Object.keys(storageData).join(', '));
+      await new Promise(resolve => {
+        chrome.storage.local.set(storageData, resolve);
+      });
+      console.log('Tokens stored in chrome.storage successfully');
+      
+      // Store in localStorage as backup
+      try {
+        localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
+        localStorage.setItem(this.config.storageKeys.tokenExpiry, tokenExpiry.toString());
+        localStorage.setItem(this.config.storageKeys.tokens, JSON.stringify(tokenData));
+        
+        if (tokenData.refresh_token) {
+          localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
+        }
+        
+        // Also store user info if available
+        if (storageData[this.config.storageKeys.accountInfo]) {
+          localStorage.setItem(
+            this.config.storageKeys.accountInfo, 
+            JSON.stringify(storageData[this.config.storageKeys.accountInfo])
+          );
+        }
+        
+        console.log('Tokens also stored in localStorage as backup');
+      } catch (e) {
+        console.error('Failed to store tokens in localStorage:', e);
+        // Non-fatal error, we still have chrome.storage
+      }
+    } catch (error) {
+      console.error('Error storing tokens:', error);
+      throw error;
     }
   },
   
@@ -427,12 +545,23 @@ export const RiotAuth = {
    */
   async getValidToken() {
     try {
+      console.log('Getting valid access token...');
+      
       // Try to get tokens from storage
       const accessToken = await this._getStoredValue(this.config.storageKeys.accessToken);
       const refreshToken = await this._getStoredValue(this.config.storageKeys.refreshToken);
       const tokenExpiryStr = await this._getStoredValue(this.config.storageKeys.tokenExpiry);
       
+      // Log token availability (without exposing actual tokens)
+      console.log('Token status:', {
+        hasAccessToken: !!accessToken,
+        accessTokenLength: accessToken ? accessToken.length : 0,
+        hasRefreshToken: !!refreshToken,
+        hasExpiryTimestamp: !!tokenExpiryStr
+      });
+      
       if (!accessToken) {
+        console.error('No access token found in storage');
         throw new Error('No access token found');
       }
       
@@ -442,17 +571,28 @@ export const RiotAuth = {
       const expiresInMs = tokenExpiry - now;
       const fiveMinutesInMs = 5 * 60 * 1000;
       
+      // Log expiry details
+      const expiresInMinutes = Math.round(expiresInMs / 60000);
+      console.log(`Token expires in ${expiresInMinutes} minutes (${expiresInMs} ms)`);
+      
       // If token expires in less than 5 minutes, refresh it
       if (expiresInMs < fiveMinutesInMs) {
+        console.log('Token expires soon, attempting refresh');
+        
         if (!refreshToken) {
+          console.error('Access token expired and no refresh token available');
           throw new Error('Access token expired and no refresh token available');
         }
         
         // Refresh the token
-        return await this.refreshToken(refreshToken);
+        console.log('Refreshing access token using refresh token');
+        const newAccessToken = await this.refreshToken(refreshToken);
+        console.log('Token refresh successful');
+        return newAccessToken;
       }
       
       // Token is valid
+      console.log('Using existing valid access token');
       return accessToken;
     } catch (error) {
       console.error('Error getting valid token:', error);
@@ -467,23 +607,51 @@ export const RiotAuth = {
    * @private
    */
   async _getStoredValue(key) {
-    // Try chrome.storage first
-    const chromeData = await new Promise(resolve => {
-      chrome.storage.local.get([key], resolve);
-    });
-    
-    if (chromeData[key]) {
-      return chromeData[key];
-    }
-    
-    // Try localStorage as fallback
     try {
-      return localStorage.getItem(key);
-    } catch (e) {
-      console.error(`Error getting ${key} from localStorage:`, e);
+      console.log(`Retrieving stored value for key: ${key}`);
+      
+      // Try chrome.storage first
+      const chromeData = await new Promise(resolve => {
+        chrome.storage.local.get([key], resolve);
+      });
+      
+      if (chromeData[key] !== undefined) {
+        console.log(`Found value in chrome.storage for key: ${key}`, 
+                   typeof chromeData[key] === 'object' ? 'Type: object' : 
+                   `Type: ${typeof chromeData[key]}`);
+        return chromeData[key];
+      }
+      
+      // Try localStorage as fallback
+      try {
+        const localValue = localStorage.getItem(key);
+        if (localValue !== null) {
+          console.log(`Found value in localStorage for key: ${key}`);
+          
+          // For objects stored in localStorage, we need to parse the JSON
+          if (localValue.startsWith('{') || localValue.startsWith('[')) {
+            try {
+              const parsedValue = JSON.parse(localValue);
+              console.log(`Parsed JSON for key: ${key}`);
+              return parsedValue;
+            } catch (parseError) {
+              console.warn(`Failed to parse JSON for key: ${key}, using raw value`);
+              return localValue;
+            }
+          }
+          
+          return localValue;
+        }
+      } catch (e) {
+        console.error(`Error accessing localStorage for key: ${key}`, e);
+      }
+      
+      console.log(`No stored value found for key: ${key}`);
+      return null;
+    } catch (error) {
+      console.error(`Error in _getStoredValue for key: ${key}`, error);
+      return null;
     }
-    
-    return null;
   },
   
   /**
@@ -580,20 +748,49 @@ export const RiotAuth = {
    */
   async getAccountInfo() {
     try {
+      // Get a valid token - this might refresh it if expired
       const token = await this.getValidToken();
+      console.log(`Retrieved valid access token for API request (token length: ${token.length})`);
+      
       const region = await this._getStoredValue('selectedRegion') || 'na1';
       
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/${region}`, {
+      // Get the appropriate regional route - 'na1' needs to be converted to 'americas' for API requests
+      const regionalRoute = this._getRegionalRouteFromPlatform(region);
+      console.log(`Using regional route: ${regionalRoute} for platform: ${region}`);
+      
+      // Log the request we're about to make
+      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/${regionalRoute}`;
+      console.log(`Making account info request to: ${requestUrl}`);
+      
+      // Use the correct endpoint structure that matches the Cloudflare Worker implementation
+      const response = await fetch(requestUrl, {
+        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
         }
       });
       
+      // Log response details
+      console.log(`Account info response status: ${response.status} ${response.statusText}`);
+      
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Account info API error (${response.status}):`, errorText);
+        
+        // If 401 Unauthorized, the token might be invalid - let's log token details
+        if (response.status === 401) {
+          console.error('Authorization failure - token validation issue', {
+            tokenStartsWith: token.substring(0, 10) + '...',
+            tokenLength: token.length
+          });
+        }
+        
         throw new Error(`Failed to get account info: ${response.status} ${response.statusText}`);
       }
       
       const accountData = await response.json();
+      console.log('Account info retrieved successfully:', accountData);
       
       // Store for later use
       await this._storeAccountInfo(accountData);
@@ -625,6 +822,35 @@ export const RiotAuth = {
   },
   
   /**
+   * Get the regional route from a platform ID
+   * @param {string} platform - Platform ID (e.g., 'na1')
+   * @returns {string} - Regional route (e.g., 'americas')
+   * @private
+   */
+  _getRegionalRouteFromPlatform(platform) {
+    const platformMap = {
+      'na1': 'americas',
+      'br1': 'americas',
+      'la1': 'americas',
+      'la2': 'americas',
+      'euw1': 'europe',
+      'eun1': 'europe',
+      'tr1': 'europe',
+      'ru': 'europe',
+      'kr': 'asia',
+      'jp1': 'asia',
+      'oc1': 'sea',
+      'ph2': 'sea',
+      'sg2': 'sea',
+      'th2': 'sea',
+      'tw2': 'sea',
+      'vn2': 'sea'
+    };
+    
+    return platformMap[platform] || 'americas'; // Default to americas if platform not found
+  },
+  
+  /**
    * Get summoner info by PUUID
    * @param {string} puuid - Player PUUID
    * @returns {Promise<Object>} - Summoner info
@@ -632,20 +858,29 @@ export const RiotAuth = {
   async getSummonerInfo(puuid) {
     try {
       const region = await this._getStoredValue('selectedRegion') || 'na1';
-      const platformRegion = this._getPlatformRegion(region);
+      
+      // Convert platform ID to regional route (e.g., 'na1' -> 'americas')
+      const regionalRoute = this._getRegionalRouteFromPlatform(region);
       
       if (!puuid) {
+        console.log('No PUUID provided to getSummonerInfo, fetching account info first');
         const accountInfo = await this.getAccountInfo();
         puuid = accountInfo.puuid;
       }
       
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}/${platformRegion}/${puuid}`);
+      console.log(`Fetching summoner info for PUUID: ${puuid} in region: ${regionalRoute}`);
+      
+      // Use the correct endpoint structure for the Cloudflare Worker
+      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}/${regionalRoute}/${puuid}`);
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Summoner info API error (${response.status}):`, errorText);
         throw new Error(`Failed to get summoner info: ${response.status} ${response.statusText}`);
       }
       
       const summonerData = await response.json();
+      console.log('Received summoner data:', summonerData);
       
       // Store for later use
       await this._storeSummonerInfo(summonerData);
@@ -683,23 +918,35 @@ export const RiotAuth = {
    */
   async getRankInfo(summonerId) {
     try {
-      const region = await this._getStoredValue('selectedRegion') || 'na1';
+      const platform = await this._getStoredValue('selectedRegion') || 'na1';
       
       if (!summonerId) {
+        console.log('No summonerId provided to getRankInfo, fetching summoner info first');
         const summonerInfo = await this.getSummonerInfo();
         summonerId = summonerInfo.id;
       }
       
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}/${region}/${summonerId}`);
+      console.log(`Fetching rank info for summonerId: ${summonerId} on platform: ${platform}`);
+      
+      // Use the platform directly here (not the regional route) since league endpoints use platform IDs
+      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}/${platform}/${summonerId}`);
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Rank info API error (${response.status}):`, errorText);
         throw new Error(`Failed to get rank info: ${response.status} ${response.statusText}`);
       }
       
       const leagueData = await response.json();
+      console.log('Received league/rank data:', leagueData);
       
       // Find the Solo/Duo queue entry
       const soloQueueEntry = leagueData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      if (soloQueueEntry) {
+        console.log('Found Solo/Duo rank:', `${soloQueueEntry.tier} ${soloQueueEntry.rank}`);
+      } else {
+        console.log('No Solo/Duo rank found');
+      }
       
       // Store for later use
       await this._storeRankInfo(leagueData);
@@ -760,7 +1007,7 @@ export const RiotAuth = {
   },
   
   /**
-   * Get comprehensive user data (account, summoner, rank)
+   * Get comprehensive user data from Riot API
    * @returns {Promise<Object>} - User data
    */
   async getUserData() {
@@ -771,13 +1018,43 @@ export const RiotAuth = {
         throw new Error('Not authenticated. Please connect your Riot account first.');
       }
       
-      // Get account info
-      const accountInfo = await this.getAccountInfo();
+      // First check if we already have account info in storage (from ID token)
+      let accountInfo;
+      try {
+        // Try to get from storage first
+        const storedAccountInfo = await this._getStoredValue(this.config.storageKeys.accountInfo);
+        
+        if (storedAccountInfo && 
+            typeof storedAccountInfo === 'object' && 
+            storedAccountInfo.puuid) {
+          console.log('Using stored account info from token');
+          accountInfo = storedAccountInfo;
+        } else {
+          // If not in storage, fetch from API
+          console.log('No stored account info, fetching from API');
+          accountInfo = await this.getAccountInfo();
+        }
+      } catch (error) {
+        console.error('Error getting account info from storage, trying API:', error);
+        // If storage retrieval fails, fetch from API
+        accountInfo = await this.getAccountInfo();
+      }
       
-      // Get summoner info
+      if (!accountInfo || !accountInfo.puuid) {
+        throw new Error('Failed to get account information');
+      }
+      
+      // Log the account info we're using
+      console.log('Using account info:', {
+        puuid: accountInfo.puuid,
+        gameName: accountInfo.gameName,
+        tagLine: accountInfo.tagLine
+      });
+      
+      // Get summoner info using the PUUID
       const summonerInfo = await this.getSummonerInfo(accountInfo.puuid);
       
-      // Get rank info
+      // Get rank info using the summoner ID
       const rankEntries = await this.getRankInfo(summonerInfo.id);
       
       // Extract the Solo/Duo queue rank
