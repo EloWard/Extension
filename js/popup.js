@@ -95,26 +95,35 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       console.log('Processing auth callback with params:', params);
       
-      // Store the callback in chrome.storage for RiotAuth to use
-      chrome.storage.local.set({
-        'auth_callback': params,
-        'eloward_auth_callback': params
-      }, async () => {
-        console.log('Stored auth callback in chrome.storage, completing auth flow');
+      // Set flag to prevent recursion during processing
+      processingMessage = true;
+      
+      try {
+        // Complete authentication by exchanging code for tokens
+        console.log('Completing authentication with code');
+        await RiotAuth.completeAuth(params);
+        console.log('Successfully completed authentication');
         
-        try {
-          // Complete the authentication flow
+        // Now fetch the user data
+        const isAuthenticated = await RiotAuth.isAuthenticated();
+        if (isAuthenticated) {
+          console.log('User is authenticated, getting user data');
           const userData = await RiotAuth.getUserData();
-          
-          // Update UI
           updateUserInterface(userData);
-        } catch (error) {
-          console.error('Error completing auth after callback:', error);
-          showAuthError('Auth Processing Failed');
+        } else {
+          console.warn('Authentication completed but isAuthenticated check failed');
+          showAuthError('Authentication Incomplete');
         }
-      });
+      } catch (error) {
+        console.error('Error completing authentication:', error);
+        showAuthError('Authentication Failed');
+      } finally {
+        // Always reset flag when done
+        processingMessage = false;
+      }
     } catch (error) {
       console.error('Error processing auth callback:', error);
+      processingMessage = false;
     }
   }
 
