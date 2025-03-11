@@ -1,6 +1,6 @@
 // EloWard Background Service Worker
 import './js/config.js';
-import './js/riotAuth.js';
+import { RiotAuth } from './js/riotAuth.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
@@ -139,6 +139,187 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true; // Required for async sendResponse
   }
+  
+  if (message.action === 'initiate_riot_auth') {
+    console.log('Background script handling initiate_riot_auth request for region:', message.region);
+    
+    // Use the provided state or generate a new one for CSRF protection
+    const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    console.log('Using auth state:', state);
+    
+    // Store state for verification after callback
+    chrome.storage.local.set({
+      'eloward_auth_state': state,
+      [RiotAuth.config.storageKeys.authState]: state, // Also store using the standard key
+      'selectedRegion': message.region || 'na1'
+    }, () => {
+      console.log('Stored auth state in background script:', state);
+    });
+    
+    // Request auth URL from our backend
+    const region = message.region || 'na1';
+    const url = `${API_BASE_URL}/auth/init?state=${state}&region=${region}`;
+    
+    console.log('Background script requesting auth URL from:', url);
+    
+    fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Auth URL request failed: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Background script received auth URL:', data.authorizationUrl ? 'Yes (URL hidden for security)' : 'No');
+        
+        if (!data.authorizationUrl) {
+          throw new Error('No authorization URL returned');
+        }
+        
+        // Return the auth URL to the caller
+        sendResponse({
+          success: true,
+          authUrl: data.authorizationUrl
+        });
+      })
+      .catch(error => {
+        console.error('Background script auth URL request error:', error);
+        sendResponse({
+          success: false,
+          error: error.message || 'Failed to obtain authorization URL'
+        });
+      });
+    
+    return true; // Indicate async response
+  }
+  
+  if (message.action === 'handle_auth_callback') {
+    // This message comes from the callback.html page
+    handleAuthCallback(message.code, message.state)
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(error => {
+        console.error('Error handling auth callback:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Indicate async response
+  }
+  
+  if (message.action === 'sign_out') {
+    signOutUser()
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch(error => {
+        console.error('Error signing out:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Indicate async response
+  }
+  
+  if (message.action === 'get_user_profile') {
+    getUserProfile()
+      .then(profile => {
+        sendResponse(profile);
+      })
+      .catch(error => {
+        console.error('Error getting user profile:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Indicate async response
+  }
+  
+  if (message.action === 'open_popup') {
+    // Open the extension popup
+    chrome.action.openPopup();
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (message.action === 'get_rank_icon_url') {
+    const iconUrl = getRankIconUrl(message.tier);
+    sendResponse({ iconUrl: iconUrl });
+    return true;
+  }
+  
+  if (message.action === 'get_rank_for_user') {
+    // Handle requests for rank data
+    const { username, platform } = message;
+    
+    if (!username || !platform) {
+      sendResponse({ error: 'Missing username or platform' });
+      return true;
+    }
+    
+    // Check if we have a cached rank first
+    chrome.storage.local.get('cachedRanks', (data) => {
+      const cachedRanks = data.cachedRanks || {};
+      const cacheKey = `${username.toLowerCase()}_${platform}`;
+      
+      if (cachedRanks[cacheKey] && 
+          (Date.now() - cachedRanks[cacheKey].timestamp < BADGE_REFRESH_INTERVAL)) {
+        // Use cached data if it exists and is not expired
+        console.log(`Using cached rank data for ${username}`);
+        sendResponse(cachedRanks[cacheKey].data);
+      } else {
+        // Fetch from backend or generate mock data
+        fetchRankFromBackend(username, platform)
+          .then(rankData => {
+            // Cache the result
+            cachedRanks[cacheKey] = {
+              timestamp: Date.now(),
+              data: rankData
+            };
+            chrome.storage.local.set({ cachedRanks });
+            
+            // Send response
+            sendResponse(rankData);
+          })
+          .catch(error => {
+            console.error('Error fetching rank:', error);
+            
+            // If there's an error, try to generate mock data as fallback
+            generateMockRankData(username, platform, mockData => {
+              sendResponse(mockData);
+            });
+          });
+      }
+    });
+    
+    return true; // Indicate async response
+  }
+  
+  if (message.action === 'get_user_rank_by_puuid') {
+    const { puuid, summonerId, region } = message;
+    
+    // Check if we have a valid token
+    RiotAuth.getValidToken()
+      .then(token => {
+        // Get rank data using the League V4 API via backend
+        getRankBySummonerId(token, summonerId, region)
+          .then(rankData => {
+            sendResponse({ rank: rankData });
+          })
+          .catch(error => {
+            console.error('Error getting rank data:', error);
+            sendResponse({ error: error.message });
+          });
+      })
+      .catch(error => {
+        console.error('Error getting valid token:', error);
+        sendResponse({ error: error.message });
+      });
+    
+    return true; // Keep the message channel open for async response
+  }
+  
+  // If no handlers matched, send an error response
+  sendResponse({ error: 'Unknown action', action: message.action });
+  return true;
 });
 
 /* Clean up old auth windows periodically */
@@ -272,61 +453,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.error('Error checking auth status:', error);
         sendResponse({ authenticated: false, error: error.message });
       });
-    return true; // Indicate async response
-  }
-  
-  if (message.action === 'initiate_riot_auth') {
-    console.log('Background script handling initiate_riot_auth request for region:', message.region);
-    
-    // Use the provided state or generate a new one for CSRF protection
-    const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    
-    console.log('Using auth state:', state);
-    
-    // Store state for verification after callback
-    chrome.storage.local.set({
-      eloward_auth_state: state,
-      selectedRegion: message.region || 'na1'
-    }, () => {
-      console.log('Stored auth state in background script:', state);
-    });
-    
-    // Request auth URL from our backend
-    const region = message.region || 'na1';
-    const url = `${API_BASE_URL}/auth/init?state=${state}&region=${region}`;
-    
-    console.log('Background script requesting auth URL from:', url);
-    
-    fetch(url)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Auth URL request failed: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then(data => {
-        console.log('Background script received auth URL:', data.authorizationUrl ? 'Yes (URL hidden for security)' : 'No');
-        
-        if (!data.authorizationUrl) {
-          throw new Error('No authorization URL returned');
-        }
-        
-        // Return the auth URL to the caller
-        sendResponse({
-          success: true,
-          authUrl: data.authorizationUrl
-        });
-      })
-      .catch(error => {
-        console.error('Background script auth URL request error:', error);
-        sendResponse({
-          success: false,
-          error: error.message || 'Failed to obtain authorization URL'
-        });
-      });
-    
     return true; // Indicate async response
   }
   
