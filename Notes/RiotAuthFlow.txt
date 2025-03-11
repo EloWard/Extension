@@ -23,6 +23,11 @@ The implementation uses two sets of credentials from the Riot Developer Portal:
      - For initiating the authentication flow (`/auth/init`)
      - For exchanging authorization code for tokens (`/auth/token`)
      - For refreshing tokens (`/auth/token/refresh`)
+   - **Authentication Methods**:
+     - **Client Secret Basic**: Uses `Authorization: Basic [base64(client_id:client_secret)]` header
+     - **Private Key JWT**: Uses `client_assertion_type` and `client_assertion` parameters
+       - `client_assertion_type`: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+       - `client_assertion`: A signed JWT token
 
 2. **EloWard API Key**
    - **Purpose**: Used for Riot API data access
@@ -95,19 +100,25 @@ Extension → Worker (/auth/token) → Riot Token API → Worker → Extension
 ```
 
 - The extension sends the authorization code to the Worker's `/auth/token` endpoint
-- The Worker makes a secure request to Riot's token endpoint with:
+- The Worker makes a secure request to Riot's token endpoint (https://auth.riotgames.com/token) with:
   - `grant_type`: "authorization_code"
   - `code`: The authorization code
   - `redirect_uri`: The same redirect URI used in step 1
-  - `client_id` and `client_secret`: RSO Client credentials from Riot Developer Portal
-  - Basic authentication header with: `base64(client_id:client_secret)`
-- Riot returns access and refresh tokens
-- The Worker forwards these tokens to the extension
-- The extension securely stores the tokens in `chrome.storage.local` with:
-  - `access_token`: For making API requests
+  - Authentication via one of these methods:
+    - **Client Secret Basic**: `Authorization: Basic [base64(client_id:client_secret)]` header
+    - **Private Key JWT**: 
+      - `client_assertion_type`: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+      - `client_assertion`: A signed JWT token (100-year token provided by Riot or generated)
+- Riot returns a response containing:
+  - `access_token`: For accessing protected resources
+  - `id_token`: Contains user identity information
   - `refresh_token`: For obtaining new access tokens
-  - `expires_in`: Token expiration time
-  - Calculated expiration timestamp
+  - `expires_in`: Token lifetime in seconds (typically 600)
+  - `token_type`: "Bearer"
+  - `scope`: Granted scopes
+  - `sub_sid`: Session identifier
+- The Worker forwards these tokens to the extension
+- The extension securely stores the tokens in `chrome.storage.local`
 
 ### 5. User Data Retrieval
 With valid tokens, the extension can retrieve user data:
@@ -159,6 +170,17 @@ Extension → Worker API → Riot Account API → Worker → Extension
      - `miniSeries` (optional): Information about promotion series if player is in one
    - **Auth Method**: Either OAuth token or API key (RGAPI-...)
 
+4. **User Information**:
+   - Endpoint: `GET https://auth.riotgames.com/userinfo` - Gets additional player information
+   - Headers:
+     - `Authorization: Bearer [access_token]`
+   - Returns JSON object containing:
+     - `sub` (string): Subject identifier (player ID)
+     - `cpid` (string): Game region for League of Legends (e.g., "NA1")
+     - Additional claims based on requested scopes
+   - **Auth Method**: OAuth access token only
+   - **Required Scope**: "openid" (additional data may require more scopes)
+
 ### 6. Displaying Rank
 After retrieving rank data:
 
@@ -174,13 +196,42 @@ When the access token expires:
 Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Extension
 ```
 
-- The extension detects an expired token
+- The extension detects an expired token (access tokens expire after 600 seconds / 10 minutes)
 - Sends the refresh token to the Worker's token refresh endpoint
-- The Worker exchanges the refresh token for a new access token using:
+- The Worker exchanges the refresh token for a new access token with:
+  - Endpoint: `https://auth.riotgames.com/token`
   - `grant_type`: "refresh_token"
   - `refresh_token`: The stored refresh token
-  - Basic authentication with Client ID and Client Secret: `base64(client_id:client_secret)`
+  - Authentication using the same method as the initial token request
+- Riot's response will include:
+  - A new access token
+  - The same or new refresh token
+  - If a new refresh token is provided, the old one becomes invalid
+  - If the same refresh token is provided, it can continue to be used
 - The extension updates its stored tokens
+
+## Token Types and Usage
+
+### Access Token
+- **Purpose**: Used to access protected resources
+- **Format**: Encrypted JWT (cannot be decoded or verified client-side)
+- **Visibility**: Server-side only, should never be exposed to browser JavaScript
+- **Lifespan**: Short (10 minutes / 600 seconds)
+- **Usage**: Include in `Authorization: Bearer [token]` header for API requests
+
+### ID Token
+- **Purpose**: Contains user identity information
+- **Format**: Signed JWT (can be decoded and verified)
+- **Usage**: Used for local user identification
+- **Verification**: Should be verified using the JSON Web Keys from `/jwks.json` endpoint
+
+### Refresh Token
+- **Purpose**: Obtain new access tokens
+- **Format**: Self-contained signed JWT
+- **Lifespan**: Long (compared to access tokens)
+- **Visibility**: Server-side only
+- **Usage**: Only used with the token endpoint to obtain new access tokens
+- **Format Example**: `dXJuOnJpb3Q6cGlkOnYxOk1qVXdNalE2UkVWV09R.Z2pyamNvaG8zN3NzbQ.xw96rZeGEmeMtrFlDCGLyA`
 
 ## Security Considerations
 
@@ -191,6 +242,8 @@ Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Ext
 5. **Secure Communication**: All API requests use HTTPS
 6. **Multiple Communication Channels**: Redundant methods ensure the extension can receive the authorization code
 7. **API Key Security**: The Riot API key is only used on the server side, never exposed to clients
+8. **JWT Verification**: ID tokens should be verified using the `/jwks.json` endpoint
+9. **Token Handling**: Access and refresh tokens should never be accessible to client-side JavaScript
 
 ## Error Handling
 
