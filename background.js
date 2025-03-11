@@ -479,8 +479,8 @@ async function initiateRiotAuth(region) {
       authInProgress: true // Add flag to detect when auth flow starts
     });
     
-    // Calculate the redirect URL (the extension's callback page)
-    const redirectUri = chrome.runtime.getURL('callback.html');
+    // Calculate the redirect URL (the registered callback URL)
+    const redirectUri = "https://www.eloward.xyz/auth/redirect";
     console.log('Using redirect URI:', redirectUri);
     
     // Request auth URL from our backend proxy
@@ -533,7 +533,7 @@ async function handleAuthCallback(code, state) {
     }
     
     // Calculate the redirect URL (should match what we used in initiateRiotAuth)
-    const redirectUri = chrome.runtime.getURL('callback.html');
+    const redirectUri = "https://www.eloward.xyz/auth/redirect";
     console.log('Using callback redirect URI for token exchange:', redirectUri);
     
     // Exchange code for tokens via our backend proxy

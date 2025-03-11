@@ -28,7 +28,8 @@
     "https://ddragon.leagueoflegends.com/*",
     "https://id.twitch.tv/*",
     "https://auth.riotgames.com/*",
-    "https://eloward-riotrso.unleashai-inquiries.workers.dev/*"
+    "https://eloward-riotrso.unleashai-inquiries.workers.dev/*",
+    "https://www.eloward.xyz/*"
   ],
   "content_scripts": [
     {
@@ -49,7 +50,7 @@
         "js/*.js",
         "callback.html"
       ],
-      "matches": ["https://*.twitch.tv/*", "https://auth.riotgames.com/*"]
+      "matches": ["https://*.twitch.tv/*", "https://auth.riotgames.com/*", "https://www.eloward.xyz/*"]
     }
   ],
   "content_security_policy": {

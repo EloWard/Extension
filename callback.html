@@ -215,7 +215,7 @@
         // Check for errors in the URL
         if (error) {
           if (error === 'invalid_request' && errorDescription?.includes('redirect_uri is not registered')) {
-            throw new Error(`The redirect URL is not registered with Riot. Please check your application settings in the Riot Developer Portal. The extension is using "${chrome.runtime.getURL('callback.html')}" as the redirect URL.`);
+            throw new Error(`The redirect URL is not registered with Riot. Please check your application settings in the Riot Developer Portal. The extension is using "https://www.eloward.xyz/auth/redirect" as the redirect URL.`);
           } else {
             throw new Error(`Error from Riot: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`);
           }
