@@ -6,7 +6,7 @@
   <title>EloWard Authentication</title>
   <style>
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Inter', Arial, sans-serif;
       background-color: #0A0A0A;
       color: #ffffff;
       display: flex;
@@ -18,10 +18,13 @@
       padding: 20px;
       text-align: center;
     }
-    .logo {
-      width: 100px;
-      height: auto;
-      margin-bottom: 20px;
+    .container {
+      max-width: 500px;
+      background-color: rgba(34, 49, 63, 0.9);
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      border: 2px solid #D9A336;
     }
     h1 {
       color: #D9A336;
@@ -32,232 +35,180 @@
       font-size: 16px;
       line-height: 1.5;
     }
-    .spinner {
-      margin: 20px auto;
-      width: 50px;
-      height: 50px;
-      border: 3px solid rgba(217, 163, 54, 0.3);
-      border-radius: 50%;
-      border-top-color: #D9A336;
-      animation: spin 1s ease-in-out infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
     .success {
       color: #4CAF50;
+      font-weight: bold;
     }
     .error {
-      color: #FF5252;
-    }
-    .details {
-      max-width: 600px;
-      background-color: #1A1A1A;
-      padding: 15px;
-      border-radius: 5px;
-      margin-top: 20px;
-      font-family: monospace;
-      text-align: left;
-      white-space: pre-wrap;
-      word-break: break-all;
-      overflow-wrap: break-word;
-      display: none;
-    }
-    .show-details {
-      background-color: transparent;
-      border: 1px solid #D9A336;
-      color: #D9A336;
-      padding: 8px 16px;
-      margin-top: 10px;
-      cursor: pointer;
-      border-radius: 4px;
-    }
-    .error-container {
-      margin-top: 20px;
-      padding: 15px;
-      background-color: rgba(255, 82, 82, 0.1);
-      border: 1px solid #FF5252;
-      border-radius: 5px;
-      text-align: left;
-      max-width: 600px;
-    }
-    .error-container h3 {
-      color: #FF5252;
-      margin-top: 0;
-    }
-    .retry-button {
-      background-color: #D9A336;
-      color: #000000;
-      border: none;
-      padding: 10px 20px;
-      margin-top: 20px;
-      cursor: pointer;
-      border-radius: 4px;
+      color: #F44336;
       font-weight: bold;
+    }
+    .countdown {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #999;
+    }
+    img.icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
     }
   </style>
 </head>
 <body>
-  <img src="images/logo/icon128.png" alt="EloWard Logo" class="logo">
-  <h1>EloWard Authentication</h1>
-  
-  <div id="loading">
-    <p>Processing authentication...</p>
-    <div class="spinner"></div>
-  </div>
-  
-  <div id="success" style="display: none;">
-    <p class="success">✓ Authentication successful!</p>
-    <p>You have successfully connected your Riot account.</p>
-    <p id="username-display"></p>
-    <p>You can close this tab and return to the extension.</p>
-    <button id="close-tab" class="retry-button">Close Tab</button>
-  </div>
-  
-  <div id="error" style="display: none;">
-    <p class="error">✗ Authentication failed</p>
-    <p id="error-message">There was an error during authentication.</p>
-    
-    <div class="error-container">
-      <h3>Error Details</h3>
-      <p id="error-details">Unknown error occurred during authentication.</p>
+  <div class="container">
+    <img src="images/icon-128.png" alt="EloWard Logo" class="icon">
+    <h1>Authentication</h1>
+    <div id="message">
+      <p>Processing your Riot authentication...</p>
     </div>
-    
-    <button id="retry" class="retry-button">Try Again</button>
+    <div id="countdown" class="countdown"></div>
   </div>
-  
-  <div id="technical-details" class="details"></div>
-  <button id="toggle-details" class="show-details" style="display: none;">Show Technical Details</button>
-  
+
   <script>
-    // Elements
-    const loadingEl = document.getElementById('loading');
-    const successEl = document.getElementById('success');
-    const errorEl = document.getElementById('error');
-    const errorMsgEl = document.getElementById('error-message');
-    const errorDetailsEl = document.getElementById('error-details');
-    const usernameEl = document.getElementById('username-display');
-    const retryBtn = document.getElementById('retry');
-    const closeTabBtn = document.getElementById('close-tab');
-    const technicalDetailsEl = document.getElementById('technical-details');
-    const toggleDetailsBtn = document.getElementById('toggle-details');
-    
-    // Show/hide elements
-    function showElement(element) {
-      if (element) element.style.display = 'block';
-    }
-    
-    function hideElement(element) {
-      if (element) element.style.display = 'none';
-    }
-    
-    // Handle auth success
-    function handleSuccess(username) {
-      hideElement(loadingEl);
-      showElement(successEl);
+    // Function to parse URL parameters
+    function getUrlParameters() {
+      const params = {};
+      const query = window.location.search.substring(1);
+      const vars = query.split('&');
       
-      if (username) {
-        usernameEl.textContent = `Account: ${username}`;
-      } else {
-        usernameEl.textContent = '';
-      }
-    }
-    
-    // Handle auth error
-    function handleError(message, details) {
-      hideElement(loadingEl);
-      showElement(errorEl);
-      showElement(toggleDetailsBtn);
-      
-      if (message) {
-        errorMsgEl.textContent = message;
+      for (let i = 0; i < vars.length; i++) {
+        const pair = vars[i].split('=');
+        params[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || '');
       }
       
-      if (details) {
-        errorDetailsEl.textContent = details;
-        technicalDetailsEl.textContent = JSON.stringify({ error: message, details: details }, null, 2);
-      }
+      return params;
     }
-    
-    // Toggle technical details
-    toggleDetailsBtn.addEventListener('click', () => {
-      const isShowing = technicalDetailsEl.style.display === 'block';
-      technicalDetailsEl.style.display = isShowing ? 'none' : 'block';
-      toggleDetailsBtn.textContent = isShowing ? 'Show Technical Details' : 'Hide Technical Details';
-    });
-    
-    // Retry button
-    retryBtn.addEventListener('click', () => {
-      // Open popup to start over
-      chrome.runtime.sendMessage({ action: 'open_popup' });
-      window.close();
-    });
-    
-    // Close tab button
-    closeTabBtn.addEventListener('click', () => {
-      window.close();
-    });
-    
-    // Main function to process the auth callback
-    async function processAuthCallback() {
+
+    // Function to send message to background script
+    function sendMessageToExtension(message) {
+      // Try direct messaging (works when this page is loaded in extension context)
       try {
-        // Parse URL query parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const state = urlParams.get('state');
-        const error = urlParams.get('error');
-        const errorDescription = urlParams.get('error_description');
-        
-        // Log URL received for debugging (sanitized)
-        console.log('Auth callback URL received (sanitized):', 
-          window.location.href.replace(/code=([^&]+)/, 'code=[REDACTED]'));
-        
-        // Check for errors in the URL
-        if (error) {
-          if (error === 'invalid_request' && errorDescription?.includes('redirect_uri is not registered')) {
-            throw new Error(`The redirect URL is not registered with Riot. Please check your application settings in the Riot Developer Portal. The extension is using "https://www.eloward.xyz/auth/redirect" as the redirect URL.`);
-          } else {
-            throw new Error(`Error from Riot: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`);
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("Error sending message to extension:", chrome.runtime.lastError);
+          } else if (response && response.success) {
+            console.log("Message successfully delivered to extension");
+            showSuccess();
           }
+        });
+      } catch (e) {
+        console.error("Failed to send message to extension via chrome.runtime:", e);
+        
+        // Try to use window.opener as fallback
+        try {
+          if (window.opener && window.opener.chrome && window.opener.chrome.runtime) {
+            console.log("Attempting to send via window.opener.chrome.runtime");
+            window.opener.chrome.runtime.sendMessage(message);
+            showSuccess();
+          } else if (window.opener) {
+            console.log("Attempting to use window.postMessage to opener");
+            window.opener.postMessage({
+              source: 'eloward_auth',
+              ...message
+            }, '*');
+            showSuccess();
+          } else {
+            console.log("No window.opener available");
+            showError("Unable to communicate with the extension. Please try again.");
+          }
+        } catch (e2) {
+          console.error("Failed to send message via window.opener:", e2);
+          showError("Communication error. Please close this window and try again.");
         }
+      }
+    }
+
+    // Function to show success message
+    function showSuccess() {
+      document.getElementById('message').innerHTML = `
+        <p class="success">Authentication successful!</p>
+        <p>You have successfully authenticated with Riot Games.</p>
+        <p>This window will close automatically in a few seconds.</p>
+      `;
+      startCountdown();
+    }
+
+    // Function to show error message
+    function showError(message) {
+      document.getElementById('message').innerHTML = `
+        <p class="error">Authentication Error</p>
+        <p>${message || "An unknown error occurred."}</p>
+        <p>Please close this window and try again.</p>
+      `;
+    }
+
+    // Function to start the countdown and close the window
+    function startCountdown() {
+      let seconds = 5;
+      
+      const countdownElement = document.getElementById('countdown');
+      countdownElement.textContent = `Closing in ${seconds} seconds...`;
+      
+      const interval = setInterval(() => {
+        seconds--;
         
-        // Validate required parameters
-        if (!code || !state) {
-          throw new Error('Missing required parameters: code and state are required');
+        if (seconds <= 0) {
+          clearInterval(interval);
+          countdownElement.textContent = 'Closing now...';
+          
+          // Attempt to close the window
+          setTimeout(() => {
+            window.close();
+          }, 500);
+        } else {
+          countdownElement.textContent = `Closing in ${seconds} seconds...`;
         }
+      }, 1000);
+    }
+
+    // Main initialization function
+    function init() {
+      const params = getUrlParameters();
+      
+      console.log("URL parameters:", { 
+        hasCode: !!params.code,
+        hasState: !!params.state,
+        hasError: !!params.error
+      });
+      
+      if (params.code && params.state) {
+        // We have a successful auth code
+        console.log("Auth code received, sending to extension");
         
-        // Log the parameters (sanitized)
-        console.log('Received auth callback with code and state');
-        
-        // Call the background script to handle the token exchange
-        const result = await chrome.runtime.sendMessage({
-          action: 'handle_auth_callback',
-          code: code,
-          state: state
+        // Send auth code to extension
+        sendMessageToExtension({
+          type: 'auth_callback',
+          code: params.code,
+          state: params.state
         });
         
-        if (result && result.success) {
-          handleSuccess(result.username);
-        } else {
-          handleError(
-            'Failed to complete authentication',
-            result && result.error ? result.error : 'Unknown error occurred'
-          );
+        // Save to localStorage as fallback mechanism
+        try {
+          localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
+            type: 'auth_callback',
+            code: params.code,
+            state: params.state,
+            timestamp: new Date().toISOString()
+          }));
+          console.log("Auth data stored in localStorage");
+        } catch (e) {
+          console.error("Error storing in localStorage:", e);
         }
-      } catch (error) {
-        console.error('Error in auth callback:', error);
-        handleError(
-          'An unexpected error occurred',
-          error instanceof Error ? error.message : String(error)
-        );
+        
+      } else if (params.error) {
+        // We have an error
+        console.error("Auth error:", params.error);
+        showError(params.error_description || params.error);
+      } else {
+        // We have neither code nor error
+        console.error("No code or error in URL parameters");
+        showError("No authentication code received. Please try again.");
       }
     }
-    
-    // Initialize
-    document.addEventListener('DOMContentLoaded', () => {
-      // Start processing the callback
-      processAuthCallback();
-    });
+
+    // Initialize when DOM is ready
+    document.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html> 

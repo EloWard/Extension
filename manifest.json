@@ -1,41 +1,38 @@
 {
   "manifest_version": 3,
   "name": "EloWard",
-  "version": "0.1.0",
-  "description": "Display League of Legends rank badges next to usernames in Twitch chat",
+  "version": "1.0.0",
+  "description": "League of Legends rank badges for Twitch chat",
   "icons": {
-    "16": "images/logo/icon16.png",
-    "48": "images/logo/icon48.png",
-    "128": "images/logo/icon128.png"
+    "16": "images/icon-16.png",
+    "32": "images/icon-32.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
   },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/logo/icon16.png",
-      "48": "images/logo/icon48.png",
-      "128": "images/logo/icon128.png"
+      "16": "images/icon-16.png",
+      "32": "images/icon-32.png",
+      "48": "images/icon-48.png",
+      "128": "images/icon-128.png"
     }
   },
   "permissions": [
-    "identity",
     "storage",
-    "tabs",
-    "scripting"
+    "identity",
+    "tabs"
   ],
   "host_permissions": [
-    "https://*.riotgames.com/*",
-    "https://*.api.riotgames.com/*",
-    "https://ddragon.leagueoflegends.com/*",
-    "https://id.twitch.tv/*",
-    "https://auth.riotgames.com/*",
+    "*://*.twitch.tv/*",
     "https://eloward-riotrso.unleashai-inquiries.workers.dev/*",
     "https://www.eloward.xyz/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://*.twitch.tv/*"],
+      "matches": ["*://*.twitch.tv/*"],
       "js": ["content.js"],
-      "css": ["css/content.css"]
+      "css": ["styles.css"]
     }
   ],
   "background": {
@@ -46,11 +43,9 @@
     {
       "resources": [
         "images/*.png",
-        "images/ranks/*.png",
-        "js/*.js",
         "callback.html"
       ],
-      "matches": ["https://*.twitch.tv/*", "https://auth.riotgames.com/*", "https://www.eloward.xyz/*"]
+      "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {

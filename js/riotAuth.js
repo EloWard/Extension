@@ -80,6 +80,8 @@ export const RiotAuth = {
    */
   async authenticate(region) {
     try {
+      console.log(`Connecting to Riot with region: ${region}`);
+      
       // Check if already authenticated
       const isAlreadyAuthenticated = await this.isAuthenticated();
       if (isAlreadyAuthenticated) {
@@ -143,6 +145,140 @@ export const RiotAuth = {
   },
   
   /**
+   * Initializes the authentication flow
+   * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
+   * @returns {Promise<boolean>} - Resolves with true if authentication was successful
+   */
+  async initAuth(region = 'na1') {
+    try {
+      // Generate and store a random state
+      const state = this._generateRandomState();
+      
+      // Store state in localStorage if available
+      let stateStored = false;
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(this.config.storageKeys.authState, state);
+          stateStored = true;
+          console.log('Stored auth state in localStorage');
+        } catch (e) {
+          console.error('Failed to store auth state in localStorage:', e);
+        }
+      }
+      
+      // If localStorage is not available, also store in chrome.storage
+      if (!stateStored) {
+        await new Promise((resolve) => {
+          chrome.storage.local.set({ [this.config.storageKeys.authState]: state }, resolve);
+        });
+        console.log('Stored auth state in chrome.storage.local');
+      }
+      
+      console.log('Initializing Riot RSO auth with:', {
+        region,
+        state,
+        redirectUri: this.config.standardRedirectUri,
+        extensionId: chrome.runtime.id
+      });
+      
+      // Request authorization URL from the backend using GET with query parameters
+      const url = new URL(`${this.config.proxyBaseUrl}/auth/init`);
+      url.searchParams.append('state', state);
+      url.searchParams.append('region', region);
+      
+      try {
+        const response = await fetch(url.toString());
+        
+        if (!response.ok) {
+          throw new Error(`Failed to initialize auth: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.authorizationUrl) {
+          throw new Error('No authorization URL returned from backend');
+        }
+        
+        console.log('Received authorization URL from backend');
+        
+        // Open the authorization URL in a popup window
+        const authCode = await this._openAuthWindow(data.authorizationUrl);
+        
+        if (!authCode) {
+          throw new Error('Authentication was cancelled or failed');
+        }
+        
+        // Complete the authentication flow
+        await this.completeAuth(authCode, state);
+        
+        return true;
+      } catch (error) {
+        console.error('Failed to get auth URL from backend:', error);
+        
+        // Fallback to direct request to background script
+        console.log('Attempting fallback through background script...');
+        
+        return new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({
+            action: 'initiate_riot_auth',
+            region: region
+          }, async (response) => {
+            if (!response || !response.success) {
+              console.error('Background script auth initialization failed:', 
+                           response?.error || 'Unknown error');
+              reject(new Error(response?.error || 'Failed to initialize authentication'));
+              return;
+            }
+            
+            // Now we wait for the auth code to be received
+            let codeReceived = false;
+            const maxWaitTime = 120000; // 2 minutes
+            const pollInterval = 1000; // 1 second
+            const startTime = Date.now();
+            
+            while (!codeReceived && Date.now() - startTime < maxWaitTime) {
+              // Check if we've received an auth code
+              const result = await new Promise(r => {
+                chrome.storage.local.get(['eloward_auth_callback_result'], r);
+              });
+              
+              if (result.eloward_auth_callback_result?.code) {
+                codeReceived = true;
+                
+                // Complete the auth flow with the received code and state
+                try {
+                  await this.completeAuth(
+                    result.eloward_auth_callback_result.code,
+                    result.eloward_auth_callback_result.state || state
+                  );
+                  
+                  // Remove the auth result
+                  chrome.storage.local.remove(['eloward_auth_callback_result']);
+                  
+                  resolve(true);
+                } catch (error) {
+                  reject(error);
+                }
+                break;
+              }
+              
+              // Wait before checking again
+              await new Promise(r => setTimeout(r, pollInterval));
+            }
+            
+            if (!codeReceived) {
+              reject(new Error('Timed out waiting for authentication. Please try again.'));
+            }
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Auth initialization failed:', error);
+      throw error;
+    }
+  },
+  
+  /**
    * Opens a popup window for authentication and returns the result
    * @param {string} authUrl - The authorization URL
    * @returns {Promise<object>} - The response data containing code and state
@@ -155,78 +291,85 @@ export const RiotAuth = {
         // Set up callback result polling
         const authResultPollId = this._setupAuthResultPolling(resolve, reject);
         
-        // For Chrome extensions, use launchWebAuthFlow
-        if (chrome && chrome.identity && chrome.identity.launchWebAuthFlow) {
-          // Use the chrome.identity API to handle the authentication flow
-          const windowFeatures = `width=600,height=700,left=${window.screen.width/2 - 300},top=${window.screen.height/2 - 350},resizable=yes,scrollbars=yes,status=yes`;
-          console.log('Window features:', windowFeatures);
-          
-          console.log('Using chrome.identity.launchWebAuthFlow for authentication');
-          
-          chrome.identity.launchWebAuthFlow({
-            url: authUrl,
-            interactive: true
-          }, (responseUrl) => {
-            if (chrome.runtime.lastError) {
-              console.error('Auth flow error:', chrome.runtime.lastError);
-              clearInterval(authResultPollId);
-              reject(new Error(`Auth flow error: ${chrome.runtime.lastError.message}`));
-              return;
-            }
-            
-            if (!responseUrl) {
-              console.error('No response URL from auth flow');
-              clearInterval(authResultPollId);
-              reject(new Error('Authentication was cancelled or failed'));
-              return;
-            }
-            
-            console.log('Received response URL from auth flow');
-            
-            // Parse the URL to get the authorization code
-            const parsedUrl = new URL(responseUrl);
-            const code = parsedUrl.searchParams.get('code');
-            
-            if (!code) {
-              const error = parsedUrl.searchParams.get('error');
-              const errorDesc = parsedUrl.searchParams.get('error_description');
-              console.error('Auth failed:', error, errorDesc);
-              clearInterval(authResultPollId);
-              reject(new Error(`Authentication failed: ${error} - ${errorDesc || 'No description'}`));
-              return;
-            }
-            
-            // Clear the polling interval since we got the code
+        // Get the window dimensions and position
+        const width = 600;
+        const height = 700;
+        const left = (window.screen.width/2) - (width/2);
+        const top = (window.screen.height/2) - (height/2);
+        const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
+        
+        console.log('Window features:', windowFeatures);
+        
+        // Register a listener for messages from the redirect page
+        // This needs to be done before opening the window
+        const messageListener = (request, sender, sendResponse) => {
+          if (request.type === 'auth_callback' && request.code) {
+            console.log('Received auth callback message with code');
             clearInterval(authResultPollId);
-            resolve(code);
-          });
-        } else {
-          // Fallback for Chrome without identity API or other browsers
-          console.log('Falling back to window.open for authentication');
-          
-          const extensionId = chrome.runtime.id;
-          const extensionOrigin = `chrome-extension://${extensionId}`;
-          
-          // Open a popup window for auth
-          const width = 600;
-          const height = 700;
-          const left = (window.screen.width/2) - (width/2);
-          const top = (window.screen.height/2) - (height/2);
-          const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
-          
-          const authWindow = window.open(authUrl, 'riotAuthWindow', windowFeatures);
-          
-          if (!authWindow) {
-            console.error('Failed to open auth window. Popup might be blocked.');
-            clearInterval(authResultPollId);
-            reject(new Error('Failed to open authentication window. Please allow popups for this site.'));
-            return;
+            chrome.runtime.onMessage.removeListener(messageListener);
+            resolve(request.code);
+            
+            // Confirm receipt
+            sendResponse({ success: true });
+            return true;
           }
-          
-          // This would only work if the redirect URI is back to our extension
-          // which won't be the case with the new redirect URI
-          console.log('Fallback method may not work with external redirect URI');
+        };
+        
+        chrome.runtime.onMessage.addListener(messageListener);
+        
+        // Also listen for window messages
+        const windowMessageListener = (event) => {
+          // Validate the source
+          if (event.data && 
+              (event.data.source === 'eloward_auth' || event.data.type === 'auth_callback') && 
+              event.data.code) {
+            console.log('Received auth callback via window message');
+            window.removeEventListener('message', windowMessageListener);
+            clearInterval(authResultPollId);
+            chrome.runtime.onMessage.removeListener(messageListener);
+            resolve(event.data.code);
+          }
+        };
+        
+        window.addEventListener('message', windowMessageListener);
+        
+        // Open the authorization page in a new window
+        const authWindow = window.open(authUrl, 'riotAuthWindow', windowFeatures);
+        
+        if (!authWindow) {
+          console.error('Failed to open auth window. Popup might be blocked.');
+          clearInterval(authResultPollId);
+          chrome.runtime.onMessage.removeListener(messageListener);
+          window.removeEventListener('message', windowMessageListener);
+          reject(new Error('Failed to open authentication window. Please allow popups for this site.'));
+          return;
         }
+        
+        // Store the auth window reference so we can check if it's closed
+        this._authWindow = authWindow;
+        
+        // Also check for window closing
+        const checkWindowClosed = setInterval(() => {
+          if (this._authWindow && this._authWindow.closed) {
+            console.log('Auth window was closed by the user');
+            clearInterval(checkWindowClosed);
+            clearInterval(authResultPollId);
+            chrome.runtime.onMessage.removeListener(messageListener);
+            window.removeEventListener('message', windowMessageListener);
+            
+            // If we haven't received a code by now, check storage once more
+            chrome.storage.local.get(['eloward_auth_callback_result'], (result) => {
+              if (result.eloward_auth_callback_result?.code) {
+                console.log('Found auth code in storage after window close');
+                resolve(result.eloward_auth_callback_result.code);
+                chrome.storage.local.remove(['eloward_auth_callback_result']);
+              } else {
+                // If we haven't received a code by now, consider it a cancellation
+                reject(new Error('Authentication was cancelled by the user.'));
+              }
+            });
+          }
+        }, 500);
       } catch (error) {
         console.error('Error opening auth window:', error);
         reject(error);
@@ -247,7 +390,7 @@ export const RiotAuth = {
     
     console.log('Setting up auth result polling');
     
-    // Check localStorage for auth result every second
+    // Check various sources for auth result every second
     return setInterval(async () => {
       attempts++;
       
@@ -260,7 +403,7 @@ export const RiotAuth = {
         const authResult = result.eloward_auth_callback_result;
         
         if (authResult) {
-          console.log('Auth result found:', { 
+          console.log('Auth result found in chrome.storage:', { 
             hasCode: !!authResult.code,
             hasError: !!authResult.error
           });
@@ -280,6 +423,31 @@ export const RiotAuth = {
           clearInterval(this._authPollId);
           this._authPollId = null;
           return;
+        }
+        
+        // Also check localStorage as a backup method (added by the redirect page)
+        if (typeof localStorage !== 'undefined') {
+          try {
+            const storedAuthData = localStorage.getItem('eloward_auth_callback_data');
+            if (storedAuthData) {
+              const authData = JSON.parse(storedAuthData);
+              console.log('Auth result found in localStorage');
+              
+              // Clear the data
+              localStorage.removeItem('eloward_auth_callback_data');
+              
+              if (authData.code) {
+                resolve(authData.code);
+                
+                // Clear the interval
+                clearInterval(this._authPollId);
+                this._authPollId = null;
+                return;
+              }
+            }
+          } catch (e) {
+            console.error('Error checking localStorage for auth result:', e);
+          }
         }
         
         // Give up after max attempts
@@ -324,79 +492,6 @@ export const RiotAuth = {
     } catch (error) {
       console.error('Logout error:', error);
       return false;
-    }
-  },
-  
-  /**
-   * Initializes the authentication flow
-   * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
-   * @returns {Promise<void>} - Resolves once authentication is complete
-   */
-  async initAuth(region = 'na1') {
-    try {
-      // Generate and store a random state
-      const state = this._generateRandomState();
-      
-      // Store state in localStorage if available
-      let stateStored = false;
-      if (typeof localStorage !== 'undefined') {
-        try {
-          localStorage.setItem(this.config.storageKeys.authState, state);
-          stateStored = true;
-          console.log('Stored auth state in localStorage');
-        } catch (e) {
-          console.error('Failed to store auth state in localStorage:', e);
-        }
-      }
-      
-      // If localStorage is not available, also store in chrome.storage
-      if (!stateStored) {
-        await new Promise((resolve) => {
-          chrome.storage.local.set({ [this.config.storageKeys.authState]: state }, resolve);
-        });
-        console.log('Stored auth state in chrome.storage.local');
-      }
-      
-      console.log('Initializing Riot RSO auth with:', {
-        region,
-        state,
-        redirectUri: this.config.standardRedirectUri,
-        extensionId: chrome.runtime.id
-      });
-      
-      // Request authorization URL from the backend using GET with query parameters
-      const url = new URL(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`);
-      url.searchParams.append('state', state);
-      url.searchParams.append('region', region);
-      
-      const response = await fetch(url.toString());
-      
-      if (!response.ok) {
-        throw new Error(`Failed to initialize auth: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (!data.authorizationUrl) {
-        throw new Error('No authorization URL returned from backend');
-      }
-      
-      console.log('Received authorization URL from backend');
-      
-      // Open the authorization URL in a popup window
-      const authCode = await this._openAuthWindow(data.authorizationUrl);
-      
-      if (!authCode) {
-        throw new Error('Authentication was cancelled or failed');
-      }
-      
-      // Complete the authentication flow
-      await this.completeAuth(authCode, state);
-      
-      return true;
-    } catch (error) {
-      console.error('Auth initialization failed:', error);
-      throw error;
     }
   },
   

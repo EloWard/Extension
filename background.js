@@ -39,6 +39,50 @@ const ACTIVE_STREAMERS = [
 // Define the standard redirect URI to use throughout the app
 const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect";
 
+// Add window message event listeners for auth redirects
+// This needs to be set up early to ensure it catches messages
+let authWindows = [];
+
+// Listen for web messages
+window.addEventListener('message', function(event) {
+  // Filter events by source or origin if needed for security
+  console.log('Background script received window message:', event.data);
+  
+  if (event.data && (event.data.source === 'eloward_auth' || event.data.type === 'auth_callback')) {
+    console.log('Processing auth callback message from window:', event.data);
+    
+    // Handle auth callback data
+    if (event.data.code && event.data.state) {
+      // Store the auth callback data
+      chrome.storage.local.set({
+        eloward_auth_callback_result: {
+          code: event.data.code,
+          state: event.data.state
+        }
+      }, () => {
+        console.log('Stored auth callback data from window message');
+      });
+    }
+  }
+});
+
+// Track auth windows we open
+function trackAuthWindow(window) {
+  if (window) {
+    authWindows.push(window);
+    console.log('Tracking new auth window, total open:', authWindows.length);
+  }
+}
+
+// Cleanup closed auth windows
+function cleanupAuthWindows() {
+  const initialCount = authWindows.length;
+  authWindows = authWindows.filter(win => win && !win.closed);
+  if (initialCount !== authWindows.length) {
+    console.log('Cleaned up auth windows, remaining:', authWindows.length);
+  }
+}
+
 // Initialize
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('EloWard extension installed or updated', details.reason);
@@ -95,6 +139,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // This message is meant for extension pages with localStorage access
     // Background service worker doesn't have localStorage
     return;
+  }
+  
+  // Handle auth callback from the redirect page
+  if (message.type === 'auth_callback' && message.code) {
+    console.log('Received auth callback from redirect page');
+    
+    // Store the auth callback result for later retrieval
+    chrome.storage.local.set({
+      eloward_auth_callback_result: {
+        code: message.code,
+        state: message.state
+      }
+    }, () => {
+      console.log('Stored auth callback result in chrome.storage.local');
+    });
+    
+    // Close any auth windows we might be tracking
+    cleanupAuthWindows();
+    authWindows.forEach(win => {
+      try {
+        if (win && !win.closed) win.close();
+      } catch (e) {}
+    });
+    authWindows = [];
+    
+    sendResponse({ success: true });
+    return true;
   }
   
   if (message.action === 'check_streamer_subscription') {
@@ -469,7 +540,11 @@ async function checkRiotAuthStatus() {
   }
 }
 
-// Initiate Riot authentication
+/**
+ * Initiate Riot authentication
+ * @param {string} region - The region code (e.g., 'na1', 'euw1')
+ * @returns {Promise<object>} - Resolves with result of auth initialization
+ */
 async function initiateRiotAuth(region) {
   try {
     // Generate a random state for CSRF protection
@@ -487,15 +562,11 @@ async function initiateRiotAuth(region) {
     console.log('Initiating Riot authentication for region:', region);
     
     // Request auth URL from our backend proxy
-    const response = await fetch(`${API_BASE_URL}/auth/riot/init`, {
-      method: 'POST',
+    const response = await fetch(`${API_BASE_URL}/auth/init?state=${state}&region=${region}`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        state: state,
-        scopes: 'openid offline_access lol ban cpid profile email'
-      })
+        'Accept': 'application/json'
+      }
     });
     
     if (!response.ok) {
@@ -505,9 +576,12 @@ async function initiateRiotAuth(region) {
     
     const data = await response.json();
     
-    // Open the authorization URL in a new tab
+    // Open the authorization URL in a new window/tab
     console.log('Opening auth URL:', data.authorizationUrl);
-    chrome.tabs.create({ url: data.authorizationUrl });
+    const authWindow = window.open(data.authorizationUrl, 'riotAuthWindow');
+    
+    // Track this window so we can close it later if needed
+    trackAuthWindow(authWindow);
     
     return { success: true };
   } catch (error) {
