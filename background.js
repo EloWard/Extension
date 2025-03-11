@@ -278,17 +278,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'initiate_riot_auth') {
     console.log('Background script handling initiate_riot_auth request for region:', message.region);
     
-    // Generate a random state for CSRF protection
-    const state = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    // Use the provided state or generate a new one for CSRF protection
+    const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
+    
+    console.log('Using auth state:', state);
     
     // Store state for verification after callback
     chrome.storage.local.set({
       eloward_auth_state: state,
       selectedRegion: message.region || 'na1'
     }, () => {
-      console.log('Stored auth state in background script');
+      console.log('Stored auth state in background script:', state);
     });
     
     // Request auth URL from our backend

@@ -17,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
   
+  // Flag to prevent recursive message handling
+  let processingMessage = false;
+  
   // Listen for messages from the auth window or background script
   window.addEventListener('message', function(event) {
     // Log all messages for debugging
@@ -24,29 +27,27 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Popup received window message data:', event.data);
     
     // Handle auth callback messages
-    if (event.data && ((event.data.type === 'auth_callback' && event.data.code) || 
-                        (event.data.source === 'eloward_auth' && event.data.code))) {
+    if (!processingMessage && event.data && 
+        ((event.data.type === 'auth_callback' && event.data.code) || 
+         (event.data.source === 'eloward_auth' && event.data.code))) {
       
       console.log('Received auth callback via window message with code - forwarding to RiotAuth');
       
-      // Forward the message directly to RiotAuth via window event
-      try {
-        const messageEvent = new MessageEvent('message', {
-          data: event.data,
-          origin: window.location.origin,
-          source: window
-        });
-        window.dispatchEvent(messageEvent);
-      } catch (e) {
-        console.error('Error forwarding message to RiotAuth:', e);
-      }
+      // Set flag to prevent recursion
+      processingMessage = true;
       
-      // Also store in chrome.storage for the RiotAuth module to find
+      // Store in chrome.storage for the RiotAuth module to find
       chrome.storage.local.set({
         'auth_callback': event.data,
         'eloward_auth_callback': event.data
       }, () => {
         console.log('Stored auth callback data in chrome.storage from popup');
+        
+        // Process the auth callback now
+        processAuthCallback(event.data);
+        
+        // Reset flag
+        processingMessage = false;
       });
     }
     
