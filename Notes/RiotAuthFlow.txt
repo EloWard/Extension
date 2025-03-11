@@ -1,0 +1,155 @@
+# Riot RSO Authentication Flow Technical Documentation
+
+## Overview
+This document details the technical implementation of Riot Games Sign On (RSO) authentication in the EloWard Chrome extension. The authentication flow follows the OAuth 2.0 authorization code flow, allowing secure user authentication with Riot Games and retrieval of player rank data for display in the extension interface.
+
+## Architecture Components
+1. **Chrome Extension** - The client-side application with popup UI
+2. **Cloudflare Worker Backend** - A secure proxy service that handles sensitive API interactions
+3. **Riot RSO API** - Riot's OAuth 2.0 authentication service
+4. **Riot Game API** - Services for retrieving player data
+5. **Web Application** - Used for authentication redirection and fallback
+
+## Detailed Authentication Flow
+
+### 1. Initialization
+When a user clicks the "Connect Riot Account" button in the extension popup:
+
+```
+User → Extension Popup → Background Script → Riot RSO API
+```
+
+- The extension generates a random state parameter for CSRF protection
+- The state is stored in both `chrome.storage.local` and `localStorage` for redundancy
+- The extension makes a request to the Cloudflare Worker endpoint: `/auth/init`
+- The Worker constructs the Riot authorization URL with:
+  - `client_id`: The registered Riot API client ID (stored securely on the server)
+  - `redirect_uri`: The standard redirect URI (typically `https://www.eloward.xyz/auth/redirect`)
+  - `response_type`: "code" for the authorization code flow
+  - `scope`: Minimum required scopes ("openid" or extended with "offline_access lol ban cpid profile email")
+  - `state`: The random state parameter for CSRF protection
+
+### 2. User Authentication
+The extension opens the authorization URL in a new window:
+
+```
+Extension → Open Auth Window → User Login → Riot RSO → Redirect
+```
+
+- The user is presented with the Riot Games login page
+- The user enters their credentials and authorizes the application
+- Riot RSO redirects to the specified redirect URI with:
+  - `code`: The authorization code
+  - `state`: The same state parameter sent in the initial request
+
+### 3. Redirect Handling and Communication
+The redirect is handled by either:
+
+```
+Riot RSO → Web App → Extension
+```
+OR
+```
+Riot RSO → Cloudflare Worker → Extension Callback Page
+```
+
+- For extension requests, the redirect is detected by the Worker
+- The Worker attempts to redirect to the extension's `callback.html` page
+- The redirect page contains scripts to communicate with the extension through multiple channels:
+  1. Direct `chrome.runtime.sendMessage` (if available)
+  2. `window.postMessage` to the opener window
+  3. Fallback to `localStorage` for polling
+
+### 4. Code Exchange
+After receiving the authorization code:
+
+```
+Extension → Worker (/auth/token) → Riot Token API → Worker → Extension
+```
+
+- The extension sends the authorization code to the Worker's `/auth/token` endpoint
+- The Worker makes a secure request to Riot's token endpoint with:
+  - `grant_type`: "authorization_code"
+  - `code`: The authorization code
+  - `redirect_uri`: The same redirect URI used in step 1
+  - `client_id` and `client_secret`: Securely stored on the Worker
+- Riot returns access and refresh tokens
+- The Worker forwards these tokens to the extension
+- The extension securely stores the tokens in `chrome.storage.local` with:
+  - `access_token`: For making API requests
+  - `refresh_token`: For obtaining new access tokens
+  - `expires_in`: Token expiration time
+  - Calculated expiration timestamp
+
+### 5. User Data Retrieval
+With valid tokens, the extension can retrieve user data:
+
+```
+Extension → Worker API → Riot Account API → Worker → Extension
+```
+
+1. **Account Information**:
+   - Endpoint: `/riot/account/me`
+   - Returns: PUUID, Riot ID, game name, tag line
+
+2. **Summoner Information**:
+   - Endpoint: `/riot/summoner/me` or `/riot/summoner/by-puuid/{puuid}`
+   - Returns: Summoner ID, account ID, name, level, profile icon ID
+
+3. **Rank Information**:
+   - Endpoint: `/riot/league/entries/{summonerId}`
+   - Returns: Queue type, tier, rank, league points, wins/losses
+
+### 6. Displaying Rank
+After retrieving rank data:
+
+- The extension processes the rank information
+- The appropriate rank badge and tier is displayed in the extension popup
+- The content script injects rank badges into Twitch chat messages
+- Rank data is cached in local storage for performance
+
+### 7. Token Refresh
+When the access token expires:
+
+```
+Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Extension
+```
+
+- The extension detects an expired token
+- Sends the refresh token to the Worker's token refresh endpoint
+- The Worker exchanges the refresh token for a new access token
+- The extension updates its stored tokens
+
+## Security Considerations
+
+1. **State Parameter**: Prevents CSRF attacks by verifying the state returned matches what was sent
+2. **Token Storage**: Tokens are stored securely in `chrome.storage.local`
+3. **Client Secret Protection**: Client secret is never exposed to the client, only stored on the Worker
+4. **Minimal Scopes**: Only requesting the minimum scopes needed for functionality
+5. **Secure Communication**: All API requests use HTTPS
+6. **Multiple Communication Channels**: Redundant methods ensure the extension can receive the authorization code
+
+## Error Handling
+
+- Authentication failures show appropriate error messages
+- Network errors are handled with informative user feedback
+- Token refresh failures trigger re-authentication
+- Invalid or expired tokens are detected and handled appropriately
+
+## Implementation Requirements
+
+1. **Extension Permissions**:
+   - `storage`: For storing tokens and user data
+   - `identity`: For the OAuth flow
+   - `tabs`: For managing authentication windows
+
+2. **Host Permissions**:
+   - `*://*.twitch.tv/*`: For content script injection
+   - Cloudflare Worker domain for API access
+   - Web application domain for redirects
+
+3. **Backend Services**:
+   - Cloudflare Worker with secure environment variables
+   - Registered Riot API application with proper redirect URIs
+
+This implementation follows OAuth 2.0 best practices while providing a seamless authentication experience for users within the constraints of a Chrome extension environment.
