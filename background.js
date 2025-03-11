@@ -276,14 +276,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'initiate_riot_auth') {
-    initiateRiotAuth(message.region)
-      .then(result => {
-        sendResponse(result);
+    console.log('Background script handling initiate_riot_auth request for region:', message.region);
+    
+    // Generate a random state for CSRF protection
+    const state = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    // Store state for verification after callback
+    chrome.storage.local.set({
+      eloward_auth_state: state,
+      selectedRegion: message.region || 'na1'
+    }, () => {
+      console.log('Stored auth state in background script');
+    });
+    
+    // Request auth URL from our backend
+    const region = message.region || 'na1';
+    const url = `${API_BASE_URL}/auth/init?state=${state}&region=${region}`;
+    
+    console.log('Background script requesting auth URL from:', url);
+    
+    fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Auth URL request failed: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Background script received auth URL:', data.authorizationUrl ? 'Yes (URL hidden for security)' : 'No');
+        
+        if (!data.authorizationUrl) {
+          throw new Error('No authorization URL returned');
+        }
+        
+        // Return the auth URL to the caller
+        sendResponse({
+          success: true,
+          authUrl: data.authorizationUrl
+        });
       })
       .catch(error => {
-        console.error('Error initiating auth:', error);
-        sendResponse({ success: false, error: error.message });
+        console.error('Background script auth URL request error:', error);
+        sendResponse({
+          success: false,
+          error: error.message || 'Failed to obtain authorization URL'
+        });
       });
+    
     return true; // Indicate async response
   }
   

@@ -84,19 +84,34 @@ export const RiotAuth = {
     try {
       console.log('Starting authentication for region:', region);
       
-      // Initialize authentication
+      // Step 1: Get auth URL from backend
       const authUrl = await this.initAuth(region);
+      console.log('Successfully obtained authorization URL');
       
-      // Open authentication window
+      // Step 2: Open authentication window
       await this.openAuthWindow(authUrl);
+      console.log('Authentication window opened, waiting for user interaction');
       
-      // Complete authentication and get tokens
-      const authData = await this.completeAuth();
+      // Step 3: Wait for auth callback
+      console.log('Waiting for authentication callback...');
+      const authResult = await this.waitForAuthCallback();
       
-      // Get user data using the access token
+      if (!authResult || !authResult.code) {
+        console.error('Authentication was cancelled or failed - no auth code received');
+        throw new Error('Authentication was cancelled or failed');
+      }
+      
+      console.log('Received authentication callback with code');
+      
+      // Step 4: Complete authentication by exchanging code for tokens
+      await this.completeAuth(authResult, region);
+      console.log('Successfully completed authentication and obtained tokens');
+      
+      // Step 5: Get user data using the access token
+      console.log('Fetching user data after successful authentication');
       const userData = await this.getUserData();
       
-      console.log('Authentication and user data retrieval complete', userData);
+      console.log('Authentication and user data retrieval complete');
       return userData;
     } catch (error) {
       console.error('Authentication error:', error);
@@ -107,7 +122,7 @@ export const RiotAuth = {
   /**
    * Initializes the authentication flow
    * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
-   * @returns {Promise<boolean>} - Resolves with true if authentication was successful
+   * @returns {Promise<string>} - Resolves with the auth URL
    */
   async initAuth(region = 'na1') {
     try {
@@ -147,35 +162,24 @@ export const RiotAuth = {
       url.searchParams.append('region', region);
       
       try {
+        console.log('Fetching auth URL from:', url.toString());
         const response = await fetch(url.toString());
         
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Auth URL fetch failed:', response.status, errorText);
           throw new Error(`Failed to initialize auth: ${response.status} ${response.statusText}`);
         }
         
         const data = await response.json();
         
         if (!data.authorizationUrl) {
+          console.error('No authorization URL in response:', data);
           throw new Error('No authorization URL returned from backend');
         }
         
         console.log('Received authorization URL from backend');
-        
-        // Open the authorization URL in a popup window
-        await this.openAuthWindow(data.authorizationUrl);
-        
-        // Wait for auth callback
-        console.log('Waiting for auth callback...');
-        const authResult = await this.waitForAuthCallback();
-        
-        if (!authResult || !authResult.code) {
-          throw new Error('Authentication was cancelled or failed');
-        }
-        
-        // Complete the authentication flow
-        await this.completeAuth(authResult.code, state);
-        
-        return true;
+        return data.authorizationUrl;
       } catch (error) {
         console.error('Failed to get auth URL from backend:', error);
         
@@ -187,51 +191,23 @@ export const RiotAuth = {
             action: 'initiate_riot_auth',
             region: region
           }, async (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('Background script message error:', chrome.runtime.lastError);
+              reject(new Error('Failed to communicate with background script: ' + chrome.runtime.lastError.message));
+              return;
+            }
+            
             if (!response || !response.success) {
               console.error('Background script auth initialization failed:', 
-                           response?.error || 'Unknown error');
+                          response?.error || 'Unknown error');
               reject(new Error(response?.error || 'Failed to initialize authentication'));
               return;
             }
             
-            // Now we wait for the auth code to be received
-            let codeReceived = false;
-            const maxWaitTime = 120000; // 2 minutes
-            const pollInterval = 1000; // 1 second
-            const startTime = Date.now();
-            
-            while (!codeReceived && Date.now() - startTime < maxWaitTime) {
-              // Check if we've received an auth code
-              const result = await new Promise(r => {
-                chrome.storage.local.get(['eloward_auth_callback_result'], r);
-              });
-              
-              if (result.eloward_auth_callback_result?.code) {
-                codeReceived = true;
-                
-                // Complete the auth flow with the received code and state
-                try {
-                  await this.completeAuth(
-                    result.eloward_auth_callback_result.code,
-                    result.eloward_auth_callback_result.state || state
-                  );
-                  
-                  // Remove the auth result
-                  chrome.storage.local.remove(['eloward_auth_callback_result']);
-                  
-                  resolve(true);
-                } catch (error) {
-                  reject(error);
-                }
-                break;
-              }
-              
-              // Wait before checking again
-              await new Promise(r => setTimeout(r, pollInterval));
-            }
-            
-            if (!codeReceived) {
-              reject(new Error('Timed out waiting for authentication. Please try again.'));
+            if (response.authUrl) {
+              resolve(response.authUrl);
+            } else {
+              reject(new Error('No authorization URL returned from background script'));
             }
           });
         });
@@ -286,7 +262,7 @@ export const RiotAuth = {
   },
   
   /**
-   * Wait for auth callback by polling various storage locations
+   * Wait for auth callback by polling various storage locations and listening for messages
    * @returns {Promise<Object|null>} - Resolves with the auth callback data or null if timed out
    */
   async waitForAuthCallback() {
@@ -295,10 +271,47 @@ export const RiotAuth = {
     return new Promise((resolve, reject) => {
       const maxAttempts = 120; // 2 minutes (120 * 1 second)
       let attempts = 0;
+      let receivedCallback = false;
       
-      // Set up polling interval
+      // Set up direct message listener for window messages
+      const messageListener = (event) => {
+        console.log('Auth callback received direct window message:', event.data);
+        
+        try {
+          // Look for messages from our auth window with a code
+          if (event.data && 
+              ((event.data.source === 'eloward_auth' && event.data.code) || 
+               (event.data.type === 'auth_callback' && event.data.code))) {
+            
+            console.log('Processing direct auth callback message:', event.data);
+            window.removeEventListener('message', messageListener);
+            
+            // Store the callback in chrome.storage for consistency
+            chrome.storage.local.set({
+              'auth_callback': event.data,
+              'eloward_auth_callback': event.data
+            }, () => {
+              console.log('Stored direct auth callback in chrome.storage');
+              receivedCallback = true;
+              resolve(event.data);
+            });
+          }
+        } catch (e) {
+          console.error('Error processing window message:', e);
+        }
+      };
+      
+      // Add the message listener
+      window.addEventListener('message', messageListener);
+      
+      // Set up polling interval for other methods
       const pollInterval = setInterval(async () => {
         attempts++;
+        
+        if (receivedCallback) {
+          clearInterval(pollInterval);
+          return;
+        }
         
         try {
           // Try to get auth callback data from chrome.storage
@@ -311,10 +324,12 @@ export const RiotAuth = {
           if (callback && callback.code) {
             console.log('Auth callback data found in chrome.storage');
             clearInterval(pollInterval);
+            window.removeEventListener('message', messageListener);
             
             // Clear the callback data
             chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback']);
             
+            receivedCallback = true;
             resolve(callback);
             return;
           }
@@ -327,13 +342,15 @@ export const RiotAuth = {
               if (storedAuthData) {
                 try {
                   const authData = JSON.parse(storedAuthData);
-                  console.log('Auth result found in localStorage');
+                  console.log('Auth result found in localStorage:', authData);
                   
                   // Clear the data
                   localStorage.removeItem('eloward_auth_callback_data');
                   
                   if (authData.code) {
                     clearInterval(pollInterval);
+                    window.removeEventListener('message', messageListener);
+                    receivedCallback = true;
                     resolve(authData);
                     return;
                   }
@@ -349,27 +366,36 @@ export const RiotAuth = {
           // Check if auth window is closed (user might have cancelled)
           if (this.authWindow && this.authWindow.closed) {
             console.log('Auth window was closed by user');
-            clearInterval(pollInterval);
             
-            // Make one final check for callback data
-            const finalCheck = await new Promise(r => {
-              chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
-            });
-            
-            const finalCallback = finalCheck.auth_callback || finalCheck.eloward_auth_callback;
-            
-            if (finalCallback && finalCallback.code) {
-              resolve(finalCallback);
-            } else {
-              resolve(null); // Indicate cancellation
+            // Only consider this a cancellation if we haven't received a callback yet
+            if (!receivedCallback) {
+              // Make one final check for callback data
+              const finalCheck = await new Promise(r => {
+                chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
+              });
+              
+              const finalCallback = finalCheck.auth_callback || finalCheck.eloward_auth_callback;
+              
+              if (finalCallback && finalCallback.code) {
+                console.log('Found callback data after window closed');
+                clearInterval(pollInterval);
+                window.removeEventListener('message', messageListener);
+                resolve(finalCallback);
+              } else {
+                console.log('No callback data found after window closed, treating as cancellation');
+                clearInterval(pollInterval);
+                window.removeEventListener('message', messageListener);
+                resolve(null); // Indicate cancellation
+              }
+              return;
             }
-            return;
           }
           
           // Give up after max attempts
           if (attempts >= maxAttempts) {
             console.log('Auth callback polling timed out after', maxAttempts, 'attempts');
             clearInterval(pollInterval);
+            window.removeEventListener('message', messageListener);
             resolve(null); // Resolve with null instead of rejecting
           }
         } catch (error) {
@@ -414,12 +440,32 @@ export const RiotAuth = {
   
   /**
    * Completes the authentication flow after receiving the auth code
-   * @param {string} code - The authorization code
+   * @param {string|Object} codeParam - The authorization code or full callback object
    * @param {string} state - The state parameter to verify
    * @returns {Promise<void>} - Resolves once authentication is complete
    */
-  async completeAuth(code, state) {
+  async completeAuth(codeParam, state) {
     try {
+      // Extract code from different possible formats
+      let code = codeParam;
+      
+      // If codeParam is an object (full callback), extract the code
+      if (typeof codeParam === 'object' && codeParam !== null) {
+        console.log('Received callback object:', codeParam);
+        code = codeParam.code;
+      }
+      
+      if (!code) {
+        throw new Error('No authorization code provided');
+      }
+      
+      console.log('Processing auth code:', {
+        codeType: typeof code,
+        codeLength: code.length,
+        codeStart: code.substring(0, 10) + '...',
+        state
+      });
+      
       // Verify that the state matches what we stored
       let storedState = null;
       
@@ -444,15 +490,16 @@ export const RiotAuth = {
         console.log('Retrieved auth state from chrome.storage.local');
       }
       
-      if (state !== storedState) {
+      if (!storedState) {
+        console.warn('No stored state found to verify against');
+      } else if (state !== storedState) {
         console.error('State mismatch', { received: state, stored: storedState });
         throw new Error('State mismatch. Possible CSRF attack.');
+      } else {
+        console.log('State verified successfully');
       }
       
-      console.log('Completing Riot RSO auth with:', {
-        codeLength: code ? code.length : 0,
-        state
-      });
+      console.log('Exchanging code for tokens...');
       
       // Exchange the code for tokens
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
@@ -466,10 +513,17 @@ export const RiotAuth = {
       });
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Token exchange failed:', response.status, errorText);
         throw new Error(`Failed to exchange code for token: ${response.status} ${response.statusText}`);
       }
       
       const tokenData = await response.json();
+      console.log('Received token response:', {
+        status: response.status,
+        hasData: !!tokenData.data,
+        hasAccessToken: !!(tokenData.data && tokenData.data.access_token)
+      });
       
       // Clean up the stored state
       if (typeof localStorage !== 'undefined') {

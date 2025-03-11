@@ -20,12 +20,34 @@ document.addEventListener('DOMContentLoaded', () => {
   // Listen for messages from the auth window or background script
   window.addEventListener('message', function(event) {
     // Log all messages for debugging
-    console.log('Popup received window message:', event.data);
+    console.log('Popup received window message:', event);
+    console.log('Popup received window message data:', event.data);
     
     // Handle auth callback messages
-    if (event.data && event.data.type === 'auth_callback' && event.data.params) {
-      console.log('Received auth callback via window message');
-      processAuthCallback(event.data.params);
+    if (event.data && ((event.data.type === 'auth_callback' && event.data.code) || 
+                        (event.data.source === 'eloward_auth' && event.data.code))) {
+      
+      console.log('Received auth callback via window message with code - forwarding to RiotAuth');
+      
+      // Forward the message directly to RiotAuth via window event
+      try {
+        const messageEvent = new MessageEvent('message', {
+          data: event.data,
+          origin: window.location.origin,
+          source: window
+        });
+        window.dispatchEvent(messageEvent);
+      } catch (e) {
+        console.error('Error forwarding message to RiotAuth:', e);
+      }
+      
+      // Also store in chrome.storage for the RiotAuth module to find
+      chrome.storage.local.set({
+        'auth_callback': event.data,
+        'eloward_auth_callback': event.data
+      }, () => {
+        console.log('Stored auth callback data in chrome.storage from popup');
+      });
     }
     
     // Handle retry authentication
