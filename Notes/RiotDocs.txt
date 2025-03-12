@@ -1255,3 +1255,387 @@ curl --location --request GET 'https://europe.api.riotgames.com/riot/account/v1/
 curl --location --request GET 'https://asia.api.riotgames.com/riot/account/v1/accounts/me' --header 'Authorization: Bearer {accessToken}'
 The data return from each cluster is identical. We recommend using the cluster closest to your servers.
 
+Implementing Riot Sign On (web tutorial)
+This tutorial provides guidance for implementing Riot Sign On (RSO) from initially connecting the service, serving a Sign In link, authenticating the user, to processing the user’s tokens.
+
+
+To start working with RSO, you will need the following:
+
+Riot Sign On — hosted at https://auth.riotgames.com. Use this to authenticate during this process.
+/authorize — endpoint for obtaining an authorization code
+/token — endpoint to exchange authorization codes for access, identity, and refresh tokens
+/jwks.json — endpoint to obtain JSON Web Keys for verifying the authenticity of access and identity tokens
+(optional) /userinfo — endpoint to use your Access Token to obtain user information
+For this process, add 127.0.0.1 local.example.com to your /etc/hosts file
+Register a client — use this to ensure you have credentials to use with Riot Sign On
+the client must be registered to allow http://local.example.com:3000/oauth2-callback as a redirect_uri.
+The service must be secured with https
+Access to standard NPM libraries to run the Node.js code examples in this process.
+
+Registering a New RSO Client
+Follow the instructions on the RSO Client Request Form to submit a request for an RSO client. Older clients may continue to use client secret basic and receive a client_secret, but newer clients will receive a few fields to support private key JWT client auth, such as:
+
+
+client_id
+public key
+private key
+example signed 100 year token (JWT)
+
+Note: The Private key that is generated on your behalf is not stored and cannot be retrieved.  New keypairs can be generated without disabling the old keypair.
+
+
+If you are familiar with JWT signing, you may choose to implement proper token minting using the returned private key for increased security.
+
+
+If you are not familiar with JWTs and signing, continue to use the example 100 year token as your client assertion in the code examples in this process, but be sure to store and treat it as you would a plaintext password.
+
+
+Note: If you want locale-specific values for client name, logo uri, privacy policy uri, and terms of service, after your client is created, please respond with the list using the following form:  <field>#<locale>, for example,  privacy policy url#de_DE: <url>
+
+
+Use the following Riot-supported locales: cs_CZ, de_DE, el_GR, en_AU, en_GB, en_PL, en_US, es_AR, es_ES, es_MX, fr_FR, hu_HU, it_IT, ja_JP, pl_PL, pt_BR, ro_RO, ru_RU, tr_TR.
+
+Understanding the Authorization Code Flow
+The Authorization Code flow consists of the following:
+
+
+/ - the index page, a place where to access a ‘Sign In’ link
+/oauth2-callback - Where Riot Sign On is requested to redirect the player after a successful Sign In.
+var express = require('express'),
+   app = express();
+
+app.get('/', function(req, res) {
+   res.send("index");
+});
+
+app.get('/oauth2-callback', function(req, res) {
+   res.send("callback");
+});
+
+var server = app.listen(3000, function () {
+   var host = server.address().address;
+   var port = server.address().port;
+
+   console.log('Example app listening at http://%s:%s', host, port);
+});
+
+Sending Users to Riot Sign On
+The purpose of route / is to deliver a Sign In link that the player can click to authenticate against Riot Sign On. Riot Sign On expects several parameters passed to it or it will throw an error indicating something not included. Make sure the following fields are included:
+
+Mandatory fields
+redirect_uri - the OAuth 2 Callback route set up on the Riot server. This route needs to be able to process a code query parameter that is added to the URI on when Riot Sign On redirects the player back to the URI. Make sure to have this URI added as one of the redirect_uris during client registration. In this example, use http://local.exmaple.com:3000/oauth2-callback
+client_id - ID assigned to client during registration. This will be the Client ID when you registered a client during the first part of this process.
+response_type - response type expected, should be code for authorization code flow
+scope - a predefined data scope, must include openid to authenticate.
+Additional scopes that can be requested are:
+cpid - returns the game region for League of Legends.
+offline_access - allows Refresh Tokens to be used to retrieve new access_tokens that have access to the /userinfo endpoint
+Optional fields
+login_hint - field used to specify hints to pre-populate data on the Login Page. Supports several formats:
+{regioncode} - lowercase region code, for example, dev9
+{regioncode}|{username} - lowercase region code, pipe, and username, for example, dev9|daguava
+{regioncode}#{userid} - lowercase region code, hash, and user ID, for example, dev9#2054
+ui_locales - space-separated list of player’s preferred BCP47 language tag values in order of most to least preferred.
+state - an opaque value provided to the authorize endpoint. The same value is returned to you when the endpoint sends its reply. Enables you to compare value sent and received, to prevent CSRF.
+
+Using all the mandatory fields, the Sign In link is:
+
+https://auth.riotgames.com/authorize?redirect_uri=http://local.leagueoflegends.com:3000/oauth2-callback&client_id=oujzg5jiibvzo&response_type=code&scope=openid
+
+Modifying the code to make the Sign In link a bit more portable, the server.js now looks as follows:
+
+. . .
+var appBaseUrl      = "http://local.example.com:3000",
+   appCallbackUrl  = appBaseUrl + "/oauth2-callback";
+
+var provider        = "https://auth.riotgames.com",
+   authorizeUrl    = provider + "/authorize";
+
+var clientID        = "oujzg5jiibvzo";
+
+app.get('/', function(req, res) {
+   var link = authorizeUrl
+           + "?redirect_uri=" + appCallbackUrl
+           + "&client_id=" + clientID
+           + "&response_type=code"
+           + "&scope=openid";
+   // create a single link, send as an html document
+   res.send('<a href="' + link + '">Sign In</a>');
+});
+. . .
+
+Here, the player is presented with the Login Page of Riot Sign On, and may sign in.
+
+Response from Riot Sign On
+When the player successfully logs in, a 302 Redirect sends their browser to the redirect_uri that was included in the Sign In link.
+
+Note: The callback route http://local.example.com:3000/oauth2-callback does not do anything yet.
+
+This route receives a code as a url query-string parameter, and the server must then make a server-to-server request to exchange this code for Access, Identity, and Refresh Tokens. You must send the following to Riot Sign On’s Token endpoint to receive these Tokens back:
+
+Authorization: Basic ... - Set an Authorization Header. The format of this header is "Basic " + Base64Encode(client_id + ":" + client_secret)
+form data
+grant_type - Tell Riot Sign On you are working with the authorization_code grant type.
+code - Pass Riot Sign On the access code, which was received as a querystring parameter to the oauth2-callback route: ...com:3000/oauth2-callback?code=CxhkPgX8GiMKR4-E-YD8Ng
+redirect_uri - Pass in the same redirect_uri used before.
+To simplify making requests, use the request package. The basic callback route using private key JWT, looks as follows:
+
+. . .
+
+var request = require('request');
+
+var clientAssertion = "your-signed-jwt-here";
+
+var appBaseUrl      = "http://local.example.com:3000",
+   appCallbackUrl  = appBaseUrl + "/oauth2-callback";
+
+var provider        = "https://auth.riotgames.com",
+   authorizeUrl    = provider + "/authorize",
+   tokenUrl        = provider + "/token";
+
+. . .
+
+app.get('/oauth2-callback', function(req, res) {
+   var accessCode = req.query.code;
+
+   // make server-to-server request to token endpoint
+   // exchange authorization code for tokens
+   request.post({
+       url: tokenUrl,
+
+       form: { // post information as x-www-form-urlencoded
+           client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+           client_assertion: clientAssertion,
+           grant_type: "authorization_code",
+           code: accessCode, // accessCode should be url decoded before being set here
+           redirect_uri: appCallbackUrl
+       }
+   }, function (error, response, body) {
+       // do something with the response?
+   });
+
+});
+
+The following example uses Client Secret Basic:
+
+. . .
+
+var request = require('request');
+
+var clientID     = "your-client-id-here",
+   clientSecret = "your-client-secret-here";
+
+var appBaseUrl      = "http://local.example.com:3000",
+   appCallbackUrl  = appBaseUrl + "/oauth2-callback";
+
+var provider        = "https://auth.riotgames.com",
+   authorizeUrl    = provider + "/authorize",
+   tokenUrl        = provider + "/token";
+
+ . . .
+
+app.get('/oauth2-callback', function(req, res) {
+   var accessCode = req.query.code;
+
+   // make server-to-server request to token endpoint
+   // exchange authorization code for tokens
+   request.post({
+       url: tokenUrl,
+       auth: { // sets "Authorization: Basic ..." header
+           user: clientID,
+           pass: clientSecret
+       },
+       form: { // post information as x-www-form-urlencoded
+           grant_type: "authorization_code",
+           code: accessCode, // accessCode should be url decoded before being set here
+           redirect_uri: appCallbackUrl
+       }
+   }, function (error, response, body) {
+       // do something with the response?
+   });
+
+});
+
+A raw Token endpoint response looks similar to:
+
+{  
+ "scope":"openid",
+ "expires_in":600,
+ "token_type":"Bearer",
+ "refresh_token":"dXJuOnJpb3Q6cOk1qdNal ... 8zN3NzbQ.xw96rZeGEMtrFlDCGLyA",
+ "id_token":"eyJhbGciJSUzI1mtpZCInMxIn0 ... YiI6InVybjpyaW90OpZDp2MTpNalV",
+ "sub_sid":"vldfsXGdDPoafSKfjS932cslKu8JDUKZ-woZvXDoq8",
+ "access_token":"eyJhbGciOi1NsImZCI6InM ... NTkzMTA3LCJjaWQiJnmE-BVnZbYqY"
+}
+
+Change the callback of the response to parse this and get the Tokens.
+
+request.post({
+   . . .
+}, function (error, response, body) {
+   if (!error && response.statusCode == 200) {
+       // parse the response to JSON
+       var payload = JSON.parse(body);
+
+       // separate the tokens from the entire response body
+       var tokens = {
+           refresh_token:  payload.refresh_token,
+           id_token:       payload.id_token,
+           access_token:   payload.access_token
+       };
+
+       // legibly print out our tokens
+       res.send("<pre>" + JSON.stringify(tokens, false, 4) + "</pre>");
+   } else {
+       res.send("/token request failed");
+   }
+});
+
+The following is an explanation of the fields in the response:
+
+scope - Details what level of access the given Access Token provides. See the Scopes list for more information.
+expires_in - The life span (in seconds)
+token_type - Method of authorization token provides. Bearer means the entire Token should be provided.
+Bearer eyJhbGciOi1NsImZCI6InM ... NTkzMTA3LCJjaWQiJnmE-BVnZbYqY
+sub_sid - The identifier of an existing session (SID) for the subject (player).
+refresh/id/access_token - Detailed in the following section.
+Using Tokens and Verification
+The Access and ID Tokens are received as the final step of a grant. Access Tokens are used for scoped authentication of a client and player to a resource, while ID Tokens provide information necessary to authenticate a player’s identity. ID Tokens are usually set as a cookie in the user’s browser to establish identity between pages and services.
+
+Riot Sign On Access and ID Tokens are encoded as Signed JSON Web Tokens (JWT) to prevent tampering. Additionally, Access Tokens are encrypted and cannot be decoded.
+
+Refresh Tokens are used to obtain a new Access Token when a given Access Token has expired, and have a much longer lifespan than an Access Token. The expiration flow of Access Tokens ensures that even if one is compromised, it has a very limited life-span.
+
+IMPORTANT
+
+It is important to note that Access Tokens are encrypted and cannot be decoded or verified.
+
+Example
+Once complete, a full example provides the following:
+
+A Sign In link to the player
+The link takes the user to Riot Sign On to log in
+The player is redirected back to our redirect_uri with an access code appended to the URL
+The Oauth2-Callback route exchanges the access code for tokens
+A server-to-server request is made to exchange the code for Access, Identity, and Refresh Tokens
+Riot Games verifies the authenticity of these tokens
+
+You can now send a player to Riot to authenticate, receive the auth code returned. and exchange it for Access, Identity, and Refresh tokens.
+
+Using Refresh Tokens
+The Refresh Token is issued for the purpose of obtaining new Access Tokens when an older one expires. RSO Refresh tokens are self-contained, signed JSON Web Tokens (JWT) that can be inspected and validated locally.
+
+
+Category
+
+Description
+
+Format
+
+JWT signed
+
+Refreshable?
+
+N/A
+
+Usage
+
+Obtain a new Access Token
+
+Visibility To Javascript
+
+No
+
+Visibility To User
+
+No
+
+Visibility To Server
+
+Yes
+
+
+Example encrypted token:
+
+
+dXJuOnJpb3Q6cGlkOnYxOk1qVXdNalE2UkVWV09R.Z2pyamNvaG8zN3NzbQ.xw96rZeGEmeMtrFlDCGLyA
+
+
+Using a Refresh Token
+Refresh Tokens are only used to obtain a new Access Token, usually when the previous one has expired due to time expiration or revocation.
+
+
+Headers
+
+
+    Authorization: Basic Z2pyamNvaG8NzbTpPLWpTb ... tkcEN6amp13U2ZTOWpjU0w=
+
+POST-Data
+
+
+    grant_type:    refresh_token
+
+    refresh_token: dXJuOnJpb3Q6cGlknYxO ... G8zN3NzbQ.xw96rZEmeMtrFlDCGLyA
+
+    (optional) scope: [ same or narrower scope ]
+
+
+URI
+
+    https://auth.riotgames.com/token
+
+
+Response:
+
+
+{  
+
+    "scope":"openid",
+
+    "expires_in":600,
+
+    "token_type":"Bearer",
+
+    "refresh_token":"dXJuOnJpb3Q6cGlkOn ... amNvaG8zN3NzbQeGEmeMtrFlDCGLyA",
+
+    "access_token":"eyJhbGciOiJSUzI1NiI ... sFwkadLmWmwtvJouhX22Tc6vPnfXTk"
+
+}
+
+
+When using a Refresh Token, there are two actions RSO may take. If it replies with a new Refresh Token, it must be used in all future Access Token refreshes and the previous Refresh Token is now invalid.
+
+If the same Refresh Token is received in the response, you may continue to use it in future refresh requests.
+
+
+
+Accessing the Userinfo Endpoint
+The UserInfo endpoint is a protected RSO endpoint where client applications can retrieve consented claims, or assertions, about the logged in player.
+
+
+The claims are typically packaged in a JSON object where the sub member denotes the subject (player) identifier.
+
+
+This is the first endpoint established to support Bearer access tokens from Implementing Authorization Codes on the Web.
+
+
+Creating a Request
+
+Headers
+
+    Authorization: Bearer eyJhbGciOiJSUzI ... axZMUW2WchZU9fGHM_h61A
+
+URI
+
+    https://auth.riotgames.com/userinfo
+
+
+Response
+
+{
+
+  "sub": "2SqiN9ZWecDMZdo-y3Xaaoos32kTazZQDgzOyxzJe66SzGYqIljuuxjmctK0-XbBIhzZn929LZnH5S90L4vNVjx7En27”,
+
+  "cpid": "NA1"
+
+}
