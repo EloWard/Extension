@@ -73,51 +73,87 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /**
    * Process authentication callback
-   * @param {Object} params - The callback parameters with code and state
+   * @param {Object} authData - The callback parameters with code and state
    */
-  async function processAuthCallback(params) {
+  async function processAuthCallback(authData) {
     try {
-      console.log('Processing auth callback with params:', params);
+      console.log('Processing auth callback data:', {
+        hasCode: !!authData.code,
+        codeLength: authData.code ? authData.code.length : 0,
+        hasState: !!authData.state
+      });
       
-      // Show a connecting message
-      riotConnectionStatus.textContent = 'Connecting...';
-      connectRiotBtn.disabled = true;
+      if (!authData || !authData.code) {
+        console.error('Invalid auth callback data - missing code');
+        showAuthError('Authentication failed - missing authorization code');
+        return;
+      }
       
-      // Complete the authentication flow
-      await RiotAuth.authenticate(regionSelect.value);
-      
-      // Get user data
-      const userData = await RiotAuth.getUserData();
-      
-      // Update UI with user data
-      updateUserInterface(userData);
+      // Store callback data in chrome.storage.local for processing by background script
+      chrome.storage.local.set({
+        'auth_callback': authData,
+        'eloward_auth_callback': authData
+      }, async () => {
+        console.log('Auth callback data stored in chrome.storage');
+        
+        try {
+          // Get user data from Riot API
+          console.log('Getting user data after authentication');
+          const userData = await RiotAuth.getUserData();
+          
+          // Update UI with user data
+          updateUserInterface(userData);
+          
+          console.log('Authentication completed successfully');
+        } catch (error) {
+          console.error('Error getting user data after authentication:', error);
+          showAuthError(getReadableErrorMessage(error));
+        }
+      });
     } catch (error) {
-      console.error('Error completing authentication:', error);
+      console.error('Error processing auth callback:', error);
       showAuthError(getReadableErrorMessage(error));
-    } finally {
-      connectRiotBtn.disabled = false;
     }
   }
 
   /**
-   * Get a user-friendly error message from error object
-   * @param {Error} error - The error object
-   * @returns {string} - A readable error message
+   * Get a readable error message from an error object
+   * @param {Error|string} error - The error object or string
+   * @returns {string} - User-friendly error message
    */
   function getReadableErrorMessage(error) {
-    const message = error.message || 'Unknown error';
+    if (!error) return 'Unknown error occurred';
     
-    if (message.includes('Security verification failed') || message.includes('State mismatch')) {
-      return 'Security Verification Failed';
-    } else if (message.includes('Authentication cancelled')) {
-      return 'Authentication Cancelled';
-    } else if (message.includes('Failed to exchange code')) {
-      return 'Token Exchange Failed';
-    } else if (message.includes('Failed to get auth URL')) {
-      return 'Server Connection Error';
+    const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+    
+    // Common error messages and their user-friendly versions
+    const errorMappings = {
+      'Failed to fetch': 'Connection error. Please check your internet connection and try again.',
+      'NetworkError': 'Network error. Please check your internet connection and try again.',
+      'Not Found': 'Resource not found. Please try again later.',
+      'No access token': 'Authentication token missing. Please reconnect your Riot account.',
+      'state parameter mismatch': 'Security verification failed. Please try again.',
+      'popup blocked': 'Authentication popup was blocked. Please allow popups for this site.',
+      'code exchange failed': 'Authentication server error. Please try again later.',
+      'Invalid token': 'Your authentication has expired. Please reconnect your Riot account.',
+      'storage': 'Extension storage error. Please reload the extension.',
+      'extension': 'Extension error. Please reload the extension.'
+    };
+    
+    // Check for common error patterns
+    for (const [pattern, friendlyMessage] of Object.entries(errorMappings)) {
+      if (errorMessage.toLowerCase().includes(pattern.toLowerCase())) {
+        return friendlyMessage;
+      }
     }
     
-    return 'Authentication Failed';
+    // If the error message is very long, truncate it
+    if (errorMessage.length > 150) {
+      return `Error: ${errorMessage.substring(0, 147)}...`;
+    }
+    
+    // Default format: "Error: message"
+    return `Error: ${errorMessage}`;
   }
 
   /**
@@ -257,10 +293,32 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       console.error('Authentication error:', error);
-      showAuthError(getReadableErrorMessage(error));
+      
+      // Log detailed error message for debugging
+      const detailedError = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+      console.log('Detailed error:', detailedError);
+      
+      // Handle specific error cases
+      if (detailedError.includes('storage.remove')) {
+        // This is likely the storage API error
+        showAuthError('Extension storage error. Please reload the extension and try again.');
+      } else if (detailedError.includes('Failed to fetch') || detailedError.includes('NetworkError')) {
+        // Network-related errors
+        showAuthError('Network error. Please check your internet connection and try again.');
+      } else if (detailedError.includes('Authentication cancelled')) {
+        // User closed the auth window
+        showAuthError('Authentication was cancelled. Please try again.');
+      } else if (detailedError.includes('state parameter mismatch')) {
+        // CSRF protection triggered
+        showAuthError('Security verification failed. Please clear your browsing data and try again.');
+      } else {
+        // Generic fallback error message
+        showAuthError(getReadableErrorMessage(error));
+      }
     } finally {
       // Re-enable button
       connectRiotBtn.disabled = false;
+      connectRiotBtn.textContent = 'Connect';
     }
   }
 

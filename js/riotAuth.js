@@ -70,7 +70,8 @@ export const RiotAuth = {
       rankInfo: 'eloward_riot_rank_info',
       authState: 'eloward_auth_state',
       tokens: 'eloward_riot_tokens',
-      userInfo: 'eloward_riot_user_info'
+      userInfo: 'eloward_riot_user_info',
+      authCallback: 'eloward_auth_callback'
     }
   },
   
@@ -104,8 +105,16 @@ export const RiotAuth = {
       
       // Clear any existing callbacks before opening the window
       console.log('Clearing any existing auth callbacks');
-      await chrome.storage.local.remove([this.config.storageKeys.authCallback]);
-      localStorage.removeItem(this.config.storageKeys.authCallback);
+      try {
+        await new Promise(resolve => {
+          chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], resolve);
+        });
+        localStorage.removeItem('eloward_auth_callback_data');
+        console.log('Auth callback data cleared from storage');
+      } catch (e) {
+        console.warn('Error clearing auth callbacks:', e);
+        // Non-fatal error, continue with authentication
+      }
       
       // Open the auth window
       this._openAuthWindow(authUrl);
@@ -258,33 +267,33 @@ export const RiotAuth = {
     console.log('Opening auth window with URL:', authUrl);
     
     try {
-      // Try to use chrome.windows API first
-      chrome.runtime.sendMessage({
-        type: 'open_auth_window',
-        url: authUrl
-      }, response => {
-        if (chrome.runtime.lastError || !response || !response.success) {
-          // Fallback to window.open
-          this._openAuthWindowFallback(authUrl);
-        }
-      });
+      // Try to open directly with window.open
+      this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
+      
+      if (this.authWindow) {
+        console.log('Auth window opened with window.open');
+      } else {
+        // If window.open failed (likely due to popup blocker), try using the background script
+        console.log('window.open failed, trying chrome.runtime.sendMessage');
+        chrome.runtime.sendMessage({
+          type: 'open_auth_window',
+          url: authUrl,
+          state: this._getStoredAuthState()
+        }, response => {
+          if (chrome.runtime.lastError) {
+            console.error('Failed to open auth window via background script:', chrome.runtime.lastError);
+            throw new Error('Failed to open authentication window - popup may be blocked');
+          } else if (response && response.success) {
+            console.log('Auth window opened via background script');
+          } else {
+            console.error('Unknown error opening auth window via background script');
+            throw new Error('Failed to open authentication window - unknown error');
+          }
+        });
+      }
     } catch (e) {
-      // Fallback to window.open
-      this._openAuthWindowFallback(authUrl);
-    }
-  },
-  
-  /**
-   * Fallback method to open auth window using window.open
-   * @param {string} authUrl - The authentication URL
-   * @private
-   */
-  _openAuthWindowFallback(authUrl) {
-    console.log('Using window.open fallback for auth window');
-    this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
-    
-    if (!this.authWindow) {
-      throw new Error('Failed to open authentication window - popup blocked?');
+      console.error('Error opening auth window:', e);
+      throw new Error('Failed to open authentication window - ' + e.message);
     }
   },
   
@@ -312,10 +321,48 @@ export const RiotAuth = {
         const callback = data.auth_callback || data.eloward_auth_callback;
         
         if (callback && callback.code) {
-          console.log('Auth callback found in chrome.storage');
+          console.log('Auth callback found in chrome.storage:', {
+            hasCode: !!callback.code,
+            codeLength: callback.code ? callback.code.length : 0,
+            hasState: !!callback.state
+          });
           clearInterval(intervalId);
+          
+          // Clear the callback data from storage to prevent reuse
+          try {
+            chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], () => {
+              console.log('Auth callback cleared from chrome.storage after use');
+            });
+          } catch (e) {
+            console.warn('Error clearing auth callback after use:', e);
+          }
+          
           resolve(callback);
           return true;
+        }
+        
+        // Check localStorage as fallback
+        try {
+          const localStorageData = localStorage.getItem('eloward_auth_callback_data');
+          if (localStorageData) {
+            try {
+              const parsedData = JSON.parse(localStorageData);
+              if (parsedData && parsedData.code) {
+                console.log('Auth callback found in localStorage');
+                clearInterval(intervalId);
+                
+                // Clear the callback data
+                localStorage.removeItem('eloward_auth_callback_data');
+                
+                resolve(parsedData);
+                return true;
+              }
+            } catch (e) {
+              console.warn('Error parsing auth callback from localStorage:', e);
+            }
+          }
+        } catch (e) {
+          console.warn('Error accessing localStorage for auth callback:', e);
         }
         
         // Check if auth window was closed by user
