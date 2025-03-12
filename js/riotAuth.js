@@ -855,42 +855,56 @@ export const RiotAuth = {
   
   /**
    * Logout the user
+   * @param {boolean} [forceReload=false] - Whether to force a page reload after logout
    * @returns {Promise<void>}
    */
-  async logout() {
+  async logout(forceReload = false) {
+    console.log('Logging out Riot account...');
+    
+    // Complete list of all keys that should be removed
+    const keysToRemove = [
+      this.config.storageKeys.accessToken,
+      this.config.storageKeys.refreshToken,
+      this.config.storageKeys.tokenExpiry,
+      this.config.storageKeys.tokens,
+      this.config.storageKeys.accountInfo,
+      this.config.storageKeys.summonerInfo,
+      this.config.storageKeys.rankInfo,
+      this.config.storageKeys.authState,
+      this.config.storageKeys.idToken,
+      'riotAuth',
+      'auth_callback',
+      'eloward_auth_callback',
+      'eloward_auth_callback_data',
+      'selectedRegion'
+    ];
+    
     // Clear tokens from chrome.storage
     await new Promise(resolve => {
-      chrome.storage.local.remove([
-        this.config.storageKeys.accessToken,
-        this.config.storageKeys.refreshToken,
-        this.config.storageKeys.tokenExpiry,
-        this.config.storageKeys.tokens,
-        this.config.storageKeys.accountInfo,
-        this.config.storageKeys.summonerInfo,
-        this.config.storageKeys.rankInfo,
-        this.config.storageKeys.authState,
-        'riotAuth',
-        'auth_callback',
-        'eloward_auth_callback'
-      ], resolve);
+      chrome.storage.local.remove(keysToRemove, resolve);
     });
     
     // Clear tokens from localStorage
     try {
-      localStorage.removeItem(this.config.storageKeys.accessToken);
-      localStorage.removeItem(this.config.storageKeys.refreshToken);
-      localStorage.removeItem(this.config.storageKeys.tokenExpiry);
-      localStorage.removeItem(this.config.storageKeys.tokens);
-      localStorage.removeItem(this.config.storageKeys.accountInfo);
-      localStorage.removeItem(this.config.storageKeys.summonerInfo);
-      localStorage.removeItem(this.config.storageKeys.rankInfo);
-      localStorage.removeItem(this.config.storageKeys.authState);
-      localStorage.removeItem('eloward_auth_callback_data');
+      // Remove all keys from localStorage as well for redundancy
+      keysToRemove.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          // Ignore errors for individual items
+        }
+      });
     } catch (e) {
       console.error('Error clearing localStorage:', e);
     }
     
-    console.log('Logged out successfully');
+    console.log('Logged out successfully, all auth data cleared');
+    
+    // Force reload the extension popup if requested
+    if (forceReload && window.location.href.includes('popup.html')) {
+      console.log('Reloading popup after logout');
+      window.location.reload();
+    }
   },
   
   /**
@@ -937,9 +951,9 @@ export const RiotAuth = {
       let accountInfo = null;
       let error = null;
       
-      // First try the Riot Account v1 API endpoint
+      // First try the Riot Account v1 API endpoint (the one that worked in the logs)
       try {
-        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}?region=${regionalRoute}`;
+        const requestUrl = `${this.config.proxyBaseUrl}/riot/account/v1/accounts/me?region=${regionalRoute}`;
         console.log(`Making account info request to: ${requestUrl}`);
         
         const response = await fetch(requestUrl, {
@@ -981,8 +995,8 @@ export const RiotAuth = {
             if (idTokenPayload && idTokenPayload.sub) {
               accountInfo = {
                 puuid: idTokenPayload.sub,
-                gameName: idTokenPayload.game_name || 'Summoner',
-                tagLine: idTokenPayload.tag_line || 'Unknown'
+                gameName: idTokenPayload.game_name || null,
+                tagLine: idTokenPayload.tag_line || null
               };
               console.log('Extracted account info from ID token');
             }
@@ -992,9 +1006,8 @@ export const RiotAuth = {
         }
       }
       
-      // If we still don't have account info, try third fallback option
+      // If we still don't have account info, try fallback legacy endpoint from logs
       if (!accountInfo) {
-        // Try alternative API endpoint
         try {
           const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account?region=${regionalRoute}`;
           console.log(`Making fallback account info request to: ${altRequestUrl}`);
@@ -1024,15 +1037,34 @@ export const RiotAuth = {
         throw error || new Error('Failed to get account info from all available sources');
       }
       
-      // Ensure we have gameName and tagLine (some endpoints might not provide these)
+      // Ensure we have the most complete account info possible
+      // Don't overwrite existing values with default/generic ones
+      const storedAccountInfo = await this._getStoredValue(this.config.storageKeys.accountInfo) || {};
+      
+      // If the API response doesn't have game name/tag line but we have them stored, use the stored values
+      if (!accountInfo.gameName && storedAccountInfo.gameName && storedAccountInfo.gameName !== 'Summoner') {
+        accountInfo.gameName = storedAccountInfo.gameName;
+      }
+      
+      if (!accountInfo.tagLine && storedAccountInfo.tagLine && storedAccountInfo.tagLine !== 'Unknown') {
+        accountInfo.tagLine = storedAccountInfo.tagLine;
+      }
+      
+      // Only use default values if we don't have anything
       if (!accountInfo.gameName) {
-        accountInfo.gameName = 'Summoner';
-        console.log('Using default gameName: Summoner');
+        // Try to use summoner name as game name if available
+        const summonerInfo = await this._getStoredValue(this.config.storageKeys.summonerInfo);
+        if (summonerInfo && summonerInfo.name && summonerInfo.name !== 'Unknown Summoner') {
+          accountInfo.gameName = summonerInfo.name;
+        } else {
+          accountInfo.gameName = 'Summoner';
+        }
+        console.log('Using fallback gameName:', accountInfo.gameName);
       }
       
       if (!accountInfo.tagLine) {
-        accountInfo.tagLine = 'NA1';
-        console.log('Using default tagLine: NA1');
+        accountInfo.tagLine = platform.toUpperCase();
+        console.log('Using region as tagLine:', accountInfo.tagLine);
       }
       
       // Store account info in storage
@@ -1614,86 +1646,76 @@ export const RiotAuth = {
   },
   
   /**
-   * Process and store ID token data
-   * @param {string} idToken - The ID token to process
-   * @returns {Promise<Object>} - The decoded ID token payload
+   * Process the ID token, extracting user info
+   * @param {string} idToken - The ID token from the authentication flow
+   * @returns {Promise<Object>} - The extracted user info
    * @private
    */
   async _processIdToken(idToken) {
+    if (!idToken) {
+      console.error('No ID token provided to _processIdToken');
+      throw new Error('No ID token provided');
+    }
+    
+    console.log('Processing ID token');
+    
+    // Store the raw ID token directly using chrome.storage
+    await new Promise(resolve => {
+      chrome.storage.local.set({ [this.config.storageKeys.idToken]: idToken }, resolve);
+    });
+    
+    // Decode the ID token (it's a JWT)
+    const parts = idToken.split('.');
+    
+    if (parts.length !== 3) {
+      throw new Error('Invalid ID token format - not a valid JWT');
+    }
+    
+    // Base64 decode the payload (second part)
     try {
-      if (!idToken) {
-        throw new Error('No ID token provided');
+      // Replace URL-safe base64 characters and add padding if needed
+      let payload = parts[1];
+      payload = payload.replace(/-/g, '+').replace(/_/g, '/');
+      
+      // Add padding if needed
+      while (payload.length % 4) {
+        payload += '=';
       }
       
-      console.log('Processing ID token');
+      // Decode the base64 string
+      const jsonStr = atob(payload);
+      const decodedPayload = JSON.parse(jsonStr);
       
-      // Store the raw ID token directly using chrome.storage
-      await new Promise(resolve => {
-        chrome.storage.local.set({ [this.config.storageKeys.idToken]: idToken }, resolve);
+      console.log('Successfully decoded ID token payload, claims:', Object.keys(decodedPayload).join(', '));
+      
+      // Log the full payload for debugging (only in development)
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('ID token payload:', decodedPayload);
+      }
+      
+      // Extract account info from the ID token
+      // Note: Riot may include game_name and tag_line in newer ID tokens
+      // If they're not present, we'll handle that in the account info fetch
+      const accountInfo = {
+        puuid: decodedPayload.sub, // In Riot's case, 'sub' is the PUUID
+        gameName: decodedPayload.game_name || null,
+        tagLine: decodedPayload.tag_line || null
+      };
+      
+      // Store this partial account info
+      await this._storeValue(this.config.storageKeys.accountInfo, accountInfo);
+      
+      // Log the extracted info (without revealing the full PUUID)
+      console.log('Extracted account info from ID token:', {
+        puuid: accountInfo.puuid ? accountInfo.puuid.substring(0, 8) + '...' : null,
+        gameName: accountInfo.gameName,
+        tagLine: accountInfo.tagLine
       });
       
-      // Decode the ID token (it's a JWT)
-      const parts = idToken.split('.');
-      
-      if (parts.length !== 3) {
-        throw new Error('Invalid ID token format - not a valid JWT');
-      }
-      
-      // Base64 decode the payload (second part)
-      try {
-        // Replace URL-safe base64 characters and add padding if needed
-        let payload = parts[1];
-        payload = payload.replace(/-/g, '+').replace(/_/g, '/');
-        
-        // Add padding if needed
-        while (payload.length % 4) {
-          payload += '=';
-        }
-        
-        // Decode the base64 string
-        const jsonStr = atob(payload);
-        const decodedPayload = JSON.parse(jsonStr);
-        
-        console.log('Successfully decoded ID token payload, claims:', Object.keys(decodedPayload).join(', '));
-        
-        // Extract account info from the ID token
-        const accountInfo = {
-          sub: decodedPayload.sub,
-          puuid: decodedPayload.sub, // In Riot's case, 'sub' is the PUUID
-          acct: decodedPayload.acct,
-          game_name: decodedPayload.game_name,
-          tag_line: decodedPayload.tag_line
-        };
-        
-        // Convert to camelCase for consistency in our app
-        const formattedAccountInfo = {
-          puuid: accountInfo.puuid,
-          accountId: accountInfo.acct,
-          gameName: accountInfo.game_name,
-          tagLine: accountInfo.tag_line
-        };
-        
-        // Log the extracted info (without revealing the full PUUID)
-        console.log('Extracted account info from ID token:', {
-          puuid: formattedAccountInfo.puuid ? formattedAccountInfo.puuid.substring(0, 8) + '...' : null,
-          accountId: formattedAccountInfo.accountId ? formattedAccountInfo.accountId.substring(0, 8) + '...' : null,
-          gameName: formattedAccountInfo.gameName,
-          tagLine: formattedAccountInfo.tagLine
-        });
-        
-        // Store the account info directly with chrome.storage
-        await new Promise(resolve => {
-          chrome.storage.local.set({ [this.config.storageKeys.accountInfo]: formattedAccountInfo }, resolve);
-        });
-        
-        return decodedPayload;
-      } catch (decodeError) {
-        console.error('Error decoding ID token payload:', decodeError);
-        throw new Error('Failed to decode ID token payload');
-      }
+      return accountInfo;
     } catch (error) {
       console.error('Error processing ID token:', error);
-      throw error;
+      throw new Error(`Failed to process ID token: ${error.message}`);
     }
   },
   
