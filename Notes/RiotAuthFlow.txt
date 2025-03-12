@@ -163,8 +163,10 @@ When the access token expires:
 Extension → Worker (/auth/token/refresh) → Riot Token API → Worker → Extension
 ```
 
-- The extension detects an expired token (access tokens expire after 600 seconds / 10 minutes)
-- Sends the refresh token to the Worker's token refresh endpoint
+- The extension detects an expired token (access tokens expire after 600 seconds / 10 minutes) ONLY when making an actual API request
+- Token refresh is NOT performed automatically or periodically in the background
+- The refresh token is ONLY used when the user explicitly triggers an action requiring a valid token (such as clicking the refresh rank button)
+- When needed, the extension sends the refresh token to the Worker's token refresh endpoint
 - The Worker exchanges the refresh token for a new access token with:
   - Endpoint: `https://auth.riotgames.com/token`
   - `grant_type`: "refresh_token"
@@ -217,16 +219,18 @@ The extension implements an on-demand rank refresh feature that allows users to 
      4. Uses the stored access token to make a new request for rank data
      5. Updates the UI with the fresh rank information
 
-3. **Token Usage**:
-   - The refresh functionality uses the existing valid access token
-   - If the access token has expired, the extension automatically refreshes it using the refresh token
-   - The refresh token (OAuth refresh token) is used to obtain a new access token without requiring user re-authentication
-   - This is distinct from the rank refresh action, which uses a valid access token to fetch updated rank data
+3. **Token Usage & Efficiency**:
+   - The rank refresh functionality ONLY triggers API calls when the user explicitly clicks the refresh button
+   - Between refreshes, the extension displays the previously stored rank data without making new API calls
+   - The access token is only used when making API requests triggered by user actions
+   - If the access token has expired when the user clicks refresh, only then will the extension use the refresh token to obtain a new access token
+   - No background or periodic token refreshes are performed; tokens are only refreshed on-demand
+   - This approach minimizes API requests and ensures tokens are only refreshed when actually needed for user-initiated actions
 
 4. **Data Flow for Rank Refresh**:
    ```
-   User → Refresh Button → Extension → Access Token Check → Token Refresh (if needed) → 
-   Riot API → Fresh Rank Data → Update UI
+   User → Clicks Refresh Button → Extension → Access Token Check → Token Refresh (only if expired) → 
+   Riot API → Fresh Rank Data → Update UI & Store Locally
    ```
 
 5. **Error Handling**:
@@ -238,10 +242,11 @@ The extension implements an on-demand rank refresh feature that allows users to 
    - Rank data is only refreshed when:
      1. The user explicitly requests it via the refresh button
      2. The user disconnects and reconnects their Riot account
-   - This approach minimizes API requests and provides users with control over when their rank is updated
+   - Between refreshes, the cached rank data is used without making additional API requests
+   - The extension does not maintain a constant connection or periodically refresh tokens in the background
    - Stored rank data persists across extension sessions until manually refreshed
 
-This implementation ensures efficient use of Riot API resources while providing users with an up-to-date rank display when needed.
+This implementation ensures efficient use of Riot API resources while providing users with control over when their rank is updated. By only refreshing tokens when needed for user-initiated actions, the extension minimizes unnecessary API calls and background processes.
 
 ## Security Considerations
 
