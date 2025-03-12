@@ -48,11 +48,85 @@ function handleAuthCallback(params) {
   
   // Add the auth data to chrome.storage.local under multiple keys for compatibility
   chrome.storage.local.set({
+    'authCallback': params,
     'auth_callback': params,
     'eloward_auth_callback': params
   }, () => {
     console.log('Stored auth callback data in chrome.storage.local');
+    
+    // Initiate token exchange
+    initiateTokenExchange(params);
   });
+}
+
+/* Initiate token exchange with Riot RSO */
+async function initiateTokenExchange(authData) {
+  if (!authData || !authData.code) {
+    console.error('Cannot exchange tokens: Missing auth code');
+    return;
+  }
+  
+  try {
+    console.log('Initiating token exchange with code');
+    
+    // Create RiotAuth instance
+    const riotAuth = new RiotAuth({
+      proxyBaseUrl: API_BASE_URL,
+      clientId: RIOT_RSO_CLIENT_ID,
+      redirectUri: STANDARD_REDIRECT_URI,
+      storageKeys: {
+        tokens: 'riotTokens',
+        idToken: 'riotIdToken',
+        accountInfo: 'riotAccountInfo',
+        summonerInfo: 'riotSummonerInfo',
+        rankInfo: 'riotRankInfo',
+        authState: 'riotAuthState',
+        authCallback: 'authCallback'
+      }
+    });
+    
+    // Exchange code for tokens
+    const tokens = await riotAuth.exchangeCodeForTokens(authData.code);
+    
+    if (!tokens || !tokens.access_token) {
+      throw new Error('Token exchange failed: No tokens returned');
+    }
+    
+    console.log('Successfully exchanged code for tokens');
+    
+    // Fetch and store account info
+    try {
+      await riotAuth.getUserData();
+      console.log('Successfully retrieved and stored user data');
+    } catch (userDataError) {
+      console.error('Error getting user data after token exchange:', userDataError);
+      // Continue anyway as we at least have the tokens
+    }
+    
+    // Notify any listeners that auth is complete
+    chrome.runtime.sendMessage({
+      type: 'auth_complete',
+      success: true
+    });
+    
+  } catch (error) {
+    console.error('Token exchange error:', error);
+    
+    // Notify any listeners that auth failed
+    chrome.runtime.sendMessage({
+      type: 'auth_complete',
+      success: false,
+      error: error.message || 'Token exchange failed'
+    });
+  } finally {
+    // Clean up the auth callback processing flag after 10 seconds
+    // This allows time for other components to process the callback if needed
+    setTimeout(() => {
+      chrome.storage.local.remove('authCallbackProcessed', () => {
+        console.log('Cleaned up auth callback processed flag');
+      });
+    }, 10000);
+  }
 }
 
 /* Listen for messages from content scripts, popup, and other extension components */
@@ -60,14 +134,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);
   
   if (message.type === 'get_auth_callback') {
-    chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], (data) => {
-      const callback = data.auth_callback || data.eloward_auth_callback;
+    chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback'], (data) => {
+      const callback = data.authCallback || data.auth_callback || data.eloward_auth_callback;
       sendResponse({ data: callback });
       
-      // Clear the stored callback after sending it
-      if (callback) {
-        chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback']);
-      }
+      // Don't clear the stored callback as it may be needed by other components
     });
     return true; // Required for async sendResponse
   }

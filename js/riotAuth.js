@@ -163,7 +163,7 @@ export const RiotAuth = {
       });
       
       // Exchange code for tokens
-      const tokenData = await this._exchangeCodeForTokens(authResult.code);
+      const tokenData = await this.exchangeCodeForTokens(authResult.code);
       
       // Get user data
       const userData = await this.getUserData();
@@ -418,104 +418,81 @@ export const RiotAuth = {
   
   /**
    * Exchange authorization code for tokens
-   * @param {string} code - The authorization code
-   * @returns {Promise<Object>} - The token data
-   * @private
+   * @param {string} code - The authorization code from Riot
+   * @returns {Promise<Object>} - The token response object
    */
-  async _exchangeCodeForTokens(code) {
+  async exchangeCodeForTokens(code) {
     try {
-      console.log('Exchanging code for tokens...', {
-        codeLength: code ? code.length : 0,
-        codePrefix: code ? code.substring(0, 8) + '...' : 'undefined'
-      });
+      console.log('Exchanging authorization code for tokens');
       
-      // Log request details (without the actual code for security)
-      console.log(`Making token exchange request to: ${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`);
-      
-      // Verify code is valid
-      if (!code || typeof code !== 'string' || code.length < 10) {
-        throw new Error('Invalid authorization code - must be a string with sufficient length');
+      if (!code) {
+        throw new Error('No authorization code provided');
       }
       
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
+      // Exchange the code for tokens
+      const requestUrl = `${this.config.proxyBaseUrl}/auth/token`;
+      console.log(`Sending token exchange request to: ${requestUrl}`);
+      
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ code })
+        body: JSON.stringify({
+          code: code,
+          redirect_uri: this.config.redirectUri
+        })
       });
       
-      console.log(`Token exchange response status: ${response.status} ${response.statusText}`);
-      
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Token exchange error response:', errorData);
-        throw new Error(`Token exchange failed: ${response.status} ${errorData.message || response.statusText}`);
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = null;
+        }
+        
+        const errorMessage = errorData?.error_description || 
+                            errorData?.error || 
+                            `${response.status}: ${response.statusText}`;
+        throw new Error(`Token exchange failed: ${errorMessage}`);
       }
       
-      const responseText = await response.text();
-      console.log('Raw token response length:', responseText.length);
+      // Parse the token response
+      const tokenData = await response.json();
       
-      if (!responseText || responseText.length < 20) {
-        console.error('Token response text is too short:', responseText);
-        throw new Error('Empty or invalid response from token endpoint');
-      }
-      
-      let tokenData;
-      try {
-        tokenData = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse token response as JSON:', parseError);
-        console.log('Response text (truncated):', responseText.substring(0, 100) + '...');
-        throw new Error('Invalid JSON response from token endpoint');
-      }
-      
-      console.log('Token exchange response received, data fields:', Object.keys(tokenData).join(', '));
-      
-      // Directly process the response from the server - which should be the exact Riot response
       if (!tokenData.access_token) {
-        // Check if it's wrapped in a data object
-        if (tokenData.data && tokenData.data.access_token) {
-          tokenData = tokenData.data;
-        } else {
-          console.error('Invalid token response format - missing access_token:', Object.keys(tokenData));
-          throw new Error('Invalid token data: missing access token');
+        throw new Error('Invalid token response: Missing access token');
+      }
+      
+      console.log('Received tokens with expiry in', tokenData.expires_in, 'seconds');
+      
+      // Calculate token expiry timestamp
+      const expiresAt = Date.now() + (tokenData.expires_in * 1000);
+      
+      // Update token data with expiry timestamp
+      const tokens = {
+        ...tokenData,
+        expires_at: expiresAt
+      };
+      
+      // Store tokens in storage
+      await this._storeTokens(tokens);
+      
+      // Also decode and store the ID token if present
+      if (tokens.id_token) {
+        try {
+          await this._processIdToken(tokens.id_token);
+        } catch (idTokenError) {
+          console.error('Error processing ID token:', idTokenError);
+          // Continue even if ID token processing fails
         }
       }
       
-      // Validate token data
-      if (typeof tokenData.access_token !== 'string' || tokenData.access_token.length < 20) {
-        console.error('Invalid access token:', {
-          type: typeof tokenData.access_token,
-          length: tokenData.access_token ? tokenData.access_token.length : 0,
-          value: tokenData.access_token ? `${tokenData.access_token.substring(0, 10)}...` : 'undefined'
-        });
-        throw new Error('Invalid access token received');
-      }
-      
-      // Log token details without exposing the actual token
-      console.log('Token data received:', {
-        hasAccessToken: !!tokenData.access_token,
-        accessTokenLength: tokenData.access_token ? tokenData.access_token.length : 0,
-        accessTokenPrefix: tokenData.access_token ? tokenData.access_token.substring(0, 10) + '...' : 'undefined',
-        hasRefreshToken: !!tokenData.refresh_token,
-        refreshTokenLength: tokenData.refresh_token ? tokenData.refresh_token.length : 0,
-        expiresIn: tokenData.expires_in,
-        tokenType: tokenData.token_type,
-        scope: tokenData.scope,
-        hasIdToken: !!tokenData.id_token,
-        idTokenLength: tokenData.id_token ? tokenData.id_token.length : 0
-      });
-      
-      // Store tokens
-      await this._storeTokens(tokenData);
-      console.log('Tokens stored successfully');
-      
-      return tokenData;
+      return tokens;
     } catch (error) {
       console.error('Error exchanging code for tokens:', error);
-      throw new Error(`Failed to exchange code for tokens: ${error.message}`);
+      throw error;
     }
   },
   
@@ -895,8 +872,8 @@ export const RiotAuth = {
       const regionalRoute = this._getRegionalRouteFromPlatform(region);
       console.log(`Using regional route: ${regionalRoute} for platform: ${region}`);
       
-      // Log the request we're about to make
-      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/${regionalRoute}`;
+      // Log the request we're about to make - use correct endpoint (with /me)
+      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/me?region=${regionalRoute}`;
       console.log(`Making account info request to: ${requestUrl}`);
       
       // Use the correct endpoint structure that matches the Cloudflare Worker implementation
@@ -1034,14 +1011,34 @@ export const RiotAuth = {
         puuid = accountInfo.puuid;
       }
       
-      console.log(`Fetching summoner info for PUUID: ${puuid} in region: ${regionalRoute}`);
+      console.log(`Fetching summoner info for PUUID: ${puuid} in region: ${region} (${regionalRoute})`);
       
       // Use the correct endpoint structure for the Cloudflare Worker
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}/${regionalRoute}/${puuid}`);
+      // The endpoint takes region parameter as a query parameter, not in the path
+      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}?region=${region}`;
+      console.log(`Making summoner info request to: ${requestUrl}`);
+      
+      // Send the request with proper authorization header
+      const token = await this.getValidToken();
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Summoner info API error (${response.status}):`, errorText);
+        let errorInfo;
+        try {
+          errorInfo = await response.json();
+          console.error(`Summoner info API error (${response.status}):`, errorInfo);
+        } catch (e) {
+          const errorText = await response.text();
+          console.error(`Summoner info API error (${response.status}):`, errorText);
+          errorInfo = { error: 'parse_error', error_text: errorText };
+        }
+        
         throw new Error(`Failed to get summoner info: ${response.status} ${response.statusText}`);
       }
       
@@ -1094,12 +1091,30 @@ export const RiotAuth = {
       
       console.log(`Fetching rank info for summonerId: ${summonerId} on platform: ${platform}`);
       
-      // Use the platform directly here (not the regional route) since league endpoints use platform IDs
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}/${platform}/${summonerId}`);
+      // Use the correct endpoint with query parameters
+      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}?region=${platform}&summonerId=${summonerId}`;
+      console.log(`Making rank info request to: ${requestUrl}`);
+      
+      // Send the request with proper authorization header
+      const token = await this.getValidToken();
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Rank info API error (${response.status}):`, errorText);
+        let errorInfo;
+        try {
+          errorInfo = await response.json();
+          console.error(`Rank info API error (${response.status}):`, errorInfo);
+        } catch (e) {
+          const errorText = await response.text();
+          console.error(`Rank info API error (${response.status}):`, errorText);
+          errorInfo = { error: 'parse_error', error_text: errorText };
+        }
         throw new Error(`Failed to get rank info: ${response.status} ${response.statusText}`);
       }
       
@@ -1107,7 +1122,10 @@ export const RiotAuth = {
       console.log('Received league/rank data:', leagueData);
       
       // Find the Solo/Duo queue entry
-      const soloQueueEntry = leagueData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      const soloQueueEntry = Array.isArray(leagueData) ? 
+        leagueData.find(entry => entry.queueType === 'RANKED_SOLO_5x5') :
+        leagueData.queueType === 'RANKED_SOLO_5x5' ? leagueData : null;
+        
       if (soloQueueEntry) {
         console.log('Found Solo/Duo rank:', `${soloQueueEntry.tier} ${soloQueueEntry.rank}`);
       } else {
@@ -1184,70 +1202,247 @@ export const RiotAuth = {
         throw new Error('Not authenticated. Please connect your Riot account first.');
       }
       
-      // First check if we already have account info in storage (from ID token)
-      let accountInfo;
+      // First check if we already have complete account and summoner info in storage
       try {
-        // Try to get from storage first
         const storedAccountInfo = await this._getStoredValue(this.config.storageKeys.accountInfo);
+        const storedSummonerInfo = await this._getStoredValue(this.config.storageKeys.summonerInfo);
+        const storedRankInfo = await this._getStoredValue(this.config.storageKeys.rankInfo);
         
+        console.log('Checking stored data:', { 
+          hasAccountInfo: !!storedAccountInfo, 
+          hasSummonerInfo: !!storedSummonerInfo,
+          hasRankInfo: !!storedRankInfo
+        });
+        
+        // If we have valid complete data, use it without making new API calls
         if (storedAccountInfo && 
             typeof storedAccountInfo === 'object' && 
-            storedAccountInfo.puuid) {
-          console.log('Using stored account info from token');
-          accountInfo = storedAccountInfo;
-        } else {
-          // If not in storage, fetch from API
-          console.log('No stored account info, fetching from API');
-          accountInfo = await this.getAccountInfo();
+            storedAccountInfo.puuid &&
+            storedAccountInfo.gameName && 
+            storedAccountInfo.tagLine &&
+            storedSummonerInfo &&
+            typeof storedSummonerInfo === 'object' &&
+            storedSummonerInfo.id) {
+          
+          console.log('Using complete stored user data');
+          
+          // Format into a single user data object
+          const userData = {
+            gameName: storedAccountInfo.gameName,
+            tagLine: storedAccountInfo.tagLine,
+            puuid: storedAccountInfo.puuid,
+            summonerId: storedSummonerInfo.id,
+            summonerName: storedSummonerInfo.name,
+            summonerLevel: storedSummonerInfo.summonerLevel,
+            profileIconId: storedSummonerInfo.profileIconId,
+            rankInfo: storedRankInfo && Array.isArray(storedRankInfo) ? 
+                      storedRankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') : 
+                      (storedRankInfo && storedRankInfo.queueType === 'RANKED_SOLO_5x5' ? storedRankInfo : null)
+          };
+          
+          console.log('Successfully retrieved user data from storage:', userData);
+          return userData;
         }
       } catch (error) {
-        console.error('Error getting account info from storage, trying API:', error);
-        // If storage retrieval fails, fetch from API
-        accountInfo = await this.getAccountInfo();
+        console.warn('Error checking stored user data, will fetch from API:', error);
+        // Continue with API calls if storage retrieval fails
       }
+      
+      // Get fresh account info from API
+      console.log('Fetching fresh account info from API');
+      const accountInfo = await this.getAccountInfo();
       
       if (!accountInfo || !accountInfo.puuid) {
         throw new Error('Failed to get account information');
       }
       
+      // Check if we have gameName and tagLine - these are sometimes missing from the ID token
+      // If missing, we might need to get them from a different source or construct placeholders
+      if (!accountInfo.gameName || !accountInfo.tagLine) {
+        console.warn('Account info missing gameName or tagLine:', accountInfo);
+        
+        // Try to extract from ID token if available
+        const tokens = await this._getStoredValue(this.config.storageKeys.tokens);
+        if (tokens && tokens.id_token) {
+          try {
+            console.log('Attempting to extract user info from ID token');
+            const idTokenParts = tokens.id_token.split('.');
+            if (idTokenParts.length === 3) {
+              const idTokenPayload = JSON.parse(atob(idTokenParts[1]));
+              
+              // Update account info with data from ID token
+              if (idTokenPayload.game_name) accountInfo.gameName = idTokenPayload.game_name;
+              if (idTokenPayload.tag_line) accountInfo.tagLine = idTokenPayload.tag_line;
+              
+              console.log('Updated account info from ID token:', { 
+                gameName: accountInfo.gameName, 
+                tagLine: accountInfo.tagLine 
+              });
+            }
+          } catch (e) {
+            console.error('Failed to extract user info from ID token:', e);
+          }
+        }
+        
+        // If still missing, set placeholder values
+        if (!accountInfo.gameName) accountInfo.gameName = 'Summoner';
+        if (!accountInfo.tagLine) accountInfo.tagLine = 'unknown';
+      }
+      
       // Log the account info we're using
       console.log('Using account info:', {
-        puuid: accountInfo.puuid,
+        puuid: accountInfo.puuid ? accountInfo.puuid.substring(0, 8) + '...' : null,
         gameName: accountInfo.gameName,
         tagLine: accountInfo.tagLine
       });
       
-      // Get summoner info using the PUUID
-      const summonerInfo = await this.getSummonerInfo(accountInfo.puuid);
-      
-      // Get rank info using the summoner ID
-      const rankEntries = await this.getRankInfo(summonerInfo.id);
-      
-      // Extract the Solo/Duo queue rank
-      const soloQueueEntry = rankEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-      
-      // Format into a single user data object
-      const userData = {
-        gameName: accountInfo.gameName,
-        tagLine: accountInfo.tagLine,
-        puuid: accountInfo.puuid,
-        summonerId: summonerInfo.id,
-        summonerName: summonerInfo.name,
-        summonerLevel: summonerInfo.summonerLevel,
-        profileIconId: summonerInfo.profileIconId,
-        rankInfo: soloQueueEntry ? {
-          tier: soloQueueEntry.tier,
-          division: soloQueueEntry.rank,
-          leaguePoints: soloQueueEntry.leaguePoints,
-          wins: soloQueueEntry.wins,
-          losses: soloQueueEntry.losses
-        } : null
-      };
-      
-      console.log('Successfully retrieved user data:', userData);
-      return userData;
+      try {
+        // Get summoner info using the PUUID
+        console.log('Fetching summoner info');
+        const summonerInfo = await this.getSummonerInfo(accountInfo.puuid);
+        
+        try {
+          // Get rank info using the summoner ID
+          console.log('Fetching rank info');
+          const rankEntries = await this.getRankInfo(summonerInfo.id);
+          
+          // Extract the Solo/Duo queue rank
+          const soloQueueEntry = Array.isArray(rankEntries) ?
+            rankEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5') :
+            (rankEntries && rankEntries.queueType === 'RANKED_SOLO_5x5' ? rankEntries : null);
+          
+          // Format into a single user data object
+          const userData = {
+            gameName: accountInfo.gameName,
+            tagLine: accountInfo.tagLine,
+            puuid: accountInfo.puuid,
+            summonerId: summonerInfo.id,
+            summonerName: summonerInfo.name,
+            summonerLevel: summonerInfo.summonerLevel,
+            profileIconId: summonerInfo.profileIconId,
+            rankInfo: soloQueueEntry
+          };
+          
+          console.log('Successfully retrieved complete user data:', userData);
+          return userData;
+        } catch (rankError) {
+          console.error('Error getting rank info:', rankError);
+          
+          // Return user data without rank info
+          const userData = {
+            gameName: accountInfo.gameName,
+            tagLine: accountInfo.tagLine,
+            puuid: accountInfo.puuid,
+            summonerId: summonerInfo.id,
+            summonerName: summonerInfo.name,
+            summonerLevel: summonerInfo.summonerLevel,
+            profileIconId: summonerInfo.profileIconId,
+            rankInfo: null
+          };
+          
+          console.log('Returning user data without rank info:', userData);
+          return userData;
+        }
+      } catch (summonerError) {
+        console.error('Error getting summoner info:', summonerError);
+        
+        // Return partial user data with just account info
+        const userData = {
+          gameName: accountInfo.gameName,
+          tagLine: accountInfo.tagLine,
+          puuid: accountInfo.puuid,
+          summonerId: null,
+          summonerName: null,
+          summonerLevel: null,
+          profileIconId: null,
+          rankInfo: null
+        };
+        
+        console.log('Returning partial user data (account info only):', userData);
+        return userData;
+      }
     } catch (error) {
       console.error('Error getting user data:', error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Process and store ID token data
+   * @param {string} idToken - The ID token to process
+   * @returns {Promise<Object>} - The decoded ID token payload
+   * @private
+   */
+  async _processIdToken(idToken) {
+    try {
+      if (!idToken) {
+        throw new Error('No ID token provided');
+      }
+      
+      console.log('Processing ID token');
+      
+      // Store the raw ID token
+      await this._storeValue(this.config.storageKeys.idToken, idToken);
+      
+      // Decode the ID token (it's a JWT)
+      const parts = idToken.split('.');
+      
+      if (parts.length !== 3) {
+        throw new Error('Invalid ID token format - not a valid JWT');
+      }
+      
+      // Base64 decode the payload (second part)
+      try {
+        // Replace URL-safe base64 characters and add padding if needed
+        let payload = parts[1];
+        payload = payload.replace(/-/g, '+').replace(/_/g, '/');
+        
+        // Add padding if needed
+        while (payload.length % 4) {
+          payload += '=';
+        }
+        
+        // Decode the base64 string
+        const jsonStr = atob(payload);
+        const decodedPayload = JSON.parse(jsonStr);
+        
+        console.log('Successfully decoded ID token payload, claims:', Object.keys(decodedPayload).join(', '));
+        
+        // Extract account info from the ID token
+        const accountInfo = {
+          sub: decodedPayload.sub,
+          puuid: decodedPayload.sub, // In Riot's case, 'sub' is the PUUID
+          acct: decodedPayload.acct,
+          game_name: decodedPayload.game_name,
+          tag_line: decodedPayload.tag_line
+        };
+        
+        // Convert to camelCase for consistency in our app
+        const formattedAccountInfo = {
+          puuid: accountInfo.puuid,
+          accountId: accountInfo.acct,
+          gameName: accountInfo.game_name,
+          tagLine: accountInfo.tag_line
+        };
+        
+        // Log the extracted info (without revealing the full PUUID)
+        console.log('Extracted account info from ID token:', {
+          puuid: formattedAccountInfo.puuid ? formattedAccountInfo.puuid.substring(0, 8) + '...' : null,
+          accountId: formattedAccountInfo.accountId ? formattedAccountInfo.accountId.substring(0, 8) + '...' : null,
+          gameName: formattedAccountInfo.gameName,
+          tagLine: formattedAccountInfo.tagLine
+        });
+        
+        // Store the account info
+        await this._storeValue(this.config.storageKeys.accountInfo, formattedAccountInfo);
+        
+        return decodedPayload;
+      } catch (decodeError) {
+        console.error('Error decoding ID token payload:', decodeError);
+        throw new Error('Failed to decode ID token payload');
+      }
+    } catch (error) {
+      console.error('Error processing ID token:', error);
       throw error;
     }
   }

@@ -72,47 +72,154 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   /**
-   * Process authentication callback
-   * @param {Object} authData - The callback parameters with code and state
+   * Process authentication callback from Riot
+   * @param {Object} authData - The authentication data
+   * @returns {Promise<void>}
    */
   async function processAuthCallback(authData) {
     try {
-      console.log('Processing auth callback data:', {
-        hasCode: !!authData.code,
-        codeLength: authData.code ? authData.code.length : 0,
-        hasState: !!authData.state
+      console.log('Processing auth callback with data:', typeof authData === 'object' ? 
+        { hasCode: !!authData.code, hasState: !!authData.state } : 
+        typeof authData);
+        
+      // Check if this callback has already been processed
+      const alreadyProcessed = await new Promise(resolve => {
+        chrome.storage.local.get('authCallbackProcessed', (result) => {
+          resolve(result.authCallbackProcessed === true);
+        });
       });
       
-      if (!authData || !authData.code) {
-        console.error('Invalid auth callback data - missing code');
-        showAuthError('Authentication failed - missing authorization code');
+      if (alreadyProcessed) {
+        console.log('Auth callback has already been processed, ignoring duplicate');
         return;
       }
       
-      // Store callback data in chrome.storage.local for processing by background script
-      chrome.storage.local.set({
-        'auth_callback': authData,
-        'eloward_auth_callback': authData
-      }, async () => {
-        console.log('Auth callback data stored in chrome.storage');
-        
-        try {
-          // Get user data from Riot API
-          console.log('Getting user data after authentication');
-          const userData = await RiotAuth.getUserData();
-          
-          // Update UI with user data
-          updateUserInterface(userData);
-          
-          console.log('Authentication completed successfully');
-        } catch (error) {
-          console.error('Error getting user data after authentication:', error);
-          showAuthError(getReadableErrorMessage(error));
-        }
+      // Mark callback as being processed to prevent duplicates
+      await new Promise(resolve => {
+        chrome.storage.local.set({ authCallbackProcessed: true }, resolve);
       });
+      
+      // Add a timeout to clear the processed flag after 5 minutes
+      setTimeout(() => {
+        chrome.storage.local.remove('authCallbackProcessed', () => {
+          console.log('Cleared auth callback processed flag');
+        });
+      }, 5 * 60 * 1000);
+      
+      // Validate auth data
+      if (!authData || typeof authData !== 'object') {
+        showError('Auth data is missing or invalid');
+        return;
+      }
+      
+      if (!authData.code) {
+        showError('Auth code is missing from the callback');
+        return;
+      }
+      
+      // Store the callback data to be processed by background script
+      await new Promise(resolve => {
+        chrome.storage.local.set({ authCallback: authData }, resolve);
+      });
+      
+      // Show loading state
+      document.getElementById('connect-btn').innerHTML = 'Connecting...';
+      document.getElementById('connect-btn').disabled = true;
+      
+      try {
+        // Initialize RiotAuth
+        const riotAuth = new RiotAuth(riotConfig);
+        
+        // Wait for token exchange to complete
+        await new Promise((resolve, reject) => {
+          const checkTokens = async () => {
+            try {
+              const isAuthenticated = await riotAuth.isAuthenticated();
+              if (isAuthenticated) {
+                console.log('Successfully authenticated with Riot');
+                resolve();
+              } else {
+                // Check again in a second
+                setTimeout(checkTokens, 1000);
+              }
+            } catch (error) {
+              reject(error);
+            }
+          };
+          
+          // Start checking
+          checkTokens();
+          
+          // Add a timeout after 20 seconds
+          setTimeout(() => {
+            reject(new Error('Timed out waiting for token exchange'));
+          }, 20000);
+        });
+        
+        // Get user data after successful authentication
+        const userData = await riotAuth.getUserData();
+        
+        console.log('Received user data:', userData);
+        
+        // Update UI with user data
+        document.getElementById('status').classList.remove('hidden');
+        document.getElementById('summoner-name').innerText = userData.summonerName || 'Unknown';
+        document.getElementById('summoner-level').innerText = userData.summonerLevel || 'N/A';
+        
+        const rankDisplay = document.getElementById('rank-display');
+        rankDisplay.classList.remove('hidden');
+        
+        if (userData.rankInfo) {
+          const { tier, rank: division, leaguePoints } = userData.rankInfo;
+          document.getElementById('rank-tier').innerText = tier || 'Unranked';
+          document.getElementById('rank-division').innerText = division || '';
+          document.getElementById('rank-lp').innerText = leaguePoints !== undefined ? `${leaguePoints} LP` : '';
+          
+          // Update rank badge image
+          const rankBadgePreview = document.getElementById('rankBadgePreview');
+          if (rankBadgePreview) {
+            const tierLower = tier ? tier.toLowerCase() : 'unranked';
+            rankBadgePreview.src = `../images/ranks/${tierLower}.png`;
+          }
+        } else {
+          document.getElementById('rank-tier').innerText = 'Unranked';
+          document.getElementById('rank-division').innerText = '';
+          document.getElementById('rank-lp').innerText = '';
+          
+          // Set to unranked image
+          const rankBadgePreview = document.getElementById('rankBadgePreview');
+          if (rankBadgePreview) {
+            rankBadgePreview.src = '../images/ranks/unranked.png';
+          }
+        }
+        
+        // Update button state
+        document.getElementById('connect-btn').innerHTML = 'Refresh';
+        document.getElementById('connect-btn').disabled = false;
+        
+      } catch (error) {
+        console.error('Error processing authentication:', error);
+        
+        // Show error to user
+        showError(getReadableErrorMessage(error));
+        
+        // Reset button state
+        document.getElementById('connect-btn').innerHTML = 'Connect';
+        document.getElementById('connect-btn').disabled = false;
+        
+        // Clean up auth callback processing flag
+        chrome.storage.local.remove('authCallbackProcessed');
+      }
     } catch (error) {
-      console.error('Error processing auth callback:', error);
-      showAuthError(getReadableErrorMessage(error));
+      console.error('Error in processAuthCallback:', error);
+      showError('Failed to process auth callback: ' + getReadableErrorMessage(error));
+      
+      // Reset button state
+      document.getElementById('connect-btn').innerHTML = 'Connect';
+      document.getElementById('connect-btn').disabled = false;
+      
+      // Clean up auth callback processing flag
+      chrome.storage.local.remove('authCallbackProcessed');
     }
   }
 
