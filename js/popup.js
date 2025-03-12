@@ -135,15 +135,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show rank if available
         if (userData.rankInfo) {
           displayRank(userData.rankInfo);
+        } else {
+          // Show unranked if rank info is missing
+          currentRank.textContent = 'Unranked';
+          rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+          rankBadgePreview.style.transform = 'translateY(-3px)';
         }
       } else {
-        riotConnectionStatus.textContent = 'Not Connected';
-        riotConnectionStatus.classList.remove('connected');
-        connectRiotBtn.textContent = 'Connect';
-        connectRiotBtn.disabled = false;
+        // Not connected or incomplete data
+        showNotConnectedUI();
       }
     } catch (error) {
       console.error('Error updating user interface:', error);
+      // Fallback to not connected UI on error
+      showNotConnectedUI();
     }
   }
 
@@ -164,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Functions
   async function checkAuthStatus() {
     try {
-      // First try to get data from RiotAuth module
+      // Check if user is authenticated
       const isAuthenticated = await RiotAuth.isAuthenticated();
       
       if (isAuthenticated) {
@@ -182,8 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.riotAuth && result.riotAuth.gameName) {
               updateUserInterface(result.riotAuth);
             } else {
-              riotConnectionStatus.textContent = 'Not Connected';
-              connectRiotBtn.textContent = 'Connect';
+              showNotConnectedUI();
             }
             
             // Set selected region if available
@@ -193,16 +197,10 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
       } else {
-        // Not authenticated, check storage anyway
-        chrome.storage.local.get(['riotAuth', 'userRank', 'selectedRegion'], (result) => {
-          if (result.riotAuth && result.riotAuth.gameName) {
-            updateUserInterface(result.riotAuth);
-          } else {
-            riotConnectionStatus.textContent = 'Not Connected';
-            connectRiotBtn.textContent = 'Connect';
-          }
-          
-          // Set selected region if available
+        showNotConnectedUI();
+        
+        // Set region from storage if available
+        chrome.storage.local.get(['selectedRegion'], (result) => {
           if (result.selectedRegion) {
             regionSelect.value = result.selectedRegion;
           }
@@ -210,11 +208,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       console.error('Error checking auth status:', error);
-      
-      // Fallback UI state
-      riotConnectionStatus.textContent = 'Not Connected';
-      connectRiotBtn.textContent = 'Connect';
+      showNotConnectedUI();
     }
+  }
+
+  // Helper function to show the not connected UI state
+  function showNotConnectedUI() {
+    riotConnectionStatus.textContent = 'Not Connected';
+    riotConnectionStatus.classList.remove('connected');
+    connectRiotBtn.textContent = 'Connect';
+    connectRiotBtn.disabled = false;
+    
+    // Reset rank display
+    currentRank.textContent = 'Unknown';
+    rankBadgePreview.style.backgroundImage = 'none';
   }
 
   async function connectRiotAccount() {
@@ -231,10 +238,10 @@ document.addEventListener('DOMContentLoaded', () => {
         connectRiotBtn.textContent = 'Disconnecting...';
         riotConnectionStatus.textContent = 'Disconnecting...';
         
-        // Log out via RiotAuth with force reload parameter
-        await RiotAuth.logout(true);
+        // Log out via RiotAuth WITHOUT forcing reload (smooth transition)
+        await RiotAuth.logout(false);
         
-        // Update UI
+        // Update UI manually instead of relying on page reload
         riotConnectionStatus.textContent = 'Not Connected';
         riotConnectionStatus.classList.remove('connected');
         connectRiotBtn.textContent = 'Connect';
@@ -242,6 +249,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset rank display
         currentRank.textContent = 'Unknown';
         rankBadgePreview.style.backgroundImage = 'none';
+        
+        // Reset region to default if needed
+        // regionSelect.value = 'na1'; // Uncomment if you want to reset region
         
         console.log('Successfully disconnected from Riot account');
       } else {

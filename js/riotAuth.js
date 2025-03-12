@@ -876,7 +876,7 @@ export const RiotAuth = {
       'auth_callback',
       'eloward_auth_callback',
       'eloward_auth_callback_data',
-      'selectedRegion'
+      'authCallbackProcessed'
     ];
     
     // Clear tokens from chrome.storage
@@ -900,11 +900,13 @@ export const RiotAuth = {
     
     console.log('Logged out successfully, all auth data cleared');
     
-    // Force reload the extension popup if requested
+    // Only reload if explicitly requested and we're in the popup context
     if (forceReload && window.location.href.includes('popup.html')) {
       console.log('Reloading popup after logout');
       window.location.reload();
     }
+    
+    return true;
   },
   
   /**
