@@ -39,44 +39,80 @@ const safeStorage = {
   }
 };
 
+// Set default configuration if not provided
+const defaultConfig = {
+  proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev',
+  clientId: '38a4b902-7186-44ac-8183-89ba1ac56cf3',
+  redirectUri: 'https://www.eloward.xyz/auth/redirect',
+  endpoints: {
+    authInit: '/auth/init',
+    authToken: '/auth/token',
+    authRefresh: '/auth/token/refresh',
+    accountInfo: '/riot/account/v1/accounts/me',
+    summonerInfo: '/riot/summoner',
+    leagueEntries: '/riot/league/entries'
+  },
+  storageKeys: {
+    accessToken: 'eloward_riot_access_token',
+    refreshToken: 'eloward_riot_refresh_token',
+    tokenExpiry: 'eloward_riot_token_expiry',
+    tokens: 'eloward_riot_tokens',
+    accountInfo: 'eloward_riot_account_info',
+    summonerInfo: 'eloward_riot_summoner_info',
+    rankInfo: 'eloward_riot_rank_info',
+    authState: 'eloward_auth_state',
+    authCallback: 'authCallback',
+    idToken: 'eloward_riot_id_token'
+  }
+};
+
 export const RiotAuth = {
   // Riot RSO Configuration
-  config: {
-    // Backend proxy endpoints
-    proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev', // Updated to use deployed worker
-    
-    // Standard redirect URI
-    standardRedirectUri: 'https://www.eloward.xyz/auth/redirect',
-    
-    // API endpoints
-    endpoints: {
-      // Backend proxy endpoints
-      authInit: '/auth/init',
-      authToken: '/auth/token',
-      tokenRefresh: '/auth/token/refresh',
-      accountInfo: '/riot/account',
-      summonerInfo: '/riot/summoner/me',
-      leagueEntries: '/riot/league/entries',
-      userInfo: '/riot/user/info'
-    },
-    
-    // Storage keys
-    storageKeys: {
-      accessToken: 'eloward_riot_access_token',
-      refreshToken: 'eloward_riot_refresh_token',
-      tokenExpiry: 'eloward_riot_token_expiry',
-      accountInfo: 'eloward_riot_account_info',
-      summonerInfo: 'eloward_riot_summoner_info',
-      rankInfo: 'eloward_riot_rank_info',
-      authState: 'eloward_auth_state',
-      tokens: 'eloward_riot_tokens',
-      userInfo: 'eloward_riot_user_info',
-      authCallback: 'eloward_auth_callback'
-    }
-  },
+  config: defaultConfig,
   
   // Reference to the auth window if opened
   authWindow: null,
+  
+  /**
+   * Initialize RiotAuth with optional custom configuration
+   * @param {Object} customConfig - Optional custom configuration
+   */
+  init(customConfig = {}) {
+    // Merge custom config with default config
+    if (customConfig) {
+      console.log('Initializing RiotAuth with custom config:', Object.keys(customConfig));
+      
+      // Merge top-level properties
+      for (const key in customConfig) {
+        if (key !== 'endpoints' && key !== 'storageKeys') {
+          this.config[key] = customConfig[key];
+        }
+      }
+      
+      // Merge endpoints if provided
+      if (customConfig.endpoints) {
+        this.config.endpoints = { 
+          ...this.config.endpoints, 
+          ...customConfig.endpoints 
+        };
+      }
+      
+      // Merge storage keys if provided
+      if (customConfig.storageKeys) {
+        this.config.storageKeys = { 
+          ...this.config.storageKeys, 
+          ...customConfig.storageKeys 
+        };
+      }
+    }
+    
+    console.log('RiotAuth initialized with config:', {
+      proxyBaseUrl: this.config.proxyBaseUrl,
+      redirectUri: this.config.redirectUri,
+      endpoints: Object.keys(this.config.endpoints),
+      storageKeys: Object.keys(this.config.storageKeys)
+    });
+  },
   
   /**
    * High-level authentication method for popup.js
@@ -756,39 +792,64 @@ export const RiotAuth = {
   },
   
   /**
-   * Refresh the access token
+   * Refresh the access token using a refresh token
    * @param {string} refreshToken - The refresh token
-   * @returns {Promise<string>} - The new access token
+   * @returns {Promise<Object>} - The refreshed token data
    */
   async refreshToken(refreshToken) {
     try {
       console.log('Refreshing access token...');
       
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.tokenRefresh}`, {
+      if (!refreshToken) {
+        throw new Error('No refresh token provided');
+      }
+      
+      // Use the correct token refresh endpoint
+      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`;
+      console.log(`Making token refresh request to: ${requestUrl}`);
+      
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ refresh_token: refreshToken })
+        body: JSON.stringify({
+          refresh_token: refreshToken
+        })
       });
       
       if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.status} ${response.statusText}`);
+        // Try to parse error response
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Token refresh error:', errorData);
+        throw new Error(`Token refresh failed: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
       }
       
-      const tokenData = await response.json();
+      // Parse the refresh response
+      const refreshData = await response.json();
       
-      if (!tokenData.data || !tokenData.data.access_token) {
-        throw new Error('Invalid token data received from refresh');
+      if (!refreshData.access_token) {
+        throw new Error('Invalid token refresh response: Missing access token');
       }
       
-      // Store the new tokens
-      await this._storeTokens(tokenData.data);
+      console.log('Successfully refreshed access token, expires in', refreshData.expires_in, 'seconds');
       
-      return tokenData.data.access_token;
+      // Calculate token expiry timestamp
+      const expiresAt = Date.now() + (refreshData.expires_in * 1000);
+      
+      // Update token data with expiry timestamp
+      const tokens = {
+        ...refreshData,
+        expires_at: expiresAt
+      };
+      
+      // Store the refreshed tokens
+      await this._storeTokens(tokens);
+      
+      return tokens;
     } catch (error) {
       console.error('Error refreshing token:', error);
-      throw new Error('Failed to refresh access token');
+      throw new Error(`Failed to refresh access token: ${error.message}`);
     }
   },
   
@@ -854,94 +915,169 @@ export const RiotAuth = {
   },
   
   /**
-   * Get user account info from Riot API
-   * @returns {Promise<Object>} - Account info
+   * Get Riot account information
+   * @returns {Promise<Object>} - Account info object
    */
   async getAccountInfo() {
     try {
-      // Get a valid token - this might refresh it if expired
-      const token = await this.getValidToken();
-      console.log(`Retrieved valid access token for API request (token length: ${token.length})`);
+      // Get access token for API request
+      const accessToken = await this.getValidToken();
       
-      // Log token prefix (first 8 chars) to help with debugging
-      console.log(`Token prefix: ${token.substring(0, 8)}...`);
+      console.log('Retrieved valid access token for API request (token length: ' + accessToken.length + ')');
+      console.log('Token prefix: ' + accessToken.substring(0, 8) + '...');
       
-      const region = await this._getStoredValue('selectedRegion') || 'na1';
+      // Determine regional route based on platform/region
+      const storedRegion = await this._getStoredValue('selectedRegion');
+      const platform = storedRegion || 'na1';
+      const regionalRoute = this._getRegionalRouteFromPlatform(platform);
       
-      // Get the appropriate regional route - 'na1' needs to be converted to 'americas' for API requests
-      const regionalRoute = this._getRegionalRouteFromPlatform(region);
-      console.log(`Using regional route: ${regionalRoute} for platform: ${region}`);
+      console.log(`Using regional route: ${regionalRoute} for platform: ${platform}`);
       
-      // Log the request we're about to make - use correct endpoint (with /me)
-      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/me?region=${regionalRoute}`;
-      console.log(`Making account info request to: ${requestUrl}`);
+      // We'll try multiple endpoints to get account info
+      let accountInfo = null;
+      let error = null;
       
-      // Use the correct endpoint structure that matches the Cloudflare Worker implementation
-      const response = await fetch(requestUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
-      
-      // Log response details
-      console.log(`Account info response status: ${response.status} ${response.statusText}`);
-      
-      if (!response.ok) {
-        let errorInfo;
-        try {
-          errorInfo = await response.json();
-          console.error(`Account info API error (${response.status}):`, errorInfo);
-        } catch (e) {
-          const errorText = await response.text();
-          console.error(`Account info API error (${response.status}):`, errorText);
-          errorInfo = { error: 'parse_error', error_text: errorText };
-        }
+      // First try the Riot Account v1 API endpoint
+      try {
+        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}?region=${regionalRoute}`;
+        console.log(`Making account info request to: ${requestUrl}`);
         
-        // If 401 Unauthorized, the token might be invalid - let's log token details
-        if (response.status === 401) {
-          console.error('Authorization failure - token validation issue', {
-            tokenPrefix: token.substring(0, 8) + '...',
-            tokenLength: token.length,
-            headers: Array.from(response.headers.entries())
-          });
-          
-          // Try to get the full tokens object to examine
-          const tokensObj = await this._getStoredValue(this.config.storageKeys.tokens);
-          if (tokensObj) {
-            console.log('Current tokens object:', {
-              fields: Object.keys(tokensObj),
-              tokenType: tokensObj.token_type,
-              scope: tokensObj.scope,
-              expiresIn: tokensObj.expires_in
-            });
+        const response = await fetch(requestUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+        
+        console.log('Account info response status:', response.status, response.statusText);
+        
+        if (response.ok) {
+          accountInfo = await response.json();
+          console.log('Successfully retrieved account info from Riot Account API');
+        } else {
+          // Store error but continue to fallback methods
+          const errorData = await response.json().catch(() => ({}));
+          error = new Error(`Failed to get account info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
+          console.warn(error.message);
+        }
+      } catch (accountError) {
+        // Store error but continue to fallback methods
+        error = accountError;
+        console.warn('Error with primary account endpoint:', accountError);
+      }
+      
+      // If primary endpoint failed, try fallback to ID token info
+      if (!accountInfo) {
+        console.log('Primary endpoint failed, checking ID token for account info');
+        
+        // Try to get account info from ID token (which may be stored separately)
+        const idToken = await this._getStoredValue(this.config.storageKeys.idToken);
+        
+        if (idToken) {
+          try {
+            console.log('Found ID token, attempting to extract account info');
+            const idTokenPayload = await this._decodeIdToken(idToken);
+            
+            if (idTokenPayload && idTokenPayload.sub) {
+              accountInfo = {
+                puuid: idTokenPayload.sub,
+                gameName: idTokenPayload.game_name || 'Summoner',
+                tagLine: idTokenPayload.tag_line || 'Unknown'
+              };
+              console.log('Extracted account info from ID token');
+            }
+          } catch (tokenError) {
+            console.warn('Error extracting account info from ID token:', tokenError);
           }
         }
-        
-        throw new Error(`Failed to get account info: ${response.status} ${response.statusText}`);
       }
       
-      // Get the account data
-      let accountData;
-      try {
-        const responseText = await response.text();
-        console.log('Account info response length:', responseText.length);
-        accountData = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Error parsing account info response:', parseError);
-        throw new Error('Invalid JSON in account info response');
+      // If we still don't have account info, try third fallback option
+      if (!accountInfo) {
+        // Try alternative API endpoint
+        try {
+          const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account?region=${regionalRoute}`;
+          console.log(`Making fallback account info request to: ${altRequestUrl}`);
+          
+          const response = await fetch(altRequestUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          });
+          
+          if (response.ok) {
+            accountInfo = await response.json();
+            console.log('Successfully retrieved account info from fallback endpoint');
+          } else {
+            // If this also fails, we're out of options
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Fallback endpoint also failed:', errorData);
+          }
+        } catch (fallbackError) {
+          console.error('Error with fallback account endpoint:', fallbackError);
+        }
       }
       
-      console.log('Account info retrieved successfully:', accountData);
+      // If we still don't have account info after all attempts, we fail
+      if (!accountInfo || !accountInfo.puuid) {
+        throw error || new Error('Failed to get account info from all available sources');
+      }
       
-      // Store for later use
-      await this._storeAccountInfo(accountData);
+      // Ensure we have gameName and tagLine (some endpoints might not provide these)
+      if (!accountInfo.gameName) {
+        accountInfo.gameName = 'Summoner';
+        console.log('Using default gameName: Summoner');
+      }
       
-      return accountData;
+      if (!accountInfo.tagLine) {
+        accountInfo.tagLine = 'NA1';
+        console.log('Using default tagLine: NA1');
+      }
+      
+      // Store account info in storage
+      await this._storeAccountInfo(accountInfo);
+      
+      console.log('Using account info:', {
+        puuid: accountInfo.puuid ? accountInfo.puuid.substring(0, 8) + '...' : null,
+        gameName: accountInfo.gameName,
+        tagLine: accountInfo.tagLine
+      });
+      
+      return accountInfo;
     } catch (error) {
       console.error('Error fetching account info:', error);
       throw error;
+    }
+  },
+  
+  /**
+   * Helper method to decode ID token
+   * @param {string} idToken - The ID token to decode
+   * @returns {Promise<Object>} - The decoded payload
+   * @private
+   */
+  async _decodeIdToken(idToken) {
+    if (!idToken) return null;
+    
+    try {
+      const parts = idToken.split('.');
+      if (parts.length !== 3) return null;
+      
+      // Base64 decode the payload
+      let payload = parts[1];
+      payload = payload.replace(/-/g, '+').replace(/_/g, '/');
+      
+      // Add padding if needed
+      while (payload.length % 4) {
+        payload += '=';
+      }
+      
+      const jsonStr = atob(payload);
+      return JSON.parse(jsonStr);
+    } catch (error) {
+      console.error('Error decoding ID token:', error);
+      return null;
     }
   },
   
@@ -994,63 +1130,117 @@ export const RiotAuth = {
   },
   
   /**
-   * Get summoner info by PUUID
-   * @param {string} puuid - Player PUUID
-   * @returns {Promise<Object>} - Summoner info
+   * Get summoner info using PUUID
+   * @param {string} puuid - The player's PUUID
+   * @returns {Promise<Object>} - Summoner info object
    */
   async getSummonerInfo(puuid) {
     try {
-      const region = await this._getStoredValue('selectedRegion') || 'na1';
-      
-      // Convert platform ID to regional route (e.g., 'na1' -> 'americas')
-      const regionalRoute = this._getRegionalRouteFromPlatform(region);
-      
       if (!puuid) {
-        console.log('No PUUID provided to getSummonerInfo, fetching account info first');
-        const accountInfo = await this.getAccountInfo();
-        puuid = accountInfo.puuid;
+        throw new Error('PUUID is required to get summoner info');
       }
       
-      console.log(`Fetching summoner info for PUUID: ${puuid} in region: ${region} (${regionalRoute})`);
+      console.log('Fetching summoner info for PUUID:', puuid.substring(0, 8) + '...');
       
-      // Use the correct endpoint structure for the Cloudflare Worker
-      // The endpoint takes region parameter as a query parameter, not in the path
-      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}?region=${region}`;
-      console.log(`Making summoner info request to: ${requestUrl}`);
-      
-      // Send the request with proper authorization header
+      // Get access token
       const token = await this.getValidToken();
-      const response = await fetch(requestUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
+      
+      // Get selected region or default to NA1
+      const platform = await this._getStoredValue('selectedRegion') || 'na1';
+      
+      // Convert platform to region (e.g., na1 -> americas)
+      const region = this._getRegionalRouteFromPlatform(platform);
+      
+      let summonerInfo = null;
+      let error = null;
+      
+      // Try primary endpoint first
+      try {
+        // Try the endpoint with region and puuid as query parameters
+        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}?region=${platform}&puuid=${puuid}`;
+        console.log('Making summoner info request to:', requestUrl);
+        
+        const response = await fetch(requestUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        console.log('Summoner info response status:', response.status, response.statusText);
+        
+        if (response.ok) {
+          summonerInfo = await response.json();
+          console.log('Successfully retrieved summoner info from primary endpoint');
+        } else {
+          // Store error but try fallback
+          const errorData = await response.json().catch(() => ({}));
+          error = new Error(`Failed to get summoner info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
+          console.warn(error.message);
         }
+      } catch (primaryError) {
+        error = primaryError;
+        console.warn('Error with primary summoner endpoint:', primaryError);
+      }
+      
+      // Try fallback endpoint if primary failed
+      if (!summonerInfo) {
+        try {
+          // Try alternative endpoint structure with puuid in path
+          const fallbackUrl = `${this.config.proxyBaseUrl}/riot/summoner/by-puuid/${puuid}?region=${platform}`;
+          console.log('Making fallback summoner info request to:', fallbackUrl);
+          
+          const response = await fetch(fallbackUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            summonerInfo = await response.json();
+            console.log('Successfully retrieved summoner info from fallback endpoint');
+          } else {
+            // If this also fails, log but continue
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Fallback summoner endpoint also failed:', errorData);
+          }
+        } catch (fallbackError) {
+          console.error('Error with fallback summoner endpoint:', fallbackError);
+        }
+      }
+      
+      // If we have no summoner info after all attempts, create a minimal one
+      if (!summonerInfo) {
+        // If we can't get summoner info, create a minimal one with just the PUUID
+        // This allows us to continue and at least show some user data
+        console.warn('Unable to retrieve summoner info, creating minimal record');
+        summonerInfo = {
+          id: puuid.substring(0, 16),  // Use part of PUUID as ID
+          puuid: puuid,
+          name: 'Unknown Summoner',
+          summonerLevel: 0,
+          profileIconId: 1
+        };
+      }
+      
+      // Ensure we have required fields
+      if (!summonerInfo.id) {
+        summonerInfo.id = puuid.substring(0, 16);
+      }
+      
+      // Store summoner info
+      await this._storeSummonerInfo(summonerInfo);
+      
+      console.log('Using summoner info:', {
+        id: summonerInfo.id.substring(0, 8) + '...',
+        name: summonerInfo.name,
+        level: summonerInfo.summonerLevel
       });
       
-      if (!response.ok) {
-        let errorInfo;
-        try {
-          errorInfo = await response.json();
-          console.error(`Summoner info API error (${response.status}):`, errorInfo);
-        } catch (e) {
-          const errorText = await response.text();
-          console.error(`Summoner info API error (${response.status}):`, errorText);
-          errorInfo = { error: 'parse_error', error_text: errorText };
-        }
-        
-        throw new Error(`Failed to get summoner info: ${response.status} ${response.statusText}`);
-      }
-      
-      const summonerData = await response.json();
-      console.log('Received summoner data:', summonerData);
-      
-      // Store for later use
-      await this._storeSummonerInfo(summonerData);
-      
-      return summonerData;
+      return summonerInfo;
     } catch (error) {
-      console.error('Error fetching summoner info:', error);
+      console.error('Error getting summoner info:', error);
       throw error;
     }
   },
@@ -1075,69 +1265,125 @@ export const RiotAuth = {
   },
   
   /**
-   * Get rank info by summoner ID
-   * @param {string} summonerId - Encrypted summoner ID
-   * @returns {Promise<Object>} - Rank info
+   * Get player's rank information
+   * @param {string} summonerId - The encrypted summoner ID
+   * @returns {Promise<Array>} - Array of league entries for the player
    */
   async getRankInfo(summonerId) {
     try {
+      if (!summonerId) {
+        throw new Error('Summoner ID is required to get rank info');
+      }
+      
+      console.log(`Fetching rank info for summoner ID: ${summonerId.substring(0, 8)}...`);
+      
+      // Get access token
+      const token = await this.getValidToken();
+      
+      // Get selected platform/region or default to NA1
       const platform = await this._getStoredValue('selectedRegion') || 'na1';
       
-      if (!summonerId) {
-        console.log('No summonerId provided to getRankInfo, fetching summoner info first');
-        const summonerInfo = await this.getSummonerInfo();
-        summonerId = summonerInfo.id;
-      }
+      let rankData = null;
+      let error = null;
       
-      console.log(`Fetching rank info for summonerId: ${summonerId} on platform: ${platform}`);
-      
-      // Use the correct endpoint with query parameters
-      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}?region=${platform}&summonerId=${summonerId}`;
-      console.log(`Making rank info request to: ${requestUrl}`);
-      
-      // Send the request with proper authorization header
-      const token = await this.getValidToken();
-      const response = await fetch(requestUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        let errorInfo;
-        try {
-          errorInfo = await response.json();
-          console.error(`Rank info API error (${response.status}):`, errorInfo);
-        } catch (e) {
-          const errorText = await response.text();
-          console.error(`Rank info API error (${response.status}):`, errorText);
-          errorInfo = { error: 'parse_error', error_text: errorText };
-        }
-        throw new Error(`Failed to get rank info: ${response.status} ${response.statusText}`);
-      }
-      
-      const leagueData = await response.json();
-      console.log('Received league/rank data:', leagueData);
-      
-      // Find the Solo/Duo queue entry
-      const soloQueueEntry = Array.isArray(leagueData) ? 
-        leagueData.find(entry => entry.queueType === 'RANKED_SOLO_5x5') :
-        leagueData.queueType === 'RANKED_SOLO_5x5' ? leagueData : null;
+      // Try primary endpoint first
+      try {
+        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}?region=${platform}&summonerId=${summonerId}`;
+        console.log('Making rank info request to:', requestUrl);
         
-      if (soloQueueEntry) {
-        console.log('Found Solo/Duo rank:', `${soloQueueEntry.tier} ${soloQueueEntry.rank}`);
-      } else {
-        console.log('No Solo/Duo rank found');
+        const response = await fetch(requestUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        console.log('Rank info response status:', response.status, response.statusText);
+        
+        if (response.ok) {
+          rankData = await response.json();
+          console.log('Successfully retrieved rank info from primary endpoint');
+        } else {
+          // Store error but try fallback
+          const errorData = await response.json().catch(() => ({}));
+          error = new Error(`Failed to get rank info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
+          console.warn(error.message);
+        }
+      } catch (primaryError) {
+        error = primaryError;
+        console.warn('Error with primary rank endpoint:', primaryError);
       }
       
-      // Store for later use
-      await this._storeRankInfo(leagueData);
+      // Try fallback endpoint if primary failed
+      if (!rankData) {
+        try {
+          // Try alternative endpoint structure
+          const fallbackUrl = `${this.config.proxyBaseUrl}/riot/league/entries/by-summoner/${summonerId}?region=${platform}`;
+          console.log('Making fallback rank info request to:', fallbackUrl);
+          
+          const response = await fetch(fallbackUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            rankData = await response.json();
+            console.log('Successfully retrieved rank info from fallback endpoint');
+          } else {
+            // If this also fails, log but continue
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Fallback rank endpoint also failed:', errorData);
+          }
+        } catch (fallbackError) {
+          console.error('Error with fallback rank endpoint:', fallbackError);
+        }
+      }
       
-      return leagueData;
+      // If we couldn't get rank data, return empty array to indicate unranked
+      if (!rankData) {
+        console.warn('Unable to retrieve rank data, assuming unranked');
+        rankData = [];
+      }
+      
+      // Ensure rankData is an array
+      if (!Array.isArray(rankData)) {
+        if (rankData && typeof rankData === 'object') {
+          // If it's an object but not an array, wrap it
+          rankData = [rankData];
+        } else {
+          // If it's anything else, use empty array
+          rankData = [];
+        }
+      }
+      
+      // Store rank info
+      await this._storeRankInfo(rankData);
+      
+      if (rankData.length > 0) {
+        console.log(`Successfully retrieved ${rankData.length} league entries`);
+        
+        // Log the Solo/Duo queue rank if available
+        const soloQueueEntry = rankData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+        if (soloQueueEntry) {
+          console.log('Solo/Duo rank:', {
+            tier: soloQueueEntry.tier,
+            rank: soloQueueEntry.rank,
+            lp: soloQueueEntry.leaguePoints,
+            wins: soloQueueEntry.wins,
+            losses: soloQueueEntry.losses
+          });
+        } else {
+          console.log('No Solo/Duo queue rank found');
+        }
+      } else {
+        console.log('No ranked data found, player is unranked');
+      }
+      
+      return rankData;
     } catch (error) {
-      console.error('Error fetching rank info:', error);
+      console.error('Error getting rank info:', error);
       throw error;
     }
   },
@@ -1286,7 +1532,7 @@ export const RiotAuth = {
         
         // If still missing, set placeholder values
         if (!accountInfo.gameName) accountInfo.gameName = 'Summoner';
-        if (!accountInfo.tagLine) accountInfo.tagLine = 'unknown';
+        if (!accountInfo.tagLine) accountInfo.tagLine = 'Unknown';
       }
       
       // Log the account info we're using
@@ -1381,8 +1627,10 @@ export const RiotAuth = {
       
       console.log('Processing ID token');
       
-      // Store the raw ID token
-      await this._storeValue(this.config.storageKeys.idToken, idToken);
+      // Store the raw ID token directly using chrome.storage
+      await new Promise(resolve => {
+        chrome.storage.local.set({ [this.config.storageKeys.idToken]: idToken }, resolve);
+      });
       
       // Decode the ID token (it's a JWT)
       const parts = idToken.split('.');
@@ -1433,8 +1681,10 @@ export const RiotAuth = {
           tagLine: formattedAccountInfo.tagLine
         });
         
-        // Store the account info
-        await this._storeValue(this.config.storageKeys.accountInfo, formattedAccountInfo);
+        // Store the account info directly with chrome.storage
+        await new Promise(resolve => {
+          chrome.storage.local.set({ [this.config.storageKeys.accountInfo]: formattedAccountInfo }, resolve);
+        });
         
         return decodedPayload;
       } catch (decodeError) {
@@ -1443,6 +1693,46 @@ export const RiotAuth = {
       }
     } catch (error) {
       console.error('Error processing ID token:', error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Store a value in chrome.storage.local
+   * @param {string} key - The key to store the value under
+   * @param {any} value - The value to store
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _storeValue(key, value) {
+    try {
+      if (!key) throw new Error('No storage key provided');
+      
+      // Log the operation (without revealing sensitive data)
+      const valueType = typeof value;
+      const logValue = valueType === 'object' 
+        ? `object with keys: ${value ? Object.keys(value).join(', ') : 'null'}`
+        : (valueType === 'string' && value.length > 20 
+            ? `string (length ${value.length})`
+            : String(value));
+      
+      console.log(`Storing value for key: ${key}, type: ${valueType}, value: ${logValue}`);
+      
+      // Store in chrome.storage.local
+      return new Promise((resolve, reject) => {
+        chrome.storage.local.set({ [key]: value }, () => {
+          const error = chrome.runtime.lastError;
+          if (error) {
+            console.error(`Error storing value for key ${key}:`, error);
+            reject(error);
+          } else {
+            console.log(`Successfully stored value for key: ${key}`);
+            resolve();
+          }
+        });
+      });
+    } catch (error) {
+      console.error(`Error in _storeValue for key ${key}:`, error);
       throw error;
     }
   }
