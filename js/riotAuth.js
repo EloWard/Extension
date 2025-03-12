@@ -123,39 +123,24 @@ export const RiotAuth = {
       // Verify the state parameter to prevent CSRF attacks
       if (authResult.state !== state) {
         console.error('State mismatch during authentication:', {
-          received: authResult.state,
-          expected: state
+          receivedState: authResult.state ? `${authResult.state.substring(0, 8)}...` : 'undefined',
+          expectedState: state ? `${state.substring(0, 8)}...` : 'undefined'
         });
         
         // Try fallback state check using storage
         const storedState = await this._getStoredAuthState();
-        console.log('Retrieved stored state for fallback check:', storedState);
+        console.log('Retrieved stored state for fallback check:', 
+                    storedState ? `${storedState.substring(0, 8)}...` : 'null');
         
         if (authResult.state !== storedState) {
-          // Additional fallback - check if the received state matches what's in the URL hash
-          // This handles cases where the redirect URI doesn't properly pass the original state
-          const hashState = new URLSearchParams(window.location.hash.substring(1)).get('state');
-          console.log('Checking hash state as last resort:', hashState);
+          console.error('State verification failed using both methods:', {
+            receivedState: authResult.state ? `${authResult.state.substring(0, 8)}...` : 'undefined',
+            originalState: state ? `${state.substring(0, 8)}...` : 'undefined',
+            storedState: storedState ? `${storedState.substring(0, 8)}...` : 'null'
+          });
           
-          if (authResult.state !== hashState && authResult.state !== state) {
-            console.error('State verification failed using all methods:', {
-              receivedState: authResult.state,
-              originalState: state,
-              retrievedStoredState: storedState,
-              hashState: hashState
-            });
-            
-            // Last resort - proceed with caution if code is present
-            // This should only be done in development or if Riot API behavior has changed
-            if (authResult.code) {
-              console.warn('SECURITY RISK: Proceeding despite state mismatch because code is present');
-              // Continue with authentication using the code, but log the security risk
-            } else {
-              throw new Error('Security verification failed: state parameter mismatch');
-            }
-          } else {
-            console.log('State verified using hash parameter');
-          }
+          // Security failure - state mismatch indicates potential CSRF attack
+          throw new Error('Security verification failed: state parameter mismatch. Please try again.');
         } else {
           console.log('State verified using fallback stored state');
         }
@@ -386,7 +371,7 @@ export const RiotAuth = {
   
   /**
    * Exchange authorization code for tokens
-   * @param {string} code - The authorization code from Riot
+   * @param {string} code - The authorization code
    * @returns {Promise<Object>} - The token data
    * @private
    */
@@ -400,6 +385,11 @@ export const RiotAuth = {
       // Log request details (without the actual code for security)
       console.log(`Making token exchange request to: ${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`);
       
+      // Verify code is valid
+      if (!code || typeof code !== 'string' || code.length < 10) {
+        throw new Error('Invalid authorization code - must be a string with sufficient length');
+      }
+      
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
         method: 'POST',
         headers: {
@@ -412,7 +402,7 @@ export const RiotAuth = {
       console.log(`Token exchange response status: ${response.status} ${response.statusText}`);
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         console.error('Token exchange error response:', errorData);
         throw new Error(`Token exchange failed: ${response.status} ${errorData.message || response.statusText}`);
       }
@@ -420,35 +410,41 @@ export const RiotAuth = {
       const responseText = await response.text();
       console.log('Raw token response length:', responseText.length);
       
-      let responseData;
+      if (!responseText || responseText.length < 20) {
+        console.error('Token response text is too short:', responseText);
+        throw new Error('Empty or invalid response from token endpoint');
+      }
+      
+      let tokenData;
       try {
-        responseData = JSON.parse(responseText);
+        tokenData = JSON.parse(responseText);
       } catch (parseError) {
         console.error('Failed to parse token response as JSON:', parseError);
         console.log('Response text (truncated):', responseText.substring(0, 100) + '...');
         throw new Error('Invalid JSON response from token endpoint');
       }
       
-      console.log('Token exchange response received, status:', 
-                  responseData.status || 'No status field',
-                  'Data fields:', Object.keys(responseData).join(', '));
+      console.log('Token exchange response received, data fields:', Object.keys(tokenData).join(', '));
       
-      // Check for expected response structure based on different possible formats
-      // Some servers return { data: { access_token: ... } } while others return { access_token: ... } directly
-      let tokenData;
+      // Directly process the response from the server - which should be the exact Riot response
+      if (!tokenData.access_token) {
+        // Check if it's wrapped in a data object
+        if (tokenData.data && tokenData.data.access_token) {
+          tokenData = tokenData.data;
+        } else {
+          console.error('Invalid token response format - missing access_token:', Object.keys(tokenData));
+          throw new Error('Invalid token data: missing access token');
+        }
+      }
       
-      if (responseData.data && responseData.data.access_token) {
-        // Format: { data: { access_token: ... } }
-        console.log('Using nested data field for token data');
-        tokenData = responseData.data;
-      } else if (responseData.access_token) {
-        // Format: { access_token: ... }
-        console.log('Using direct response for token data');
-        tokenData = responseData;
-      } else {
-        console.error('Invalid token data format, neither data.access_token nor access_token found:', 
-                     Object.keys(responseData));
-        throw new Error('Invalid token data received: missing access token');
+      // Validate token data
+      if (typeof tokenData.access_token !== 'string' || tokenData.access_token.length < 20) {
+        console.error('Invalid access token:', {
+          type: typeof tokenData.access_token,
+          length: tokenData.access_token ? tokenData.access_token.length : 0,
+          value: tokenData.access_token ? `${tokenData.access_token.substring(0, 10)}...` : 'undefined'
+        });
+        throw new Error('Invalid access token received');
       }
       
       // Log token details without exposing the actual token
@@ -486,39 +482,48 @@ export const RiotAuth = {
       console.log('Storing token data with fields:', Object.keys(tokenData).join(', '));
       
       // Validate required token fields
-      if (!tokenData.access_token) {
-        throw new Error('Missing access_token in token data');
+      if (!tokenData.access_token || typeof tokenData.access_token !== 'string') {
+        throw new Error('Missing or invalid access_token in token data');
       }
       
-      // Calculate expiry time
-      const expiresIn = tokenData.expires_in || 300; // Default to 5 minutes if not provided
+      // Validate access token format
+      if (tokenData.access_token.length < 20) {
+        throw new Error(`Access token appears to be invalid (length: ${tokenData.access_token.length})`);
+      }
+      
+      // Calculate expiry time - ensure it's a numeric value
+      const expiresIn = parseInt(tokenData.expires_in, 10) || 300; // Default to 5 minutes if invalid
+      if (isNaN(expiresIn)) {
+        console.warn('Invalid expires_in value:', tokenData.expires_in, 'using default of 300 seconds');
+      }
+      
+      // Calculate expiry timestamp as milliseconds since epoch
       const tokenExpiry = Date.now() + (expiresIn * 1000);
       console.log(`Token will expire at: ${new Date(tokenExpiry).toISOString()} (${expiresIn} seconds from now)`);
       
       // Create structured data to store
       const storageData = {
         [this.config.storageKeys.accessToken]: tokenData.access_token,
-        [this.config.storageKeys.tokenExpiry]: tokenExpiry,
-        [this.config.storageKeys.tokens]: tokenData,
-        'riotAuth': { // For backward compatibility
+        [this.config.storageKeys.tokenExpiry]: tokenExpiry, // Store as numeric timestamp
+        [this.config.storageKeys.tokens]: {
           ...tokenData,
-          issued_at: Date.now()
+          stored_at: Date.now(), // Add timestamp for debugging
         }
       };
       
-      // Optional: refreshToken (only if provided)
-      if (tokenData.refresh_token) {
+      // Optional: refreshToken (only if provided and valid)
+      if (tokenData.refresh_token && typeof tokenData.refresh_token === 'string' && tokenData.refresh_token.length > 20) {
         storageData[this.config.storageKeys.refreshToken] = tokenData.refresh_token;
-        console.log('Refresh token included in storage data');
+        console.log('Valid refresh token included in storage data');
       } else {
-        console.log('No refresh token available to store');
+        console.warn('No valid refresh token available to store');
       }
       
       // If we have user info from the token, store that too
-      if (tokenData.user_info) {
+      if (tokenData.user_info && typeof tokenData.user_info === 'object') {
         storageData[this.config.storageKeys.accountInfo] = tokenData.user_info;
         console.log('User info from token stored:', Object.keys(tokenData.user_info).join(', '));
-      } else if (tokenData.id_token) {
+      } else if (tokenData.id_token && typeof tokenData.id_token === 'string') {
         // Try to extract user info from ID token if available
         try {
           const idTokenParts = tokenData.id_token.split('.');
@@ -533,8 +538,12 @@ export const RiotAuth = {
               tagLine: idTokenPayload.tag_line || idTokenPayload.tagLine
             };
             
-            storageData[this.config.storageKeys.accountInfo] = userInfo;
-            console.log('User info extracted from ID token and stored');
+            if (userInfo.puuid) {
+              storageData[this.config.storageKeys.accountInfo] = userInfo;
+              console.log('User info extracted from ID token and stored');
+            } else {
+              console.warn('Extracted user info missing puuid, not storing');
+            }
           }
         } catch (e) {
           console.error('Failed to extract user info from ID token:', e);
@@ -548,30 +557,28 @@ export const RiotAuth = {
       });
       console.log('Tokens stored in chrome.storage successfully');
       
-      // Store in localStorage as backup - but stringify objects properly
+      // Also store in localStorage as backup
       try {
+        // Store each item individually - more resilient than storing everything at once
         localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
         localStorage.setItem(this.config.storageKeys.tokenExpiry, tokenExpiry.toString());
-        
-        // For objects, we need to stringify them 
-        localStorage.setItem(this.config.storageKeys.tokens, JSON.stringify(tokenData));
         
         if (tokenData.refresh_token) {
           localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
         }
         
-        // Also store user info if available
-        if (storageData[this.config.storageKeys.accountInfo]) {
-          localStorage.setItem(
-            this.config.storageKeys.accountInfo, 
-            JSON.stringify(storageData[this.config.storageKeys.accountInfo])
-          );
-        }
+        localStorage.setItem(this.config.storageKeys.tokens, JSON.stringify({
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token,
+          expires_in: expiresIn,
+          token_type: tokenData.token_type,
+          stored_at: Date.now()
+        }));
         
-        console.log('Tokens also stored in localStorage as backup');
+        console.log('Token data also stored in localStorage for redundancy');
       } catch (e) {
-        console.error('Failed to store tokens in localStorage:', e);
-        // Non-fatal error, we still have chrome.storage
+        console.error('Failed to store token data in localStorage:', e);
+        // Non-fatal error, we still have the data in chrome.storage
       }
     } catch (error) {
       console.error('Error storing tokens:', error);
@@ -802,14 +809,24 @@ export const RiotAuth = {
   },
   
   /**
-   * Generate a random state string for CSRF protection
-   * @returns {string} - Random state string
+   * Generate a cryptographically secure random state parameter for CSRF protection
+   * @returns {string} - A random state string
    * @private
    */
   _generateRandomState() {
-    return Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    // Generate 32 bytes (256 bits) of random data
+    const randomBytes = new Uint8Array(32);
+    crypto.getRandomValues(randomBytes);
+    
+    // Convert to hex string
+    const hexString = Array.from(randomBytes)
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
+    
+    console.log(`Generated secure random state (${hexString.length} chars):`, 
+                hexString.substring(0, 6) + '...' + hexString.substring(hexString.length - 6));
+    
+    return hexString;
   },
   
   /**
