@@ -198,6 +198,51 @@ The extension stores the following data in `chrome.storage.local`:
 }
 ```
 
+## Rank Refresh Functionality
+
+The extension implements an on-demand rank refresh feature that allows users to manually update their rank information without requiring a full re-authentication.
+
+### Implementation Details:
+
+1. **User Interface**:
+   - A refresh button is displayed next to the rank emblem and rank text in the popup
+   - The button uses an icon representing the refresh action
+   - Visual feedback (spinning animation) is provided during the refresh process
+
+2. **Refresh Process**:
+   - When the user clicks the refresh button, the extension:
+     1. Shows a loading state for the button (spinning animation)
+     2. Updates the rank text to "Refreshing..."
+     3. Retrieves the stored summoner information
+     4. Uses the stored access token to make a new request for rank data
+     5. Updates the UI with the fresh rank information
+
+3. **Token Usage**:
+   - The refresh functionality uses the existing valid access token
+   - If the access token has expired, the extension automatically refreshes it using the refresh token
+   - The refresh token (OAuth refresh token) is used to obtain a new access token without requiring user re-authentication
+   - This is distinct from the rank refresh action, which uses a valid access token to fetch updated rank data
+
+4. **Data Flow for Rank Refresh**:
+   ```
+   User → Refresh Button → Extension → Access Token Check → Token Refresh (if needed) → 
+   Riot API → Fresh Rank Data → Update UI
+   ```
+
+5. **Error Handling**:
+   - If rank refresh fails, an error message is displayed
+   - After a timeout, the UI reverts to showing the previously stored rank
+   - Proper error logging is implemented
+
+6. **Efficiency Considerations**:
+   - Rank data is only refreshed when:
+     1. The user explicitly requests it via the refresh button
+     2. The user disconnects and reconnects their Riot account
+   - This approach minimizes API requests and provides users with control over when their rank is updated
+   - Stored rank data persists across extension sessions until manually refreshed
+
+This implementation ensures efficient use of Riot API resources while providing users with an up-to-date rank display when needed.
+
 ## Security Considerations
 
 1. **State Parameter**: Prevents CSRF attacks by verifying the state returned matches what was sent

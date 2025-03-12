@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const currentRank = document.getElementById('current-rank');
   const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
+  const refreshRankBtn = document.getElementById('refresh-rank');
 
   // Flag to prevent recursive message handling
   let processingMessage = false;
@@ -18,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up event listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
+  refreshRankBtn.addEventListener('click', refreshRank);
   
   // Listen for messages from the auth window or background script
   window.addEventListener('message', (event) => {
@@ -286,6 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
           currentRank.textContent = 'Unranked';
           rankBadgePreview.style.backgroundImage = `url('images/ranks/unranked.png')`;
         }
+        
+        // Show refresh button
+        refreshRankBtn.style.display = 'flex';
       } else {
         // Not connected
         riotConnectionStatus.textContent = 'Not Connected';
@@ -295,6 +300,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset rank display
         currentRank.textContent = 'Unknown';
         rankBadgePreview.style.backgroundImage = 'none';
+        
+        // Hide refresh button
+        refreshRankBtn.style.display = 'none';
       }
     } catch (error) {
       console.error('Error updating user interface:', error);
@@ -491,5 +499,80 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       console.error('Error clearing localStorage:', e);
     }
+  }
+
+  /**
+   * Refreshes the user's rank by triggering a new rank data fetch
+   */
+  async function refreshRank() {
+    try {
+      // Show loading state
+      refreshRankBtn.classList.add('loading');
+      refreshRankBtn.disabled = true;
+      currentRank.textContent = 'Refreshing...';
+      
+      console.log('Manually refreshing rank data...');
+      
+      // Get stored summoner info
+      const summonerInfo = await new Promise(resolve => {
+        chrome.storage.local.get(RiotAuth.config.storageKeys.summonerInfo, (result) => {
+          resolve(result[RiotAuth.config.storageKeys.summonerInfo]);
+        });
+      });
+      
+      if (!summonerInfo || !summonerInfo.id) {
+        throw new Error('Summoner information not found');
+      }
+      
+      // Fetch fresh rank data
+      const rankData = await RiotAuth.getRankInfo(summonerInfo.id);
+      
+      // Process rank data for display
+      const processedRankData = processRankData(rankData);
+      
+      // Update UI with new rank
+      displayRank(processedRankData);
+      
+      console.log('Rank refreshed successfully');
+    } catch (error) {
+      console.error('Failed to refresh rank:', error);
+      currentRank.textContent = 'Refresh failed';
+      
+      // Reset after 3 seconds
+      setTimeout(() => {
+        // Restore previous rank display
+        checkAuthStatus();
+      }, 3000);
+    } finally {
+      // Remove loading state
+      refreshRankBtn.classList.remove('loading');
+      refreshRankBtn.disabled = false;
+    }
+  }
+
+  /**
+   * Process rank data to find the Solo/Duo queue rank
+   * @param {Array} rankData - Array of league entries
+   * @returns {Object|null} - Processed rank data for display
+   */
+  function processRankData(rankData) {
+    if (!rankData || !Array.isArray(rankData) || rankData.length === 0) {
+      return null;
+    }
+    
+    // Find Solo/Duo queue rank
+    const soloQueueRank = rankData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+    
+    if (soloQueueRank) {
+      return {
+        tier: soloQueueRank.tier,
+        division: soloQueueRank.rank,
+        leaguePoints: soloQueueRank.leaguePoints,
+        wins: soloQueueRank.wins,
+        losses: soloQueueRank.losses
+      };
+    }
+    
+    return null;
   }
 }); 
