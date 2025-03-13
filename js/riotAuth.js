@@ -48,7 +48,7 @@ const defaultConfig = {
     authInit: '/auth/init',
     authToken: '/auth/token',
     authRefresh: '/auth/token/refresh',
-    accountInfo: '/riot/account/v1/accounts/me',
+    accountInfo: '/riot/account',
     summonerInfo: '/riot/summoner',
     leagueEntries: '/riot/league/entries'
   },
@@ -953,9 +953,9 @@ export const RiotAuth = {
       let accountInfo = null;
       let error = null;
       
-      // First try the Riot Account v1 API endpoint (the one that worked in the logs)
+      // Try the actual Cloudflare Worker endpoint first
       try {
-        const requestUrl = `${this.config.proxyBaseUrl}/riot/account/v1/accounts/me?region=${regionalRoute}`;
+        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/${regionalRoute}`;
         console.log(`Making account info request to: ${requestUrl}`);
         
         const response = await fetch(requestUrl, {
@@ -1182,17 +1182,14 @@ export const RiotAuth = {
       // Get selected region or default to NA1
       const platform = await this._getStoredValue('selectedRegion') || 'na1';
       
-      // Convert platform to region (e.g., na1 -> americas)
-      const region = this._getRegionalRouteFromPlatform(platform);
-      
+      // Try the primary endpoint first
       let summonerInfo = null;
       let error = null;
       
-      // Try primary endpoint first
       try {
-        // Try the endpoint with region and puuid as query parameters
-        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}?region=${platform}&puuid=${puuid}`;
-        console.log('Making summoner info request to:', requestUrl);
+        // Updated to use the correct endpoint format that matches the server's routes
+        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}/${platform}/${puuid}`;
+        console.log(`Making summoner info request to: ${requestUrl}`);
         
         const response = await fetch(requestUrl, {
           method: 'GET',
@@ -1205,24 +1202,25 @@ export const RiotAuth = {
         
         if (response.ok) {
           summonerInfo = await response.json();
-          console.log('Successfully retrieved summoner info from primary endpoint');
+          console.log('Successfully retrieved summoner info');
         } else {
-          // Store error but try fallback
+          // Store error but continue to fallback methods
           const errorData = await response.json().catch(() => ({}));
           error = new Error(`Failed to get summoner info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
           console.warn(error.message);
         }
-      } catch (primaryError) {
-        error = primaryError;
-        console.warn('Error with primary summoner endpoint:', primaryError);
+      } catch (summonerError) {
+        // Store error but continue to fallback methods
+        error = summonerError;
+        console.warn('Error with primary summoner endpoint:', summonerError);
       }
       
-      // Try fallback endpoint if primary failed
+      // If primary endpoint failed, try fallback endpoint with alternative path format
       if (!summonerInfo) {
         try {
-          // Try alternative endpoint structure with puuid in path
+          // Try fallback alternative path format
           const fallbackUrl = `${this.config.proxyBaseUrl}/riot/summoner/by-puuid/${puuid}?region=${platform}`;
-          console.log('Making fallback summoner info request to:', fallbackUrl);
+          console.log(`Making fallback summoner info request to: ${fallbackUrl}`);
           
           const response = await fetch(fallbackUrl, {
             method: 'GET',
@@ -1235,36 +1233,30 @@ export const RiotAuth = {
             summonerInfo = await response.json();
             console.log('Successfully retrieved summoner info from fallback endpoint');
           } else {
-            // If this also fails, log but continue
+            // Log error but don't throw yet
             const errorData = await response.json().catch(() => ({}));
-            console.error('Fallback summoner endpoint also failed:', errorData);
+            console.warn('Fallback summoner endpoint also failed:', errorData);
           }
         } catch (fallbackError) {
-          console.error('Error with fallback summoner endpoint:', fallbackError);
+          console.warn('Error with fallback summoner endpoint:', fallbackError);
         }
       }
       
-      // If we have no summoner info after all attempts, create a minimal one
+      // If we still don't have summoner info, create a minimal record with what we know
       if (!summonerInfo) {
-        // If we can't get summoner info, create a minimal one with just the PUUID
-        // This allows us to continue and at least show some user data
         console.warn('Unable to retrieve summoner info, creating minimal record');
+        
+        // Try to extract summoner id from the puuid (first part)
+        const summonerId = puuid.split('_')[0] || puuid.substring(0, 16);
+        
         summonerInfo = {
-          id: puuid.substring(0, 16),  // Use part of PUUID as ID
+          id: summonerId,
           puuid: puuid,
           name: 'Unknown Summoner',
-          summonerLevel: 0,
-          profileIconId: 1
+          profileIconId: 0,
+          summonerLevel: 0
         };
       }
-      
-      // Ensure we have required fields
-      if (!summonerInfo.id) {
-        summonerInfo.id = puuid.substring(0, 16);
-      }
-      
-      // Store summoner info
-      await this._storeSummonerInfo(summonerInfo);
       
       console.log('Using summoner info:', {
         id: summonerInfo.id.substring(0, 8) + '...',
@@ -1272,9 +1264,12 @@ export const RiotAuth = {
         level: summonerInfo.summonerLevel
       });
       
+      // Store the summoner info
+      await this._storeSummonerInfo(summonerInfo);
+      
       return summonerInfo;
     } catch (error) {
-      console.error('Error getting summoner info:', error);
+      console.error('Error fetching summoner info:', error);
       throw error;
     }
   },
@@ -1309,21 +1304,22 @@ export const RiotAuth = {
         throw new Error('Summoner ID is required to get rank info');
       }
       
-      console.log(`Fetching rank info for summoner ID: ${summonerId.substring(0, 8)}...`);
+      console.log('Fetching rank info for summoner ID:', summonerId.substring(0, 8) + '...');
       
       // Get access token
       const token = await this.getValidToken();
       
-      // Get selected platform/region or default to NA1
+      // Get selected region
       const platform = await this._getStoredValue('selectedRegion') || 'na1';
       
-      let rankData = null;
+      // Try the primary endpoint first
+      let rankInfo = null;
       let error = null;
       
-      // Try primary endpoint first
       try {
+        // Updated to match the server's route pattern
         const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}?region=${platform}&summonerId=${summonerId}`;
-        console.log('Making rank info request to:', requestUrl);
+        console.log(`Making rank info request to: ${requestUrl}`);
         
         const response = await fetch(requestUrl, {
           method: 'GET',
@@ -1335,25 +1331,26 @@ export const RiotAuth = {
         console.log('Rank info response status:', response.status, response.statusText);
         
         if (response.ok) {
-          rankData = await response.json();
-          console.log('Successfully retrieved rank info from primary endpoint');
+          rankInfo = await response.json();
+          console.log('Successfully retrieved rank info');
         } else {
-          // Store error but try fallback
+          // Store error but continue to fallback methods
           const errorData = await response.json().catch(() => ({}));
-          error = new Error(`Failed to get rank info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
+          error = new Error(`Failed to get rank info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || JSON.stringify(errorData)}`);
           console.warn(error.message);
         }
-      } catch (primaryError) {
-        error = primaryError;
-        console.warn('Error with primary rank endpoint:', primaryError);
+      } catch (rankError) {
+        // Store error but continue to fallback methods
+        error = rankError;
+        console.warn('Error with primary rank endpoint:', rankError);
       }
       
-      // Try fallback endpoint if primary failed
-      if (!rankData) {
+      // If primary endpoint failed, try fallback endpoint
+      if (!rankInfo) {
         try {
-          // Try alternative endpoint structure
+          // Try fallback endpoint
           const fallbackUrl = `${this.config.proxyBaseUrl}/riot/league/entries/by-summoner/${summonerId}?region=${platform}`;
-          console.log('Making fallback rank info request to:', fallbackUrl);
+          console.log(`Making fallback rank info request to: ${fallbackUrl}`);
           
           const response = await fetch(fallbackUrl, {
             method: 'GET',
@@ -1363,10 +1360,10 @@ export const RiotAuth = {
           });
           
           if (response.ok) {
-            rankData = await response.json();
+            rankInfo = await response.json();
             console.log('Successfully retrieved rank info from fallback endpoint');
           } else {
-            // If this also fails, log but continue
+            // If this also fails, we're out of options
             const errorData = await response.json().catch(() => ({}));
             console.error('Fallback rank endpoint also failed:', errorData);
           }
@@ -1375,49 +1372,46 @@ export const RiotAuth = {
         }
       }
       
-      // If we couldn't get rank data, return empty array to indicate unranked
-      if (!rankData) {
+      // If we have no rank data, assume the player is unranked
+      if (!rankInfo || !Array.isArray(rankInfo) || rankInfo.length === 0) {
         console.warn('Unable to retrieve rank data, assuming unranked');
-        rankData = [];
-      }
-      
-      // Ensure rankData is an array
-      if (!Array.isArray(rankData)) {
-        if (rankData && typeof rankData === 'object') {
-          // If it's an object but not an array, wrap it
-          rankData = [rankData];
-        } else {
-          // If it's anything else, use empty array
-          rankData = [];
-        }
-      }
-      
-      // Store rank info
-      await this._storeRankInfo(rankData);
-      
-      if (rankData.length > 0) {
-        console.log(`Successfully retrieved ${rankData.length} league entries`);
         
-        // Log the Solo/Duo queue rank if available
-        const soloQueueEntry = rankData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-        if (soloQueueEntry) {
-          console.log('Solo/Duo rank:', {
-            tier: soloQueueEntry.tier,
-            rank: soloQueueEntry.rank,
-            lp: soloQueueEntry.leaguePoints,
-            wins: soloQueueEntry.wins,
-            losses: soloQueueEntry.losses
-          });
-        } else {
-          console.log('No Solo/Duo queue rank found');
-        }
+        // Create unranked data
+        rankInfo = [{
+          queueType: 'RANKED_SOLO_5x5',
+          tier: 'UNRANKED',
+          rank: '',
+          leaguePoints: 0,
+          wins: 0,
+          losses: 0
+        }];
+      }
+      
+      // Sort the rank entries to prioritize ranked solo queue
+      const sortedRank = rankInfo.sort((a, b) => {
+        // Prioritize RANKED_SOLO_5x5
+        if (a.queueType === 'RANKED_SOLO_5x5') return -1;
+        if (b.queueType === 'RANKED_SOLO_5x5') return 1;
+        // Then prioritize RANKED_FLEX_SR
+        if (a.queueType === 'RANKED_FLEX_SR') return -1;
+        if (b.queueType === 'RANKED_FLEX_SR') return 1;
+        return 0;
+      });
+      
+      // Find the solo queue rank entry
+      const soloQueueRank = sortedRank.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      if (soloQueueRank) {
+        console.log(`Solo queue rank: ${soloQueueRank.tier || 'UNRANKED'} ${soloQueueRank.rank || ''} (${soloQueueRank.leaguePoints || 0} LP)`);
       } else {
         console.log('No ranked data found, player is unranked');
       }
       
-      return rankData;
+      // Store the rank info
+      await this._storeRankInfo(sortedRank);
+      
+      return sortedRank;
     } catch (error) {
-      console.error('Error getting rank info:', error);
+      console.error('Error fetching rank info:', error);
       throw error;
     }
   },
@@ -1690,10 +1684,8 @@ export const RiotAuth = {
       
       console.log('Successfully decoded ID token payload, claims:', Object.keys(decodedPayload).join(', '));
       
-      // Log the full payload for debugging (only in development)
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('ID token payload:', decodedPayload);
-      }
+      // Log just the keys of the decoded payload for security
+      console.debug('ID token payload keys:', Object.keys(decodedPayload));
       
       // Extract account info from the ID token
       // Note: Riot may include game_name and tag_line in newer ID tokens
