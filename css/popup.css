@@ -104,10 +104,6 @@ header h1 {
   height: 100%;
 }
 
-.collapsible-header:hover h2 {
-  color: var(--primary-dark);
-}
-
 .dropdown-arrow {
   color: var(--primary);
   font-size: 14px;
@@ -122,7 +118,7 @@ header h1 {
 }
 
 .tip-content {
-  padding-top: 10px;
+  padding-top: 16px;
   animation: fadeDown 0.3s ease-out;
 }
 
@@ -417,8 +413,8 @@ footer {
   height: 26px;
 }
 
-.tip-content {
-  padding: 0 4px;
+.tip-card .tip-content {
+  padding: 16px 4px 8px 4px;
 }
 
 .tip-content p {
