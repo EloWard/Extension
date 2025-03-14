@@ -668,11 +668,12 @@ export const RiotAuth = {
   
   /**
    * Check if user is authenticated
+   * @param {boolean} ignoreInitialErrors - Whether to ignore errors during initial auth check
    * @returns {Promise<boolean>} - True if authenticated
    */
-  async isAuthenticated() {
+  async isAuthenticated(ignoreInitialErrors = false) {
     try {
-      await this.getValidToken();
+      await this.getValidToken(ignoreInitialErrors);
       return true;
     } catch (error) {
       return false;
@@ -683,7 +684,7 @@ export const RiotAuth = {
    * Get a valid token or throw an error if none is available
    * @returns {Promise<string>} - The access token
    */
-  async getValidToken() {
+  async getValidToken(ignoreNoTokenError = false) {
     try {
       console.log('Getting valid token');
       
@@ -752,8 +753,12 @@ export const RiotAuth = {
       });
       
       if (!accessToken) {
-        console.error('No access token found in storage');
-        throw new Error('No access token found');
+        console.log('No access token found in storage');
+        if (!ignoreNoTokenError) {
+          throw new Error('No access token found');
+        } else {
+          return null;
+        }
       }
       
       // Check if token is expired or will expire soon
@@ -1508,16 +1513,19 @@ export const RiotAuth = {
   
   /**
    * Get user's data (account, summoner, and rank)
+   * @param {boolean} skipAuthCheck - Whether to skip authentication check
    * @returns {Promise<Object>} - The user data
    */
-  async getUserData() {
+  async getUserData(skipAuthCheck = false) {
     try {
       console.log('Getting user data');
       
       // Check if user is authenticated
-      const isAuthenticated = await this.isAuthenticated();
-      if (!isAuthenticated) {
-        throw new Error('Not authenticated. Please connect your Riot account first.');
+      if (!skipAuthCheck) {
+        const isAuthenticated = await this.isAuthenticated(true);
+        if (!isAuthenticated) {
+          throw new Error('Not authenticated. Please connect your Riot account first.');
+        }
       }
       
       // Get account info
