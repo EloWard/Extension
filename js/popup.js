@@ -9,6 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const currentRank = document.getElementById('current-rank');
   const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
+  const streamerHeader = document.getElementById('streamer-header');
+  const streamerContent = document.getElementById('streamer-content');
 
   // Check authentication status
   checkAuthStatus();
@@ -16,6 +18,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
+  
+  // Add toggle functionality for the streamer section
+  streamerHeader.addEventListener('click', () => {
+    // Toggle the display of the content
+    if (streamerContent.style.display === 'none') {
+      streamerContent.style.display = 'block';
+      streamerHeader.querySelector('.dropdown-arrow').textContent = '▲';
+    } else {
+      streamerContent.style.display = 'none';
+      streamerHeader.querySelector('.dropdown-arrow').textContent = '▼';
+    }
+  });
   
   // Flag to prevent recursive message handling
   let processingMessage = false;
@@ -219,9 +233,10 @@ document.addEventListener('DOMContentLoaded', () => {
     connectRiotBtn.textContent = 'Connect';
     connectRiotBtn.disabled = false;
     
-    // Reset rank display
-    currentRank.textContent = 'Unknown';
-    rankBadgePreview.style.backgroundImage = 'none';
+    // Reset rank display and show unranked graphic
+    currentRank.textContent = 'Unranked';
+    rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+    rankBadgePreview.style.transform = 'translateY(-3px)';
   }
 
   async function connectRiotAccount() {
@@ -246,9 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.remove('connected');
         connectRiotBtn.textContent = 'Connect';
         
-        // Reset rank display
-        currentRank.textContent = 'Unknown';
-        rankBadgePreview.style.backgroundImage = 'none';
+        // Show unranked rank display
+        currentRank.textContent = 'Unranked';
+        rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+        rankBadgePreview.style.transform = 'translateY(-3px)';
         
         // Reset region to default if needed
         // regionSelect.value = 'na1'; // Uncomment if you want to reset region

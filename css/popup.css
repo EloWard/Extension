@@ -55,6 +55,18 @@ header {
   gap: 8px;
 }
 
+.logo-container a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.logo-container a:hover {
+  opacity: 0.8;
+}
+
 .logo {
   width: 28px;
   height: 28px;
@@ -72,6 +84,41 @@ header h1 {
   color: var(--text-secondary);
   font-size: 12px;
   margin-top: 2px;
+}
+
+/* Streamer Section Dropdown Styling */
+.collapsible-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding-bottom: 8px;
+}
+
+.collapsible-header:hover h2 {
+  color: var(--primary-dark);
+}
+
+.dropdown-arrow {
+  color: var(--primary);
+  font-size: 12px;
+  transition: transform 0.3s ease;
+}
+
+.tip-content {
+  padding-top: 8px;
+  animation: fadeDown 0.3s ease-out;
+}
+
+@keyframes fadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Card Styling */
