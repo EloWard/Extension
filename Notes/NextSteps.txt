@@ -1,4 +1,8 @@
-- Make sure RIOT RSO backend is working
+- Add unranked graphic when not logged in
+
+
+
+
 - Deploy to Cloudflare Worker
 - Build twitch RSO for website
 
