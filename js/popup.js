@@ -11,6 +11,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const regionSelect = document.getElementById('region');
   const streamerHeader = document.getElementById('streamer-header');
   const streamerContent = document.getElementById('streamer-content');
+  const dropdownArrow = streamerHeader.querySelector('.dropdown-arrow');
+
+  // Initialize the streamer dropdown with proper styling 
+  streamerContent.style.display = 'none';
+  dropdownArrow.textContent = '▼';
 
   // Check authentication status
   checkAuthStatus();
@@ -21,13 +26,15 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Add toggle functionality for the streamer section
   streamerHeader.addEventListener('click', () => {
+    const isHidden = streamerContent.style.display === 'none';
+    
     // Toggle the display of the content
-    if (streamerContent.style.display === 'none') {
+    if (isHidden) {
       streamerContent.style.display = 'block';
-      streamerHeader.querySelector('.dropdown-arrow').textContent = '▲';
+      dropdownArrow.textContent = '▲';
     } else {
       streamerContent.style.display = 'none';
-      streamerHeader.querySelector('.dropdown-arrow').textContent = '▼';
+      dropdownArrow.textContent = '▼';
     }
   });
   
@@ -142,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const riotId = `${userData.gameName}#${userData.tagLine}`;
         riotConnectionStatus.textContent = riotId;
         riotConnectionStatus.classList.add('connected');
-        riotConnectionStatus.classList.remove('error');
+        riotConnectionStatus.classList.remove('error', 'connecting');
         connectRiotBtn.textContent = 'Disconnect';
         connectRiotBtn.disabled = false;
         
@@ -252,24 +259,35 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show loading state
         connectRiotBtn.textContent = 'Disconnecting...';
         riotConnectionStatus.textContent = 'Disconnecting...';
+        riotConnectionStatus.classList.add('disconnecting');
         
-        // Log out via RiotAuth WITHOUT forcing reload (smooth transition)
-        await RiotAuth.logout(false);
-        
-        // Update UI manually instead of relying on page reload
-        riotConnectionStatus.textContent = 'Not Connected';
-        riotConnectionStatus.classList.remove('connected');
-        connectRiotBtn.textContent = 'Connect';
-        
-        // Show unranked rank display
-        currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
-        rankBadgePreview.style.transform = 'translateY(-3px)';
-        
-        // Reset region to default if needed
-        // regionSelect.value = 'na1'; // Uncomment if you want to reset region
-        
-        console.log('Successfully disconnected from Riot account');
+        try {
+          // Log out via RiotAuth WITHOUT forcing reload (smooth transition)
+          await RiotAuth.logout(false);
+          
+          // Update UI manually instead of relying on page reload
+          riotConnectionStatus.textContent = 'Not Connected';
+          riotConnectionStatus.classList.remove('connected', 'disconnecting');
+          connectRiotBtn.textContent = 'Connect';
+          
+          // Show unranked rank display
+          currentRank.textContent = 'Unranked';
+          rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+          rankBadgePreview.style.transform = 'translateY(-3px)';
+          
+          console.log('Successfully disconnected from Riot account');
+        } catch (error) {
+          console.error('Error disconnecting:', error);
+          
+          // Update UI to show error state
+          connectRiotBtn.textContent = 'Disconnect';
+          riotConnectionStatus.textContent = error.message || 'Disconnection error';
+          riotConnectionStatus.classList.add('error');
+          riotConnectionStatus.classList.remove('disconnecting');
+        } finally {
+          // Re-enable button
+          connectRiotBtn.disabled = false;
+        }
       } else {
         // Connect flow - show loading state
         connectRiotBtn.textContent = 'Connecting...';
@@ -277,28 +295,41 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get selected region
         const region = regionSelect.value;
         
-        // Show connecting status
+        // Show connecting status with gold color
         riotConnectionStatus.textContent = 'Connecting...';
         riotConnectionStatus.classList.remove('error');
+        riotConnectionStatus.classList.add('connecting');
         
         console.log('Connecting to Riot with region:', region);
         
-        // Use the Riot RSO authentication module
-        const userData = await RiotAuth.authenticate(region);
-        console.log('Authentication successful:', userData);
-        
-        // Update UI with the user data
-        updateUserInterface(userData);
+        try {
+          // Use the Riot RSO authentication module
+          const userData = await RiotAuth.authenticate(region);
+          console.log('Authentication successful:', userData);
+          
+          // Update UI with the user data
+          updateUserInterface(userData);
+        } catch (error) {
+          console.error('Error in connectRiotAccount:', error);
+          
+          // Update UI to show error state
+          connectRiotBtn.textContent = 'Connect';
+          riotConnectionStatus.textContent = error.message || 'Connection error';
+          riotConnectionStatus.classList.add('error');
+          riotConnectionStatus.classList.remove('connecting');
+        } finally {
+          // Remove connecting class if still present and not connected
+          if (!riotConnectionStatus.classList.contains('connected')) {
+            riotConnectionStatus.classList.remove('connecting');
+          }
+          
+          // Re-enable button
+          connectRiotBtn.disabled = false;
+        }
       }
     } catch (error) {
-      console.error('Error in connectRiotAccount:', error);
-      
-      // Update UI to show error state
-      connectRiotBtn.textContent = isAuthenticated ? 'Disconnect' : 'Connect';
-      riotConnectionStatus.textContent = error.message || 'Connection error';
-      riotConnectionStatus.classList.add('error');
-    } finally {
-      // Re-enable button
+      console.error('Error checking authentication status:', error);
+      // Re-enable button in case of a general error
       connectRiotBtn.disabled = false;
     }
   }

@@ -92,7 +92,16 @@ header h1 {
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
-  padding-bottom: 8px;
+  padding: 6px 0;
+  height: 38px;
+}
+
+.collapsible-header h2 {
+  margin-bottom: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 
 .collapsible-header:hover h2 {
@@ -101,12 +110,19 @@ header h1 {
 
 .dropdown-arrow {
   color: var(--primary);
-  font-size: 12px;
+  font-size: 14px;
   transition: transform 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+  font-weight: bold;
+  margin-right: 2px;
+  height: 100%;
 }
 
 .tip-content {
-  padding-top: 8px;
+  padding-top: 10px;
   animation: fadeDown 0.3s ease-out;
 }
 
@@ -177,6 +193,13 @@ header h1 {
 .connection-status.error {
   color: #e74c3c;
   font-weight: 600;
+}
+
+/* Connection status colors */
+.connection-status.connecting, 
+.connection-status.disconnecting {
+  color: var(--primary); /* Gold color for connecting/disconnecting text */
+  font-weight: 500;
 }
 
 /* Button Styling */
@@ -370,6 +393,7 @@ footer {
   border: 1px solid rgba(217, 163, 54, 0.3);
   position: relative;
   overflow: hidden;
+  padding: 12px 16px;
 }
 
 .tip-card::before {
@@ -380,6 +404,17 @@ footer {
   width: 4px;
   height: 100%;
   background-color: var(--primary);
+}
+
+.tip-card h2 {
+  margin-bottom: 0;
+  font-size: 16px;
+  color: var(--primary);
+}
+
+.tip-card .collapsible-header {
+  padding: 0;
+  height: 26px;
 }
 
 .tip-content {
@@ -403,4 +438,9 @@ footer {
 .tip-content a:hover {
   color: #E5B550;
   text-decoration: underline;
+}
+
+.tip-card h2, 
+.dropdown-arrow {
+  color: var(--primary); /* Ensure both use the same gold color */
 } 
