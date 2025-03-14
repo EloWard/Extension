@@ -1,4 +1,5 @@
 - Add unranked graphic when not logged in
+- Direct people to website when clikcing on logo
 
 
 
