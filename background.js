@@ -408,7 +408,7 @@ setInterval(() => {
 }, 5 * 60 * 1000); // Run every 5 minutes
 
 // Listen for window messages (for callback.html communication)
-window.addEventListener('message', (event) => {
+self.addEventListener('message', (event) => {
   console.log('Background script received window message:', event.data);
   
   // Check if it's an auth callback message
@@ -900,10 +900,15 @@ async function initiateRiotAuth(region) {
     
     // Open the authorization URL in a new window/tab
     console.log('Opening auth URL:', data.authorizationUrl);
-    const authWindow = window.open(data.authorizationUrl, 'riotAuthWindow');
-    
-    // Track this window so we can close it later if needed
-    trackAuthWindow(authWindow);
+    chrome.windows.create({
+      url: data.authorizationUrl,
+      type: 'popup',
+      width: 800,
+      height: 600
+    }, (createdWindow) => {
+      // Track this window so we can close it later if needed
+      trackAuthWindow(createdWindow);
+    });
     
     return { success: true };
   } catch (error) {
@@ -1202,7 +1207,7 @@ async function refreshAccessToken(refreshToken) {
 }
 
 // Expose functions to be called from callback.html
-window.eloward = {
+self.eloward = {
   handleAuthCallback,
   handleAuthCallbackFromRedirect,
   getRankIconUrl

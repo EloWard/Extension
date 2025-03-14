@@ -497,23 +497,43 @@ export const RiotAuth = {
       // Parse the token response
       const tokenData = await response.json();
       
-      if (!tokenData.access_token) {
+      // For newer Cloudflare Worker integration which uses a nested data structure
+      const actualTokenData = tokenData.data || tokenData;
+      
+      if (!actualTokenData.access_token) {
         throw new Error('Invalid token response: Missing access token');
       }
       
-      console.log('Received tokens with expiry in', tokenData.expires_in, 'seconds');
+      console.log('Received tokens with expiry in', actualTokenData.expires_in, 'seconds');
       
       // Calculate token expiry timestamp
-      const expiresAt = Date.now() + (tokenData.expires_in * 1000);
+      const expiresAt = Date.now() + (actualTokenData.expires_in * 1000);
       
       // Update token data with expiry timestamp
       const tokens = {
-        ...tokenData,
+        ...actualTokenData,
         expires_at: expiresAt
       };
       
       // Store tokens in storage
       await this._storeTokens(tokens);
+      
+      // Also directly store in standardized keys for better compatibility
+      // with other parts of the extension
+      const storageData = {
+        'eloward_riot_access_token': tokens.access_token,
+        'eloward_riot_refresh_token': tokens.refresh_token,
+        'eloward_riot_token_expiry': expiresAt,
+        'riotAuth': {
+          ...tokens,
+          issued_at: Date.now()
+        }
+      };
+      
+      console.log('Storing tokens with standard keys for compatibility');
+      await new Promise(resolve => {
+        chrome.storage.local.set(storageData, resolve);
+      });
       
       // Also decode and store the ID token if present
       if (tokens.id_token) {
@@ -660,23 +680,71 @@ export const RiotAuth = {
   },
   
   /**
-   * Get a valid access token, refreshing if necessary
-   * @returns {Promise<string>} - The valid access token
+   * Get a valid token or throw an error if none is available
+   * @returns {Promise<string>} - The access token
    */
   async getValidToken() {
     try {
-      console.log('Getting valid access token...');
+      console.log('Getting valid token');
       
-      // Try to get tokens from storage
-      const accessToken = await this._getStoredValue(this.config.storageKeys.accessToken);
-      const refreshToken = await this._getStoredValue(this.config.storageKeys.refreshToken);
-      const tokenExpiry = await this._getStoredValue(this.config.storageKeys.tokenExpiry);
+      // Try to get token from all possible storage keys
+      const tokenData = await new Promise(resolve => {
+        chrome.storage.local.get([
+          this.config.storageKeys.accessToken,
+          this.config.storageKeys.refreshToken,
+          this.config.storageKeys.tokenExpiry,
+          'eloward_riot_access_token',
+          'eloward_riot_refresh_token',
+          'eloward_riot_token_expiry',
+          'riotAuth'
+        ], resolve);
+      });
       
-      // Log token availability (without exposing actual tokens)
-      console.log('Token status:', {
+      // Try standard keys first
+      let accessToken = tokenData[this.config.storageKeys.accessToken];
+      let refreshToken = tokenData[this.config.storageKeys.refreshToken];
+      let tokenExpiry = tokenData[this.config.storageKeys.tokenExpiry];
+      
+      // If not found, try the eloward_riot_* format (from background.js)
+      if (!accessToken && tokenData.eloward_riot_access_token) {
+        accessToken = tokenData.eloward_riot_access_token;
+        console.log('Found access token in eloward_riot_access_token');
+      }
+      
+      if (!refreshToken && tokenData.eloward_riot_refresh_token) {
+        refreshToken = tokenData.eloward_riot_refresh_token;
+        console.log('Found refresh token in eloward_riot_refresh_token');
+      }
+      
+      if (!tokenExpiry && tokenData.eloward_riot_token_expiry) {
+        tokenExpiry = tokenData.eloward_riot_token_expiry;
+        console.log('Found token expiry in eloward_riot_token_expiry');
+      }
+      
+      // Last resort: try the riotAuth object
+      if (!accessToken && tokenData.riotAuth && tokenData.riotAuth.access_token) {
+        accessToken = tokenData.riotAuth.access_token;
+        console.log('Found access token in riotAuth object');
+        
+        if (!refreshToken && tokenData.riotAuth.refresh_token) {
+          refreshToken = tokenData.riotAuth.refresh_token;
+          console.log('Found refresh token in riotAuth object');
+        }
+        
+        if (!tokenExpiry) {
+          if (tokenData.riotAuth.expires_at) {
+            tokenExpiry = tokenData.riotAuth.expires_at;
+            console.log('Found token expiry (expires_at) in riotAuth object');
+          } else if (tokenData.riotAuth.issued_at && tokenData.riotAuth.expires_in) {
+            tokenExpiry = tokenData.riotAuth.issued_at + (tokenData.riotAuth.expires_in * 1000);
+            console.log('Calculated token expiry from issued_at and expires_in in riotAuth object');
+          }
+        }
+      }
+      
+      console.log('Token check results:', {
         hasAccessToken: !!accessToken,
         accessTokenLength: accessToken ? accessToken.length : 0,
-        accessTokenPrefix: accessToken ? accessToken.substring(0, 8) + '...' : 'undefined',
         hasRefreshToken: !!refreshToken,
         refreshTokenLength: refreshToken ? refreshToken.length : 0,
         hasExpiryTimestamp: !!tokenExpiry,
@@ -733,7 +801,7 @@ export const RiotAuth = {
       return accessToken;
     } catch (error) {
       console.error('Error getting valid token:', error);
-      throw new Error('No access token available. Please authenticate first.');
+      throw error;
     }
   },
   
@@ -1294,125 +1362,99 @@ export const RiotAuth = {
   },
   
   /**
-   * Get player's rank information
+   * Get rank data for the specified summoner
    * @param {string} summonerId - The encrypted summoner ID
-   * @returns {Promise<Array>} - Array of league entries for the player
+   * @returns {Promise<Array>} - Array of league entries
    */
   async getRankInfo(summonerId) {
     try {
+      console.log(`Getting rank info for summoner ID: ${summonerId.substring(0, 8)}...`);
+      
       if (!summonerId) {
-        throw new Error('Summoner ID is required to get rank info');
+        throw new Error('No summoner ID provided');
       }
       
-      console.log('Fetching rank info for summoner ID:', summonerId.substring(0, 8) + '...');
+      // Get the region from storage
+      const region = await this._getStoredValue('selectedRegion') || 'na1';
+      console.log(`Using region: ${region} for rank lookup`);
       
       // Get access token
-      const token = await this.getValidToken();
+      const accessToken = await this.getValidToken();
+      if (!accessToken) {
+        throw new Error('No valid access token available');
+      }
       
-      // Get selected region
-      const platform = await this._getStoredValue('selectedRegion') || 'na1';
+      // Construct the URL for the league entries endpoint
+      const requestUrl = `${this.config.proxyBaseUrl}/riot/league/entries?region=${region}&summonerId=${summonerId}`;
+      console.log(`Fetching rank data from: ${requestUrl}`);
       
-      // Try the primary endpoint first
-      let rankInfo = null;
-      let error = null;
-      
-      try {
-        // Updated to match the server's route pattern
-        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.leagueEntries}?region=${platform}&summonerId=${summonerId}`;
-        console.log(`Making rank info request to: ${requestUrl}`);
-        
-        const response = await fetch(requestUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        console.log('Rank info response status:', response.status, response.statusText);
-        
-        if (response.ok) {
-          rankInfo = await response.json();
-          console.log('Successfully retrieved rank info');
-        } else {
-          // Store error but continue to fallback methods
-          const errorData = await response.json().catch(() => ({}));
-          error = new Error(`Failed to get rank info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || JSON.stringify(errorData)}`);
-          console.warn(error.message);
+      // Make the request with the access token
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
         }
-      } catch (rankError) {
-        // Store error but continue to fallback methods
-        error = rankError;
-        console.warn('Error with primary rank endpoint:', rankError);
-      }
-      
-      // If primary endpoint failed, try fallback endpoint
-      if (!rankInfo) {
-        try {
-          // Try fallback endpoint
-          const fallbackUrl = `${this.config.proxyBaseUrl}/riot/league/entries/by-summoner/${summonerId}?region=${platform}`;
-          console.log(`Making fallback rank info request to: ${fallbackUrl}`);
-          
-          const response = await fetch(fallbackUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          
-          if (response.ok) {
-            rankInfo = await response.json();
-            console.log('Successfully retrieved rank info from fallback endpoint');
-          } else {
-            // If this also fails, we're out of options
-            const errorData = await response.json().catch(() => ({}));
-            console.error('Fallback rank endpoint also failed:', errorData);
-          }
-        } catch (fallbackError) {
-          console.error('Error with fallback rank endpoint:', fallbackError);
-        }
-      }
-      
-      // If we have no rank data, assume the player is unranked
-      if (!rankInfo || !Array.isArray(rankInfo) || rankInfo.length === 0) {
-        console.warn('Unable to retrieve rank data, assuming unranked');
-        
-        // Create unranked data
-        rankInfo = [{
-          queueType: 'RANKED_SOLO_5x5',
-          tier: 'UNRANKED',
-          rank: '',
-          leaguePoints: 0,
-          wins: 0,
-          losses: 0
-        }];
-      }
-      
-      // Sort the rank entries to prioritize ranked solo queue
-      const sortedRank = rankInfo.sort((a, b) => {
-        // Prioritize RANKED_SOLO_5x5
-        if (a.queueType === 'RANKED_SOLO_5x5') return -1;
-        if (b.queueType === 'RANKED_SOLO_5x5') return 1;
-        // Then prioritize RANKED_FLEX_SR
-        if (a.queueType === 'RANKED_FLEX_SR') return -1;
-        if (b.queueType === 'RANKED_FLEX_SR') return 1;
-        return 0;
       });
       
+      if (!response.ok) {
+        console.error(`League API request failed: ${response.status} ${response.statusText}`);
+        
+        try {
+          const errorData = await response.json();
+          console.error('Error response:', errorData);
+          throw new Error(`League API error: ${errorData.message || response.statusText}`);
+        } catch (e) {
+          throw new Error(`League API error: ${response.status} ${response.statusText}`);
+        }
+      }
+      
+      const rankData = await response.json();
+      
+      // Handle different response formats (array or object)
+      let rankEntries;
+      
+      if (Array.isArray(rankData)) {
+        // Direct array response
+        rankEntries = rankData;
+        console.log(`Received ${rankEntries.length} rank entries directly`);
+      } else if (rankData.entries && Array.isArray(rankData.entries)) {
+        // Nested entries array
+        rankEntries = rankData.entries;
+        console.log(`Received ${rankEntries.length} rank entries from nested structure`);
+      } else if (rankData.rank && rankData.tier) {
+        // Single entry object
+        rankEntries = [rankData];
+        console.log('Received single rank entry object');
+      } else if (rankData.status && rankData.status.status_code) {
+        // Error response
+        console.error('League API error response:', rankData);
+        throw new Error(`League API error: ${rankData.status.message}`);
+      } else {
+        // Empty or unknown format
+        console.log('Received empty or unknown rank data format', rankData);
+        rankEntries = [];
+      }
+      
+      // Log the retrieved rank data summary
+      console.log(`Retrieved ${rankEntries.length} rank entries`);
+      
+      // Store the rank data for future reference
+      await this._storeRankInfo(rankEntries);
+      
       // Find the solo queue rank entry
-      const soloQueueRank = sortedRank.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-      if (soloQueueRank) {
-        console.log(`Solo queue rank: ${soloQueueRank.tier || 'UNRANKED'} ${soloQueueRank.rank || ''} (${soloQueueRank.leaguePoints || 0} LP)`);
+      const soloQueueEntry = rankEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      if (soloQueueEntry) {
+        console.log(`Solo queue rank: ${soloQueueEntry.tier || 'UNRANKED'} ${soloQueueEntry.rank || ''} (${soloQueueEntry.leaguePoints || 0} LP)`);
       } else {
         console.log('No ranked data found, player is unranked');
       }
       
-      // Store the rank info
-      await this._storeRankInfo(sortedRank);
-      
-      return sortedRank;
+      return rankEntries;
     } catch (error) {
-      console.error('Error fetching rank info:', error);
-      throw error;
+      console.error('Error getting rank info:', error);
+      console.log('Unable to retrieve rank data, assuming unranked');
+      return [];
     }
   },
   
@@ -1465,176 +1507,80 @@ export const RiotAuth = {
   },
   
   /**
-   * Get comprehensive user data from Riot API
-   * @returns {Promise<Object>} - User data
+   * Get user's data (account, summoner, and rank)
+   * @returns {Promise<Object>} - The user data
    */
   async getUserData() {
     try {
-      console.log('Getting comprehensive user data...');
+      console.log('Getting user data');
       
-      if (!await this.isAuthenticated()) {
+      // Check if user is authenticated
+      const isAuthenticated = await this.isAuthenticated();
+      if (!isAuthenticated) {
         throw new Error('Not authenticated. Please connect your Riot account first.');
       }
       
-      // First check if we already have complete account and summoner info in storage
-      try {
-        const storedAccountInfo = await this._getStoredValue(this.config.storageKeys.accountInfo);
-        const storedSummonerInfo = await this._getStoredValue(this.config.storageKeys.summonerInfo);
-        const storedRankInfo = await this._getStoredValue(this.config.storageKeys.rankInfo);
-        
-        console.log('Checking stored data:', { 
-          hasAccountInfo: !!storedAccountInfo, 
-          hasSummonerInfo: !!storedSummonerInfo,
-          hasRankInfo: !!storedRankInfo
-        });
-        
-        // If we have valid complete data, use it without making new API calls
-        if (storedAccountInfo && 
-            typeof storedAccountInfo === 'object' && 
-            storedAccountInfo.puuid &&
-            storedAccountInfo.gameName && 
-            storedAccountInfo.tagLine &&
-            storedSummonerInfo &&
-            typeof storedSummonerInfo === 'object' &&
-            storedSummonerInfo.id) {
-          
-          console.log('Using complete stored user data');
-          
-          // Format into a single user data object
-          const userData = {
-            gameName: storedAccountInfo.gameName,
-            tagLine: storedAccountInfo.tagLine,
-            puuid: storedAccountInfo.puuid,
-            summonerId: storedSummonerInfo.id,
-            summonerName: storedSummonerInfo.name,
-            summonerLevel: storedSummonerInfo.summonerLevel,
-            profileIconId: storedSummonerInfo.profileIconId,
-            rankInfo: storedRankInfo && Array.isArray(storedRankInfo) ? 
-                      storedRankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') : 
-                      (storedRankInfo && storedRankInfo.queueType === 'RANKED_SOLO_5x5' ? storedRankInfo : null)
-          };
-          
-          console.log('Successfully retrieved user data from storage:', userData);
-          return userData;
-        }
-      } catch (error) {
-        console.warn('Error checking stored user data, will fetch from API:', error);
-        // Continue with API calls if storage retrieval fails
-      }
-      
-      // Get fresh account info from API
-      console.log('Fetching fresh account info from API');
+      // Get account info
+      console.log('Getting account info...');
       const accountInfo = await this.getAccountInfo();
       
       if (!accountInfo || !accountInfo.puuid) {
-        throw new Error('Failed to get account information');
+        throw new Error('Failed to retrieve account info');
       }
       
-      // Check if we have gameName and tagLine - these are sometimes missing from the ID token
-      // If missing, we might need to get them from a different source or construct placeholders
-      if (!accountInfo.gameName || !accountInfo.tagLine) {
-        console.warn('Account info missing gameName or tagLine:', accountInfo);
-        
-        // Try to extract from ID token if available
-        const tokens = await this._getStoredValue(this.config.storageKeys.tokens);
-        if (tokens && tokens.id_token) {
-          try {
-            console.log('Attempting to extract user info from ID token');
-            const idTokenParts = tokens.id_token.split('.');
-            if (idTokenParts.length === 3) {
-              const idTokenPayload = JSON.parse(atob(idTokenParts[1]));
-              
-              // Update account info with data from ID token
-              if (idTokenPayload.game_name) accountInfo.gameName = idTokenPayload.game_name;
-              if (idTokenPayload.tag_line) accountInfo.tagLine = idTokenPayload.tag_line;
-              
-              console.log('Updated account info from ID token:', { 
-                gameName: accountInfo.gameName, 
-                tagLine: accountInfo.tagLine 
-              });
-            }
-          } catch (e) {
-            console.error('Failed to extract user info from ID token:', e);
-          }
+      console.log(`Account info retrieved for ${accountInfo.gameName}#${accountInfo.tagLine}`);
+      
+      // Get summoner info using the PUUID
+      console.log('Getting summoner info...');
+      const summonerInfo = await this.getSummonerInfo(accountInfo.puuid);
+      
+      if (!summonerInfo || !summonerInfo.id) {
+        console.warn('Failed to retrieve summoner info');
+      } else {
+        console.log(`Summoner info retrieved for ${summonerInfo.name} (Level ${summonerInfo.summonerLevel})`);
+      }
+      
+      // Get rank info using the summoner ID
+      console.log('Getting rank info...');
+      let rankInfo = [];
+      
+      if (summonerInfo && summonerInfo.id) {
+        try {
+          rankInfo = await this.getRankInfo(summonerInfo.id);
+          console.log(`Rank info retrieved, found ${rankInfo.length} entries`);
+        } catch (rankError) {
+          console.error('Error retrieving rank info:', rankError);
+          console.log('Continuing without rank data');
+          rankInfo = [];
         }
-        
-        // If still missing, set placeholder values
-        if (!accountInfo.gameName) accountInfo.gameName = 'Summoner';
-        if (!accountInfo.tagLine) accountInfo.tagLine = 'Unknown';
+      } else {
+        console.warn('Cannot get rank info without summoner ID');
       }
       
-      // Log the account info we're using
-      console.log('Using account info:', {
-        puuid: accountInfo.puuid ? accountInfo.puuid.substring(0, 8) + '...' : null,
-        gameName: accountInfo.gameName,
-        tagLine: accountInfo.tagLine
+      // Combine all data
+      const userData = {
+        ...accountInfo,
+        summoner: summonerInfo || null,
+        ranks: rankInfo || [],
+        // Find and extract solo queue rank data
+        soloQueueRank: rankInfo && rankInfo.length ? 
+          rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null : null
+      };
+      
+      // Log the final data structure
+      console.log('User data retrieved successfully:', {
+        gameName: userData.gameName,
+        tagLine: userData.tagLine,
+        puuid: userData.puuid ? `${userData.puuid.substring(0, 8)}...` : null,
+        summonerId: userData.summoner?.id ? `${userData.summoner.id.substring(0, 8)}...` : null,
+        summonerLevel: userData.summoner?.summonerLevel,
+        rankEntriesCount: userData.ranks.length,
+        hasSoloQueueRank: !!userData.soloQueueRank,
+        soloQueueTier: userData.soloQueueRank?.tier,
+        soloQueueDivision: userData.soloQueueRank?.rank
       });
       
-      try {
-        // Get summoner info using the PUUID
-        console.log('Fetching summoner info');
-        const summonerInfo = await this.getSummonerInfo(accountInfo.puuid);
-        
-        try {
-          // Get rank info using the summoner ID
-          console.log('Fetching rank info');
-          const rankEntries = await this.getRankInfo(summonerInfo.id);
-          
-          // Extract the Solo/Duo queue rank
-          const soloQueueEntry = Array.isArray(rankEntries) ?
-            rankEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5') :
-            (rankEntries && rankEntries.queueType === 'RANKED_SOLO_5x5' ? rankEntries : null);
-          
-          // Format into a single user data object
-          const userData = {
-            gameName: accountInfo.gameName,
-            tagLine: accountInfo.tagLine,
-            puuid: accountInfo.puuid,
-            summonerId: summonerInfo.id,
-            summonerName: summonerInfo.name,
-            summonerLevel: summonerInfo.summonerLevel,
-            profileIconId: summonerInfo.profileIconId,
-            rankInfo: soloQueueEntry
-          };
-          
-          console.log('Successfully retrieved complete user data:', userData);
-          return userData;
-        } catch (rankError) {
-          console.error('Error getting rank info:', rankError);
-          
-          // Return user data without rank info
-          const userData = {
-            gameName: accountInfo.gameName,
-            tagLine: accountInfo.tagLine,
-            puuid: accountInfo.puuid,
-            summonerId: summonerInfo.id,
-            summonerName: summonerInfo.name,
-            summonerLevel: summonerInfo.summonerLevel,
-            profileIconId: summonerInfo.profileIconId,
-            rankInfo: null
-          };
-          
-          console.log('Returning user data without rank info:', userData);
-          return userData;
-        }
-      } catch (summonerError) {
-        console.error('Error getting summoner info:', summonerError);
-        
-        // Return partial user data with just account info
-        const userData = {
-          gameName: accountInfo.gameName,
-          tagLine: accountInfo.tagLine,
-          puuid: accountInfo.puuid,
-          summonerId: null,
-          summonerName: null,
-          summonerLevel: null,
-          profileIconId: null,
-          rankInfo: null
-        };
-        
-        console.log('Returning partial user data (account info only):', userData);
-        return userData;
-      }
+      return userData;
     } catch (error) {
       console.error('Error getting user data:', error);
       throw error;
@@ -1752,4 +1698,4 @@ export const RiotAuth = {
       throw error;
     }
   }
-}; 
+};

@@ -153,9 +153,38 @@ document.addEventListener('DOMContentLoaded', () => {
         connectRiotBtn.textContent = 'Disconnect';
         connectRiotBtn.disabled = false;
         
+        // Adapt the new userData format to match what the UI expects
+        let rankInfo = null;
+        
+        // Try to get rank info from soloQueueRank field (new format)
+        if (userData.soloQueueRank) {
+          rankInfo = {
+            tier: userData.soloQueueRank.tier.charAt(0) + userData.soloQueueRank.tier.slice(1).toLowerCase(),
+            division: userData.soloQueueRank.rank,
+            leaguePoints: userData.soloQueueRank.leaguePoints
+          };
+        } 
+        // Try to find it in ranks array (new format)
+        else if (userData.ranks && userData.ranks.length > 0) {
+          const soloQueueEntry = userData.ranks.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+          if (soloQueueEntry) {
+            rankInfo = {
+              tier: soloQueueEntry.tier.charAt(0) + soloQueueEntry.tier.slice(1).toLowerCase(),
+              division: soloQueueEntry.rank,
+              leaguePoints: soloQueueEntry.leaguePoints
+            };
+          }
+        } 
+        // Check for rankInfo directly (old format)
+        else if (userData.rankInfo) {
+          rankInfo = userData.rankInfo;
+        }
+        
+        console.log('Adapted rank info for display:', rankInfo);
+        
         // Show rank if available
-        if (userData.rankInfo) {
-          displayRank(userData.rankInfo);
+        if (rankInfo) {
+          displayRank(rankInfo);
         } else {
           // Show unranked if rank info is missing
           currentRank.textContent = 'Unranked';
