@@ -269,7 +269,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'handle_auth_callback') {
     // This message comes from the callback.html page
-    handleAuthCallback(message.code, message.state)
+    handleAuthCallbackFromRedirect(message.code, message.state)
       .then(result => {
         sendResponse(result);
       })
@@ -529,7 +529,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'handle_auth_callback') {
     // This message comes from the callback.html page
-    handleAuthCallback(message.code, message.state)
+    handleAuthCallbackFromRedirect(message.code, message.state)
       .then(result => {
         sendResponse(result);
       })
@@ -913,7 +913,7 @@ async function initiateRiotAuth(region) {
 }
 
 // Handle the authorization callback (called from callback.html)
-async function handleAuthCallback(code, state) {
+async function handleAuthCallbackFromRedirect(code, state) {
   try {
     // Verify state matches what we stored (checking both storage mechanisms)
     const storedData = await chrome.storage.local.get(['authState']);
@@ -1204,5 +1204,6 @@ async function refreshAccessToken(refreshToken) {
 // Expose functions to be called from callback.html
 window.eloward = {
   handleAuthCallback,
+  handleAuthCallbackFromRedirect,
   getRankIconUrl
 }; 

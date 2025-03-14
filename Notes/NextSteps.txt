@@ -1,6 +1,3 @@
-- Add unranked graphic when not logged in
-- Direct people to website when clicking on logo
-- make are you a streamer section a drop down
 - fix logged out to logged in text to be smooth from not connected to username
 
 
