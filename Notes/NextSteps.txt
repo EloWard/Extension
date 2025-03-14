@@ -1,5 +1,5 @@
 - Add unranked graphic when not logged in
-- Direct people to website when clikcing on logo
+- Direct people to website when clicking on logo
 - make are you a streamer a drop down
 
 
