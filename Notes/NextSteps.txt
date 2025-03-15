@@ -1,11 +1,4 @@
-- fix logged out to logged in text to be smooth from not connected to username
-
-
-
-
-- Deploy to Cloudflare Worker
-- Build twitch RSO for website
-
+- Fix league rank + username disappearing after a while
 
 
 - Change Vercel deployment to Cloudflare Pages
