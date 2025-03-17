@@ -34,7 +34,8 @@ const ACTIVE_STREAMERS = [
   'faker',
   'doublelift',
   'tyler1',
-  'humzh'
+  'humzh',
+  'PantsAreDragon'
 ];
 
 // Define the standard redirect URI to use throughout the app

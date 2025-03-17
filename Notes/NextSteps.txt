@@ -1,4 +1,5 @@
 - Fix league rank + username disappearing after a while
+- Tiwtch name vs league name
 
 
 - Change Vercel deployment to Cloudflare Pages
