@@ -318,50 +318,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'get_rank_for_user') {
-    // Handle requests for rank data
-    const { username, platform } = message;
-    
-    if (!username || !platform) {
-      sendResponse({ error: 'Missing username or platform' });
-      return true;
-    }
-    
-    // Check if we have a cached rank first
-    chrome.storage.local.get('cachedRanks', (data) => {
-      const cachedRanks = data.cachedRanks || {};
-      const cacheKey = `${username.toLowerCase()}_${platform}`;
-      
-      if (cachedRanks[cacheKey] && 
-          (Date.now() - cachedRanks[cacheKey].timestamp < BADGE_REFRESH_INTERVAL)) {
-        // Use cached data if it exists and is not expired
-        console.log(`Using cached rank data for ${username}`);
-        sendResponse(cachedRanks[cacheKey].data);
-      } else {
-        // Fetch from backend or generate mock data
-        fetchRankFromBackend(username, platform)
-          .then(rankData => {
-            // Cache the result
-            cachedRanks[cacheKey] = {
-              timestamp: Date.now(),
-              data: rankData
-            };
-            chrome.storage.local.set({ cachedRanks });
-            
-            // Send response
-            sendResponse(rankData);
-          })
-          .catch(error => {
-            console.error('Error fetching rank:', error);
-            
-            // If there's an error, try to generate mock data as fallback
-            generateMockRankData(username, platform, mockData => {
-              sendResponse(mockData);
+    // First check if we have linked account data for the current user
+    getUserLinkedAccount(message.username)
+      .then(linkedAccount => {
+        if (linkedAccount) {
+          // We have a linked account, get real rank data
+          getRankForLinkedAccount(linkedAccount, message.platform)
+            .then(rankData => {
+              sendResponse({ rank: rankData });
+            })
+            .catch(error => {
+              console.error('Error getting rank for linked account:', error);
+              // Fallback to mock data
+              generateMockRankData(message.username, message.platform, mockRank => {
+                sendResponse({ rank: mockRank });
+              });
             });
+        } else {
+          // No linked account, check if the current user has their own account linked
+          chrome.storage.local.get(['riotAccountInfo', 'summonerInfo'], data => {
+            if (data.riotAccountInfo && data.summonerInfo && 
+                data.riotAccountInfo.gameName.toLowerCase() === message.username.toLowerCase()) {
+              // This is the current user and they have a linked account
+              const rankInfo = data.summonerInfo.rankInfo || { tier: 'Unranked' };
+              sendResponse({ rank: rankInfo });
+            } else {
+              // Generate mock data for now
+              generateMockRankData(message.username, message.platform, mockRank => {
+                sendResponse({ rank: mockRank });
+              });
+            }
           });
-      }
-    });
+        }
+      });
     
-    return true; // Indicate async response
+    // Return true to indicate we'll respond asynchronously
+    return true;
   }
   
   if (message.action === 'get_user_rank_by_puuid') {
@@ -440,6 +432,16 @@ chrome.runtime.onInstalled.addListener((details) => {
   setTimeout(() => {
     chrome.action.setBadgeText({ text: '' });
   }, 5000);
+  
+  // Initialize the linkedAccounts storage
+  chrome.storage.local.get('linkedAccounts', (data) => {
+    if (!data.linkedAccounts) {
+      chrome.storage.local.set({ linkedAccounts: {} });
+    }
+  });
+  
+  // Load any saved configuration
+  loadConfiguration();
 });
 
 // Function to clear all stored data
@@ -503,16 +505,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'check_streamer_subscription') {
-    // In a real implementation, this would check against a backend API
-    checkStreamerSubscription(message.streamer)
-      .then(isSubscribed => {
-        sendResponse({ subscribed: isSubscribed });
-      })
-      .catch(error => {
-        console.error('Error checking subscription:', error);
-        sendResponse({ subscribed: false, error: error.message });
-      });
-    return true; // Indicate async response
+    // Check if this streamer has an active subscription
+    const isSubscribed = checkStreamerSubscription(message.streamer);
+    sendResponse({ subscribed: isSubscribed });
   }
   
   if (message.action === 'check_auth_status') {
@@ -575,53 +570,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const iconUrl = getRankIconUrl(message.tier);
     sendResponse({ iconUrl: iconUrl });
     return true;
-  }
-  
-  if (message.action === 'get_rank_for_user') {
-    // Handle requests for rank data
-    const { username, platform } = message;
-    
-    if (!username || !platform) {
-      sendResponse({ error: 'Missing username or platform' });
-      return true;
-    }
-    
-    // Check if we have a cached rank first
-    chrome.storage.local.get('cachedRanks', (data) => {
-      const cachedRanks = data.cachedRanks || {};
-      const cacheKey = `${username.toLowerCase()}_${platform}`;
-      
-      if (cachedRanks[cacheKey] && 
-          (Date.now() - cachedRanks[cacheKey].timestamp < BADGE_REFRESH_INTERVAL)) {
-        // Use cached data if it exists and is not expired
-        console.log(`Using cached rank data for ${username}`);
-        sendResponse(cachedRanks[cacheKey].data);
-      } else {
-        // Fetch from backend or generate mock data
-        fetchRankFromBackend(username, platform)
-          .then(rankData => {
-            // Cache the result
-            cachedRanks[cacheKey] = {
-              timestamp: Date.now(),
-              data: rankData
-            };
-            chrome.storage.local.set({ cachedRanks });
-            
-            // Send response
-            sendResponse(rankData);
-          })
-          .catch(error => {
-            console.error('Error fetching rank:', error);
-            
-            // If there's an error, try to generate mock data as fallback
-            generateMockRankData(username, platform, mockData => {
-              sendResponse(mockData);
-            });
-          });
-      }
-    });
-    
-    return true; // Indicate async response
   }
   
   if (message.action === 'get_user_rank_by_puuid') {
@@ -698,18 +646,24 @@ function checkStreamerSubscription(streamerName) {
  */
 function fetchRankFromBackend(username, platform) {
   return new Promise((resolve, reject) => {
-    // Since the worker doesn't have a direct rank fetch endpoint yet,
-    // we'll use mock data for now until the user links their account
-    generateMockRankData(username, platform, (rankData) => {
-      resolve(rankData);
-    });
-    
-    // In a real implementation with authenticated users, we would use:
-    // fetch(`${API_BASE_URL}/riot/league/entries?platform=${platform}&summonerId=${summonerId}`, {
-    //   headers: {
-    //     'Authorization': `Bearer ${token}`
-    //   }
-    // })
+    // First, check if we have a linked account for this user
+    getUserLinkedAccount(username)
+      .then(linkedAccount => {
+        if (linkedAccount) {
+          // We have a linked account, get real rank data
+          getRankForLinkedAccount(linkedAccount, platform)
+            .then(resolve)
+            .catch(error => {
+              console.error('Error getting rank for linked account:', error);
+              // Fallback to mock data
+              generateMockRankData(username, platform, resolve);
+            });
+        } else {
+          // No linked account, generate mock data for now
+          // In production, we would fetch from our database of linked accounts
+          generateMockRankData(username, platform, resolve);
+        }
+      });
   });
 }
 
@@ -1211,4 +1165,163 @@ self.eloward = {
   handleAuthCallback,
   handleAuthCallbackFromRedirect,
   getRankIconUrl
-}; 
+};
+
+/**
+ * Check if we have a linked account for a Twitch username
+ * @param {string} twitchUsername - The Twitch username to look up
+ * @returns {Promise} - Resolves with the linked account or null
+ */
+function getUserLinkedAccount(twitchUsername) {
+  return new Promise((resolve) => {
+    // In a production environment, this would query our backend
+    // For now, we'll check local storage to see if this is the current user
+    chrome.storage.local.get(['twitchUsername', 'riotAccountInfo'], data => {
+      if (data.twitchUsername && 
+          data.twitchUsername.toLowerCase() === twitchUsername.toLowerCase() &&
+          data.riotAccountInfo) {
+        resolve(data.riotAccountInfo);
+      } else {
+        // Check our "database" of linked accounts (would be fetched from backend in prod)
+        chrome.storage.local.get('linkedAccounts', data => {
+          const linkedAccounts = data.linkedAccounts || {};
+          const linkedAccount = linkedAccounts[twitchUsername.toLowerCase()];
+          resolve(linkedAccount || null);
+        });
+      }
+    });
+  });
+}
+
+/**
+ * Get rank data for a linked account
+ * @param {Object} linkedAccount - The linked account info
+ * @param {string} platform - The platform code
+ * @returns {Promise} - Resolves with the rank data
+ */
+function getRankForLinkedAccount(linkedAccount, platform) {
+  return new Promise((resolve, reject) => {
+    // Check if we need to fetch fresh data or if we have cached data
+    if (linkedAccount.rankInfo && linkedAccount.rankUpdatedAt && 
+        (Date.now() - linkedAccount.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
+      // Use cached rank data
+      resolve(linkedAccount.rankInfo);
+    } else {
+      // Fetch fresh rank data
+      chrome.storage.local.get('riotAuthToken', data => {
+        if (!data.riotAuthToken) {
+          reject(new Error('No Riot auth token available'));
+          return;
+        }
+        
+        getRankBySummonerId(data.riotAuthToken, linkedAccount.summonerId, platform)
+          .then(rankData => {
+            // Update cache
+            linkedAccount.rankInfo = rankData;
+            linkedAccount.rankUpdatedAt = Date.now();
+            
+            // Store updated data
+            chrome.storage.local.get('linkedAccounts', data => {
+              const linkedAccounts = data.linkedAccounts || {};
+              linkedAccounts[linkedAccount.twitchUsername.toLowerCase()] = linkedAccount;
+              chrome.storage.local.set({ linkedAccounts });
+            });
+            
+            resolve(rankData);
+          })
+          .catch(reject);
+      });
+    }
+  });
+}
+
+/**
+ * Load the extension configuration from storage
+ */
+function loadConfiguration() {
+  chrome.storage.local.get(['selectedRegion', 'riotAccountInfo', 'twitchUsername'], (data) => {
+    // Set defaults if not set
+    if (!data.selectedRegion) {
+      chrome.storage.local.set({ selectedRegion: 'na1' });
+    }
+    
+    // If the user has already linked their Riot account, add it to linkedAccounts
+    if (data.riotAccountInfo && data.twitchUsername) {
+      addLinkedAccount(data.twitchUsername, data.riotAccountInfo);
+    }
+  });
+}
+
+/**
+ * Add a linked account to the storage
+ * @param {string} twitchUsername - The Twitch username
+ * @param {Object} riotAccountInfo - The Riot account info
+ */
+function addLinkedAccount(twitchUsername, riotAccountInfo) {
+  chrome.storage.local.get('linkedAccounts', (data) => {
+    const linkedAccounts = data.linkedAccounts || {};
+    
+    // Add or update the linked account
+    linkedAccounts[twitchUsername.toLowerCase()] = {
+      ...riotAccountInfo,
+      twitchUsername: twitchUsername,
+      linkedAt: Date.now()
+    };
+    
+    // Store the updated linked accounts
+    chrome.storage.local.set({ linkedAccounts });
+    
+    console.log(`Added linked account for ${twitchUsername}`);
+  });
+}
+
+/**
+ * Sync user ranks in the background periodically
+ * This helps ensure that ranks are up to date even if not explicitly requested
+ */
+function syncUserRanks() {
+  chrome.storage.local.get(['linkedAccounts', 'selectedRegion'], (data) => {
+    const linkedAccounts = data.linkedAccounts || {};
+    const selectedRegion = data.selectedRegion || 'na1';
+    
+    // Skip if no linked accounts
+    if (Object.keys(linkedAccounts).length === 0) return;
+    
+    console.log('Syncing user ranks in the background');
+    
+    // Update ranks for all linked accounts
+    Object.values(linkedAccounts).forEach(account => {
+      // Skip if updated recently
+      if (account.rankUpdatedAt && (Date.now() - account.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
+        return;
+      }
+      
+      // Fetch fresh rank data
+      if (account.summonerId) {
+        chrome.storage.local.get('riotAuthToken', (data) => {
+          if (!data.riotAuthToken) return;
+          
+          getRankBySummonerId(data.riotAuthToken, account.summonerId, selectedRegion)
+            .then(rankData => {
+              // Update the account with the new rank data
+              account.rankInfo = rankData;
+              account.rankUpdatedAt = Date.now();
+              
+              // Store the updated account
+              chrome.storage.local.get('linkedAccounts', (data) => {
+                const linkedAccounts = data.linkedAccounts || {};
+                linkedAccounts[account.twitchUsername.toLowerCase()] = account;
+                chrome.storage.local.set({ linkedAccounts });
+              });
+            })
+            .catch(error => {
+              console.error('Error syncing rank:', error);
+            });
+        });
+      }
+    });
+  });
+}
+
+// Set up periodic rank syncing
+setInterval(syncUserRanks, BADGE_REFRESH_INTERVAL); 

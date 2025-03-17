@@ -15,7 +15,14 @@ export const EloWardConfig = {
     refreshInterval: 30 * 60 * 1000, // 30 minutes
     cacheExpiry: 24 * 60 * 60 * 1000, // 24 hours
     showUnranked: true,
-    defaultSize: 16
+    defaultSize: 16,
+    // Chat badge specific configuration
+    chat: {
+      position: 'after-username', // Can be 'before-username' or 'after-username'
+      animationEnabled: true,
+      hoverScaleFactor: 1.2,
+      tooltipEnabled: true
+    }
   },
   
   // Riot API Configuration
@@ -43,22 +50,22 @@ export const EloWardConfig = {
     
     // Platform routing for Riot API
     platformRouting: {
-      'na1': { region: 'americas', platform: 'na1' },
-      'br1': { region: 'americas', platform: 'br1' },
-      'la1': { region: 'americas', platform: 'la1' },
-      'la2': { region: 'americas', platform: 'la2' },
-      'euw1': { region: 'europe', platform: 'euw1' },
-      'eun1': { region: 'europe', platform: 'eun1' },
-      'tr1': { region: 'europe', platform: 'tr1' },
-      'ru': { region: 'europe', platform: 'ru' },
-      'kr': { region: 'asia', platform: 'kr' },
-      'jp1': { region: 'asia', platform: 'jp1' },
-      'oc1': { region: 'sea', platform: 'oc1' },
-      'ph2': { region: 'sea', platform: 'ph2' },
-      'sg2': { region: 'sea', platform: 'sg2' },
-      'th2': { region: 'sea', platform: 'th2' },
-      'tw2': { region: 'sea', platform: 'tw2' },
-      'vn2': { region: 'sea', platform: 'vn2' }
+      'na1': { region: 'americas', platform: 'na1', name: 'North America' },
+      'br1': { region: 'americas', platform: 'br1', name: 'Brazil' },
+      'la1': { region: 'americas', platform: 'la1', name: 'LAN' },
+      'la2': { region: 'americas', platform: 'la2', name: 'LAS' },
+      'euw1': { region: 'europe', platform: 'euw1', name: 'EU West' },
+      'eun1': { region: 'europe', platform: 'eun1', name: 'EU Nordic & East' },
+      'tr1': { region: 'europe', platform: 'tr1', name: 'Turkey' },
+      'ru': { region: 'europe', platform: 'ru', name: 'Russia' },
+      'kr': { region: 'asia', platform: 'kr', name: 'Korea' },
+      'jp1': { region: 'asia', platform: 'jp1', name: 'Japan' },
+      'oc1': { region: 'sea', platform: 'oc1', name: 'Oceania' },
+      'ph2': { region: 'sea', platform: 'ph2', name: 'Philippines' },
+      'sg2': { region: 'sea', platform: 'sg2', name: 'Singapore' },
+      'th2': { region: 'sea', platform: 'th2', name: 'Thailand' },
+      'tw2': { region: 'sea', platform: 'tw2', name: 'Taiwan' },
+      'vn2': { region: 'sea', platform: 'vn2', name: 'Vietnam' }
     },
     
     // Data Dragon (for assets)
@@ -66,6 +73,7 @@ export const EloWardConfig = {
       baseUrl: 'https://ddragon.leagueoflegends.com/cdn',
       versions: 'https://ddragon.leagueoflegends.com/api/versions.json',
       rankIcons: {
+        unranked: '/images/ranks/unranked.png',
         iron: '/images/ranks/iron.png',
         bronze: '/images/ranks/bronze.png',
         silver: '/images/ranks/silver.png',
@@ -86,13 +94,27 @@ export const EloWardConfig = {
     oauth: {
       authorizeUrl: 'https://id.twitch.tv/oauth2/authorize',
       tokenUrl: 'https://id.twitch.tv/oauth2/token'
+    },
+    // Twitch chat badge settings
+    chat: {
+      badgeSelectors: [
+        '.chat-line__message', // Current primary chat message container
+        '.chat-author__display-name', // Username element
+        '.chat-badge', // Existing badge class for reference
+        '.chat-scrollable-area__message-container' // Chat container
+      ]
     }
   },
   
   // Extension Configuration
   extension: {
     version: '1.0.0',
-    debug: false
+    debug: false,
+    features: {
+      chatBadges: true,
+      profileBadges: true,
+      rankTooltips: true
+    }
   }
 };
 

@@ -8,6 +8,7 @@ let channelName = '';
 let processedMessages = new Set();
 let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
+let tooltipElement = null; // Global tooltip element
 
 // Initialize when the page is loaded
 initializeExtension();
