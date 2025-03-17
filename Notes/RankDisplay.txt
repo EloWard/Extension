@@ -1,4 +1,4 @@
 EloWard Twitch Chat Badges:
 
 - Will be a badge icon following twitch badge icon rules and customs
-- All users
+- All users with the extension
