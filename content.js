@@ -7,7 +7,7 @@ let isChannelSubscribed = false;
 let channelName = '';
 let processedMessages = new Set();
 let observerInitialized = false;
-let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
+let cachedUserMap = {}; // Cache for mapping Twitch usernames to rank data
 let tooltipElement = null; // Global tooltip element
 
 // Initialize when the page is loaded
@@ -168,34 +168,29 @@ function processNewMessage(messageNode) {
   const usernameElement = messageNode.querySelector('.chat-author__display-name');
   if (!usernameElement) return;
   
-  // Get the username
-  const username = usernameElement.textContent.trim();
+  // Get the username - this is the Twitch username
+  const twitchUsername = usernameElement.textContent.trim();
   
   // Check if we already have rank data for this user in the cache
-  if (cachedUserMap[username.toLowerCase()]) {
-    addBadgeToMessage(usernameElement, cachedUserMap[username.toLowerCase()]);
+  if (cachedUserMap[twitchUsername.toLowerCase()]) {
+    addBadgeToMessage(usernameElement, cachedUserMap[twitchUsername.toLowerCase()]);
     return;
   }
   
-  // Get the user's selected region from storage
-  chrome.storage.local.get('selectedRegion', (data) => {
-    const selectedRegion = data.selectedRegion || 'na1';
-    const platformRegion = EloWardConfig.riot.platformRouting[selectedRegion].region;
-    
-    // Request rank data from the background script
-    chrome.runtime.sendMessage({
-      action: 'get_rank_for_user',
-      username: username,
-      platform: platformRegion
-    }, (response) => {
-      if (response && response.rank) {
-        // Cache the rank data
-        cachedUserMap[username.toLowerCase()] = response.rank;
-        
-        // Add the badge to the message
-        addBadgeToMessage(usernameElement, response.rank);
-      }
-    });
+  // Request rank data from the background script using the Twitch username
+  chrome.runtime.sendMessage({
+    action: 'get_rank_for_twitch_user',
+    username: twitchUsername
+  }, (response) => {
+    if (response && response.success && response.rankData) {
+      // Cache the rank data
+      cachedUserMap[twitchUsername.toLowerCase()] = response.rankData;
+      
+      // Add the badge to the message
+      addBadgeToMessage(usernameElement, response.rankData);
+    } else {
+      console.log(`Could not get rank data for ${twitchUsername}:`, response);
+    }
   });
 }
 
@@ -208,10 +203,11 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeElement.className = 'eloward-rank-badge';
   
   // Set the background image to the rank icon
-  const rankTier = rankData ? rankData.tier.toLowerCase() : 'unranked';
+  const rankInfo = rankData.rankInfo || rankData; // Support both new and old data format
+  const rankTier = rankInfo ? (rankInfo.tier || 'unranked').toLowerCase() : 'unranked';
   badgeElement.style.backgroundImage = `url(${chrome.runtime.getURL(`images/ranks/${rankTier}.png`)})`;
   
-  // Add tooltip with rank information
+  // Add tooltip with rank information and source
   badgeElement.setAttribute('data-tooltip', formatRankText(rankData));
   
   // Insert the badge after the username
@@ -223,21 +219,40 @@ function addBadgeToMessage(usernameElement, rankData) {
 }
 
 function formatRankText(rankData) {
-  if (!rankData) return 'Unranked';
+  // If we have the new format with rankInfo and riotId
+  if (rankData.rankInfo && rankData.riotId) {
+    const rankInfo = rankData.rankInfo;
+    let rankText = `${rankData.riotId} | `;
+    
+    if (rankInfo.tier && rankInfo.tier !== 'Unranked') {
+      rankText += rankInfo.tier;
+      if (rankInfo.division) {
+        rankText += ` ${rankInfo.division}`;
+      }
+      if (rankInfo.leaguePoints !== undefined) {
+        rankText += ` (${rankInfo.leaguePoints} LP)`;
+      }
+    } else {
+      rankText += 'Unranked';
+    }
+    
+    if (rankData.source === 'mock') {
+      rankText += ' (Estimated)';
+    }
+    
+    return rankText;
+  } 
   
-  let rankText = rankData.tier;
-  if (rankData.division && rankData.tier !== 'Master' && 
-      rankData.tier !== 'Grandmaster' && rankData.tier !== 'Challenger') {
-    rankText += ' ' + rankData.division;
+  // Legacy format support
+  const tier = rankData.tier || 'Unranked';
+  if (tier === 'Unranked') return 'Unranked';
+  
+  let rankText = tier;
+  if (rankData.division) {
+    rankText += ` ${rankData.division}`;
   }
-  
   if (rankData.leaguePoints !== undefined) {
     rankText += ` (${rankData.leaguePoints} LP)`;
-  }
-  
-  if (rankData.wins !== undefined && rankData.losses !== undefined) {
-    const winRate = Math.round((rankData.wins / (rankData.wins + rankData.losses)) * 100);
-    rankText += ` | ${rankData.wins}W ${rankData.losses}L (${winRate}%)`;
   }
   
   return rankText;
