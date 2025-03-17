@@ -38,7 +38,7 @@ const ACTIVE_STREAMERS = [
 ];
 
 // Define the standard redirect URI to use throughout the app
-const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect";
+const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect?service=riot";
 
 /* Track any open auth windows */
 let authWindows = {};
@@ -47,16 +47,27 @@ let authWindows = {};
 function handleAuthCallback(params) {
   console.log('Handling auth callback in background script', params);
   
+  // Determine the service type (riot or twitch)
+  const serviceType = params.service || 'riot'; // Default to riot for backward compatibility
+  console.log(`Handling ${serviceType} authentication callback`);
+  
   // Add the auth data to chrome.storage.local under multiple keys for compatibility
   chrome.storage.local.set({
     'authCallback': params,
     'auth_callback': params,
-    'eloward_auth_callback': params
+    'eloward_auth_callback': params,
+    // Add a service-specific storage key
+    [`${serviceType}_auth_callback`]: params
   }, () => {
-    console.log('Stored auth callback data in chrome.storage.local');
+    console.log(`Stored ${serviceType} auth callback data in chrome.storage.local`);
     
-    // Initiate token exchange
-    initiateTokenExchange(params);
+    // Only initiate token exchange for Riot auth
+    if (serviceType === 'riot') {
+      initiateTokenExchange(params);
+    } else if (serviceType === 'twitch') {
+      // For Twitch auth we might want to do something different
+      console.log('Twitch auth callback received, no token exchange needed in extension');
+    }
   });
 }
 

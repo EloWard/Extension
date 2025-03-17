@@ -48,66 +48,82 @@
       font-size: 14px;
       color: #999;
     }
-    img.icon {
-      width: 64px;
-      height: 64px;
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
       margin-bottom: 16px;
+    }
+    .badge.riot {
+      background-color: #D13639;
+    }
+    .badge.twitch {
+      background-color: #9146FF;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <img src="images/icon-128.png" alt="EloWard Logo" class="icon">
-    <h1>Authentication</h1>
+    <h1>EloWard Authentication</h1>
+    <div id="service-badge"></div>
     <div id="message">
-      <p>Processing your Riot authentication...</p>
+      <p>Processing authentication, please wait...</p>
     </div>
     <div id="countdown" class="countdown"></div>
   </div>
-
+  
   <script>
-    // Function to parse URL parameters
+    // Function to get URL parameters
     function getUrlParameters() {
       const params = {};
-      const query = window.location.search.substring(1);
-      const vars = query.split('&');
+      const queryString = window.location.search;
+      const urlParams = new URLSearchParams(queryString);
       
-      for (let i = 0; i < vars.length; i++) {
-        const pair = vars[i].split('=');
-        params[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || '');
+      for (const [key, value] of urlParams.entries()) {
+        params[key] = value;
       }
       
       return params;
     }
-
-    // Function to send message to background script
+    
+    // Send message to extension
     function sendMessageToExtension(message) {
-      // Try direct messaging (works when this page is loaded in extension context)
+      console.log("Sending message to extension:", message);
+      
+      // First try direct chrome.runtime.sendMessage
       try {
-        chrome.runtime.sendMessage(message, (response) => {
+        console.log("Attempting to use chrome.runtime.sendMessage");
+        chrome.runtime.sendMessage(message, function(response) {
           if (chrome.runtime.lastError) {
-            console.error("Error sending message to extension:", chrome.runtime.lastError);
-          } else if (response && response.success) {
-            console.log("Message successfully delivered to extension");
-            showSuccess();
+            console.error("Error:", chrome.runtime.lastError);
+            fallbackMessaging(message);
+          } else {
+            console.log("Message sent successfully:", response);
+            showSuccess(message.service || 'riot');
           }
         });
       } catch (e) {
-        console.error("Failed to send message to extension via chrome.runtime:", e);
-        
-        // Try to use window.opener as fallback
+        console.error("Failed to send message via chrome.runtime:", e);
+        fallbackMessaging(message);
+      }
+      
+      // Fallback messaging methods
+      function fallbackMessaging(message) {
         try {
+          console.log("Trying fallback messaging methods");
+          
           if (window.opener && window.opener.chrome && window.opener.chrome.runtime) {
             console.log("Attempting to send via window.opener.chrome.runtime");
             window.opener.chrome.runtime.sendMessage(message);
-            showSuccess();
+            showSuccess(message.service || 'riot');
           } else if (window.opener) {
             console.log("Attempting to use window.postMessage to opener");
             window.opener.postMessage({
               source: 'eloward_auth',
               ...message
             }, '*');
-            showSuccess();
+            showSuccess(message.service || 'riot');
           } else {
             console.log("No window.opener available");
             showError("Unable to communicate with the extension. Please try again.");
@@ -120,10 +136,18 @@
     }
 
     // Function to show success message
-    function showSuccess() {
+    function showSuccess(serviceType) {
+      // Set the service badge
+      const serviceBadgeElement = document.getElementById('service-badge');
+      if (serviceType === 'twitch') {
+        serviceBadgeElement.innerHTML = '<span class="badge twitch">Twitch Authentication</span>';
+      } else {
+        serviceBadgeElement.innerHTML = '<span class="badge riot">Riot Authentication</span>';
+      }
+      
       document.getElementById('message').innerHTML = `
         <p class="success">Authentication successful!</p>
-        <p>You have successfully authenticated with Riot Games.</p>
+        <p>You have successfully authenticated with ${serviceType === 'twitch' ? 'Twitch' : 'Riot Games'}.</p>
         <p>This window will close automatically in a few seconds.</p>
       `;
       startCountdown();
@@ -169,29 +193,50 @@
       console.log("URL parameters:", { 
         hasCode: !!params.code,
         hasState: !!params.state,
-        hasError: !!params.error
+        hasError: !!params.error,
+        service: params.service || 'riot' // Default to riot for backward compatibility
       });
+      
+      // Determine the service type - riot or twitch
+      const serviceType = params.service || 'riot';
       
       if (params.code && params.state) {
         // We have a successful auth code
-        console.log("Auth code received, sending to extension");
+        console.log(`${serviceType} auth code received, sending to extension`);
         
         // Send auth code to extension
         sendMessageToExtension({
           type: 'auth_callback',
+          service: serviceType, // Include the service type
           code: params.code,
           state: params.state
         });
         
         // Save to localStorage as fallback mechanism
         try {
-          localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
+          // Use a specific key for each service type
+          const storageKey = serviceType === 'riot' ? 'eloward_riot_auth_callback_data' : 'eloward_twitch_auth_callback_data';
+          
+          localStorage.setItem(storageKey, JSON.stringify({
             type: 'auth_callback',
+            service: serviceType,
             code: params.code,
             state: params.state,
             timestamp: new Date().toISOString()
           }));
-          console.log("Auth data stored in localStorage");
+          
+          // Also set the original key for backward compatibility
+          if (serviceType === 'riot') {
+            localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
+              type: 'auth_callback',
+              service: 'riot',
+              code: params.code,
+              state: params.state,
+              timestamp: new Date().toISOString()
+            }));
+          }
+          
+          console.log(`${serviceType} auth data stored in localStorage`);
         } catch (e) {
           console.error("Error storing in localStorage:", e);
         }
