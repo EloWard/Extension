@@ -1,4 +1,4 @@
 EloWard Twitch Chat Badges:
 
 - Will be a badge icon following twitch badge icon rules and customs
-- All users with the extension will be able to see each others ranks
+- All users with the extension enbaled will be able to see each others ranks
