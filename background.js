@@ -39,7 +39,7 @@ const ACTIVE_STREAMERS = [
 ];
 
 // Define the standard redirect URI to use throughout the app
-const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect?service=riot";
+const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/riot/auth/redirect";
 
 /* Track any open auth windows */
 let authWindows = {};
