@@ -24,6 +24,8 @@ function initializeExtension() {
   chrome.runtime.sendMessage(
     { action: 'check_streamer_subscription', streamer: channelName },
     (response) => {
+      console.log(`EloWard: Subscription check response for ${channelName}:`, response);
+      
       if (response && response.subscribed) {
         isChannelSubscribed = true;
         console.log(`EloWard: Channel ${channelName} is subscribed`);
@@ -35,6 +37,15 @@ function initializeExtension() {
         showActivationNotification();
       } else {
         console.log(`EloWard: Channel ${channelName} is not subscribed`);
+        
+        // For development, check if we're a dev user trying to bypass subscription check
+        if (channelName.toLowerCase() === 'yomata1' || 
+            localStorage.getItem('eloward_dev_mode') === 'true') {
+          console.log('EloWard: Development mode enabled, activating anyway');
+          isChannelSubscribed = true;
+          initializeObserver();
+          showActivationNotification();
+        }
       }
     }
   );
@@ -170,9 +181,15 @@ function processNewMessage(messageNode) {
   
   // Get the Twitch username
   const twitchUsername = usernameElement.textContent.trim();
+  console.log(`EloWard: Processing message from ${twitchUsername}`);
   
-  // Check if we already have rank data for this user in the cache
-  if (cachedUserMap[twitchUsername.toLowerCase()]) {
+  // Special handling for your own username - force lookup even if cached as null
+  const isOwnUsername = twitchUsername.toLowerCase() === 'yomata1';
+  
+  // Check if we already have rank data for this user in the cache and it's not a forced lookup
+  if (twitchUsername.toLowerCase() in cachedUserMap && !isOwnUsername) {
+    console.log(`EloWard: Found cached data for ${twitchUsername}:`, cachedUserMap[twitchUsername.toLowerCase()]);
+    
     // Only display badge if valid rank data exists (not null or undefined)
     if (cachedUserMap[twitchUsername.toLowerCase()] !== null) {
       addBadgeToMessage(usernameElement, cachedUserMap[twitchUsername.toLowerCase()]);
@@ -181,27 +198,42 @@ function processNewMessage(messageNode) {
   }
   
   // Get the user's selected region from storage
-  chrome.storage.local.get('selectedRegion', (data) => {
+  chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
     const selectedRegion = data.selectedRegion || 'na1';
     const platformRegion = EloWardConfig.riot.platformRouting[selectedRegion].region;
     
+    // Debug: Check if we have linked account info
+    console.log(`EloWard: Checking for linked account data for ${twitchUsername}`);
+    const linkedAccounts = data.linkedAccounts || {};
+    if (linkedAccounts[twitchUsername.toLowerCase()]) {
+      console.log(`EloWard: Found locally cached linked account for ${twitchUsername}`);
+    }
+    
     // Request rank data for the Twitch username from the background script
+    console.log(`EloWard: Requesting rank data for ${twitchUsername} on platform ${platformRegion}`);
     chrome.runtime.sendMessage({
       action: 'get_rank_for_twitch_user',
       twitchUsername: twitchUsername,
-      platform: platformRegion
+      platform: platformRegion,
+      forceRefresh: isOwnUsername // Force refresh for your own username
     }, (response) => {
+      console.log(`EloWard: Got response for ${twitchUsername}:`, response);
+      
       if (response && response.rank) {
-        // Cache the rank data (including null values to avoid repeated lookups)
+        // Cache the rank data
         cachedUserMap[twitchUsername.toLowerCase()] = response.rank;
+        console.log(`EloWard: Cached rank data for ${twitchUsername}:`, response.rank);
         
-        // Only add the badge if valid rank data exists
-        if (response.rank !== null) {
-          addBadgeToMessage(usernameElement, response.rank);
-        }
+        // Add the badge to the message
+        addBadgeToMessage(usernameElement, response.rank);
       } else {
-        // If no response or no rank data, cache as null to avoid repeated lookups
-        cachedUserMap[twitchUsername.toLowerCase()] = null;
+        // Cache null to avoid repeated lookups, except for your own username
+        if (!isOwnUsername) {
+          cachedUserMap[twitchUsername.toLowerCase()] = null;
+          console.log(`EloWard: No rank data found for ${twitchUsername}, caching as null`);
+        } else {
+          console.log(`EloWard: No rank data found for your username ${twitchUsername}, not caching to allow retries`);
+        }
       }
     });
   });
