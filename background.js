@@ -35,7 +35,7 @@ const ACTIVE_STREAMERS = [
   'lcs',
   'faker',
   'doublelift',
-  'tyler1',
+  'loltyler1',
   'humzh',
   'PantsAreDragon'
 ];
