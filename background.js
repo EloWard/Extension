@@ -7,6 +7,7 @@ import { TwitchAuth } from './js/twitchAuth.js';
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
 const RIOT_RSO_CLIENT_ID = '38a4b902-7186-44ac-8183-89ba1ac56cf3'; // From wrangler.toml - matches the Cloudflare Worker config
+const TWITCH_REDIRECT_URL = 'https://www.eloward.xyz/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -50,7 +51,7 @@ function handleAuthCallback(params) {
   console.log('Handling auth callback in background script', params);
   
   // Determine the service type (riot or twitch)
-  const serviceType = params.service || 'riot'; // Default to riot for backward compatibility
+  const serviceType = params.service || (params.source === 'twitch_auth_callback' ? 'twitch' : 'riot');
   console.log(`Handling ${serviceType} authentication callback`);
   
   // Add the auth data to chrome.storage.local under multiple keys for compatibility
@@ -74,7 +75,13 @@ function handleAuthCallback(params) {
     if (serviceType === 'riot') {
       initiateTokenExchange(params);
     } else if (serviceType === 'twitch') {
-      // For Twitch auth, we've already saved the callback data to chrome.storage.local
+      // For Twitch auth, we need to tell the popup about the callback
+      chrome.runtime.sendMessage({
+        type: 'twitch_auth_complete',
+        success: true,
+        data: params
+      });
+      
       console.log('Twitch auth callback ready for processing by the TwitchAuth module');
     }
   });
@@ -208,6 +215,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'auth_callback') {
     handleAuthCallback(message.params);
+    sendResponse({ success: true });
+  }
+  
+  if (message.type === 'twitch_auth_callback') {
+    console.log('Background received twitch_auth_callback:', message);
+    handleAuthCallback({
+      ...message.params,
+      source: 'twitch_auth_callback'
+    });
     sendResponse({ success: true });
   }
   
@@ -1345,4 +1361,100 @@ function syncUserRanks() {
 }
 
 // Set up periodic rank syncing
-setInterval(syncUserRanks, BADGE_REFRESH_INTERVAL); 
+setInterval(syncUserRanks, BADGE_REFRESH_INTERVAL);
+
+// Set up a tab listener to detect the Twitch redirect and extract auth code
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Skip if the URL didn't change or if there's no URL
+  if (!changeInfo.url) return;
+  
+  // Check if this is our Twitch redirect URL
+  if (changeInfo.url.startsWith(TWITCH_REDIRECT_URL)) {
+    console.log('Detected Twitch auth redirect URL:', changeInfo.url);
+    
+    try {
+      // IMMEDIATELY prevent further navigation by updating to a loading state
+      chrome.tabs.update(tabId, {
+        url: chrome.runtime.getURL('loading.html')
+      });
+      
+      // Extract parameters from the URL
+      const url = new URL(changeInfo.url);
+      const params = new URLSearchParams(url.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      const error = params.get('error');
+      const errorDescription = params.get('error_description');
+      
+      if (error) {
+        console.error('Twitch auth error from redirect:', error, errorDescription);
+        
+        // Let any listeners know about the error
+        chrome.runtime.sendMessage({
+          type: 'twitch_auth_error',
+          error,
+          errorDescription
+        });
+        
+        // Show the error page
+        chrome.tabs.update(tabId, {
+          url: chrome.runtime.getURL('twitch-error.html' + (errorDescription ? `?error=${error}&error_description=${encodeURIComponent(errorDescription)}` : ''))
+        });
+        
+        return;
+      }
+      
+      if (code && state) {
+        console.log('Extracted Twitch auth code and state from redirect');
+        
+        // Prepare the auth data
+        const authData = {
+          code,
+          state,
+          source: 'twitch_auth_callback'
+        };
+        
+        // Store in storage for the TwitchAuth module to find
+        chrome.storage.local.set({
+          'twitch_auth_callback': authData,
+          'auth_callback': authData
+        }, () => {
+          console.log('Stored Twitch auth callback data from redirect');
+          
+          // Send a message to notify any listeners
+          chrome.runtime.sendMessage({
+            type: 'twitch_auth_complete',
+            success: true,
+            data: authData
+          });
+          
+          // Show success page
+          chrome.tabs.update(tabId, {
+            url: chrome.runtime.getURL('twitch-success.html')
+          });
+          
+          // Close the tab after a few seconds
+          setTimeout(() => {
+            try {
+              chrome.tabs.remove(tabId);
+            } catch (e) {
+              console.log('Tab already closed');
+            }
+          }, 3000);
+        });
+      } else {
+        console.warn('Missing code or state in Twitch redirect URL');
+        // Show error page for missing parameters
+        chrome.tabs.update(tabId, {
+          url: chrome.runtime.getURL('twitch-error.html?error=missing_parameters&error_description=Auth code or state parameter missing in redirect')
+        });
+      }
+    } catch (error) {
+      console.error('Error processing Twitch redirect URL:', error);
+      // Show generic error page
+      chrome.tabs.update(tabId, {
+        url: chrome.runtime.getURL('twitch-error.html?error=processing_error&error_description=' + encodeURIComponent(error.message))
+      });
+    }
+  }
+}); 

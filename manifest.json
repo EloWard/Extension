@@ -42,7 +42,11 @@
     {
       "resources": [
         "images/*.png",
-        "callback.html"
+        "callback.html",
+        "twitch-callback.html",
+        "twitch-success.html",
+        "twitch-error.html",
+        "loading.html"
       ],
       "matches": ["<all_urls>"]
     }

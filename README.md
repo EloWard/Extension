@@ -58,6 +58,17 @@ EloWard only accesses:
 
 We do not store any personal information beyond what's necessary for the extension to function. Your account connection data is stored locally on your device and is not shared with any third parties.
 
+## Authentication Flows
+
+### Riot Authentication
+- Uses the standard path: https://www.eloward.xyz/riot/auth/redirect
+- Closes automatically after authentication is complete
+
+### Twitch Authentication
+- Uses extension-specific path: https://www.eloward.xyz/ext/twitch/auth/redirect
+- This path is separate from the website's Twitch authentication flow
+- Closes automatically after authentication is complete
+
 ## Development
 
 ### Project Structure

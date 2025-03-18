@@ -45,8 +45,8 @@ const safeStorage = {
 const defaultConfig = {
   // Make sure this URL is correct and matches a deployed instance
   proxyBaseUrl: 'https://eloward-twitchrso.unleashai-inquiries.workers.dev',
-  // Make sure this matches the STANDARD_REDIRECT_URI in twitchRSO/src/index.ts
-  redirectUri: 'https://www.eloward.xyz/twitch/auth/redirect',
+  // Use an extension-specific redirect URI that's registered with Twitch
+  redirectUri: 'https://www.eloward.xyz/ext/twitch/auth/redirect',
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
   endpoints: {
