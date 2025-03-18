@@ -33,25 +33,69 @@
       line-height: 1.6;
     }
     .loader {
-      border: 5px solid #f3f3f3;
+      border: 5px solid #2a2e38;
       border-top: 5px solid #D9A336;
       border-radius: 50%;
       width: 50px;
       height: 50px;
-      animation: spin 1s linear infinite;
+      animation: spin 1.5s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
       margin: 0 auto 20px auto;
+      box-shadow: 0 0 15px rgba(217, 163, 54, 0.3);
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .progress-bar {
+      background-color: #2a2e38;
+      height: 4px;
+      width: 100%;
+      border-radius: 2px;
+      margin: 20px 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 30%;
+      background-color: #D9A336;
+      border-radius: 2px;
+      animation: progress 2s ease-in-out infinite;
+    }
+    @keyframes progress {
+      0% { left: -30%; }
+      100% { left: 100%; }
+    }
+    .status {
+      color: #9c9c9c;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+    }
+    .logo {
+      max-width: 80px;
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body>
   <div class="container">
+    <img src="images/logo/icon128.png" alt="EloWard Logo" class="logo">
     <div class="loader"></div>
     <h1>Processing Authentication</h1>
-    <p>Please wait while we complete your Twitch authentication...</p>
+    <p>Please wait while we complete your Twitch authentication and securely store your credentials...</p>
+    <div class="progress-bar"></div>
+    <div class="status">Redirecting to success page in a moment...</div>
+    
+    <script>
+      // After a short delay, show an updated status message
+      setTimeout(() => {
+        document.querySelector('.status').textContent = 'Almost there! Finalizing authentication...';
+      }, 1500);
+    </script>
   </div>
 </body>
 </html> 

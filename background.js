@@ -161,9 +161,32 @@ async function initiateTokenExchange(authData) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);
   
+  // Special handler for Twitch auth callback from the extension redirect page
+  if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
+    console.log('Background received Twitch auth callback from ExtTwitchAuthRedirect:', message);
+    
+    // Extract params depending on message format
+    const params = message.params || {
+      code: message.code,
+      state: message.state,
+      service: 'twitch',
+      source: 'twitch_auth_callback'
+    };
+    
+    // Process the auth data
+    handleAuthCallback({
+      ...params,
+      source: 'twitch_auth_callback'
+    });
+    
+    sendResponse({ success: true });
+    return true; // Keep the message channel open for the async response
+  }
+  
   if (message.type === 'get_auth_callback') {
-    chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback'], (data) => {
-      const callback = data.authCallback || data.auth_callback || data.eloward_auth_callback;
+    chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
+      // Try to find the callback data in any of the possible storage keys
+      const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
       sendResponse({ data: callback });
       
       // Don't clear the stored callback as it may be needed by other components
@@ -215,15 +238,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'auth_callback') {
     handleAuthCallback(message.params);
-    sendResponse({ success: true });
-  }
-  
-  if (message.type === 'twitch_auth_callback') {
-    console.log('Background received twitch_auth_callback:', message);
-    handleAuthCallback({
-      ...message.params,
-      source: 'twitch_auth_callback'
-    });
     sendResponse({ success: true });
   }
   
@@ -1370,7 +1384,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   
   // Check if this is our Twitch redirect URL
   if (changeInfo.url.startsWith(TWITCH_REDIRECT_URL)) {
-    console.log('Detected Twitch auth redirect URL:', changeInfo.url);
+    console.log('Detected Twitch auth redirect URL for EXTENSION:', changeInfo.url);
     
     try {
       // IMMEDIATELY prevent further navigation by updating to a loading state
@@ -1405,21 +1419,28 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       }
       
       if (code && state) {
-        console.log('Extracted Twitch auth code and state from redirect');
+        console.log('Extracted Twitch auth code and state from redirect URL');
         
         // Prepare the auth data
         const authData = {
           code,
           state,
-          source: 'twitch_auth_callback'
+          source: 'twitch_auth_callback',
+          service: 'twitch',
+          timestamp: new Date().toISOString()
         };
         
         // Store in storage for the TwitchAuth module to find
+        // Use multiple storage keys for better compatibility
         chrome.storage.local.set({
           'twitch_auth_callback': authData,
-          'auth_callback': authData
+          'auth_callback': authData,
+          'eloward_twitch_auth_callback_data': authData,
+          // Also store individual values
+          'twitch_auth_code': code,
+          'twitch_auth_state': state
         }, () => {
-          console.log('Stored Twitch auth callback data from redirect');
+          console.log('Stored Twitch auth callback data from ext redirect in multiple storage keys');
           
           // Send a message to notify any listeners
           chrome.runtime.sendMessage({
@@ -1428,19 +1449,27 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             data: authData
           });
           
+          // Also try with the other message format
+          chrome.runtime.sendMessage({
+            type: 'auth_callback',
+            service: 'twitch',
+            params: authData
+          });
+          
           // Show success page
           chrome.tabs.update(tabId, {
             url: chrome.runtime.getURL('twitch-success.html')
           });
           
-          // Close the tab after a few seconds
+          // Close the tab after a few seconds but with a longer delay
+          // to ensure everything is processed
           setTimeout(() => {
             try {
               chrome.tabs.remove(tabId);
             } catch (e) {
-              console.log('Tab already closed');
+              console.log('Tab already closed or error removing tab:', e);
             }
-          }, 3000);
+          }, 5000); // Increased from 3000 to 5000ms
         });
       } else {
         console.warn('Missing code or state in Twitch redirect URL');

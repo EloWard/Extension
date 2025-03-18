@@ -873,25 +873,36 @@ export const TwitchAuth = {
       // Get a valid token
       const token = await this.getValidToken();
       
-      // Fetch user info
+      // Fetch user info - IMPORTANT: Use POST method to match backend implementation
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.userInfo}`, {
-        method: 'GET',
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          access_token: token
+        })
       });
       
       if (!response.ok) {
         throw new Error(`Failed to get user info: ${response.status} ${response.statusText}`);
       }
       
-      const userInfo = await response.json();
+      const responseData = await response.json();
+      
+      // The Twitch API returns data in a 'data' array with the first item being the user
+      const userInfo = responseData.data && responseData.data[0] ? responseData.data[0] : responseData;
       
       if (!userInfo || !userInfo.id) {
+        console.error('Invalid user info response:', responseData);
         throw new Error('Invalid user info response');
       }
       
-      console.log('Successfully fetched Twitch user info');
+      console.log('Successfully fetched Twitch user info:', {
+        id: userInfo.id,
+        login: userInfo.login,
+        display_name: userInfo.display_name
+      });
       
       // Store the user info
       await this._storeUserInfo(userInfo);
