@@ -1,5 +1,6 @@
 // EloWard Popup Script
 import { RiotAuth } from './js/riotAuth.js';
+import { TwitchAuth } from './js/twitchAuth.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM elements
@@ -9,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
   const refreshRankBtn = document.getElementById('refresh-rank');
+  const connectTwitchBtn = document.getElementById('connect-twitch');
+  const twitchConnectionStatus = document.getElementById('twitch-connection-status');
 
   // Flag to prevent recursive message handling
   let processingMessage = false;
@@ -18,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Set up event listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
+  connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   regionSelect.addEventListener('change', handleRegionChange);
   refreshRankBtn.addEventListener('click', refreshRank);
   
@@ -39,10 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
         hasState: !!event.data.state
       });
       
-      // Store in chrome.storage for retrieval by RiotAuth
+      // Store in chrome.storage for retrieval by Auth services
       chrome.storage.local.set({
         'auth_callback': event.data,
-        'eloward_auth_callback': event.data
+        'eloward_auth_callback': event.data,
+        'twitch_auth_callback': event.data
       }, () => {
         // Process the auth callback now
         processAuthCallback(event.data)
@@ -74,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   /**
-   * Process authentication callback from Riot
+   * Process authentication callback from auth services
    * @param {Object} authData - The authentication data
    * @returns {Promise<void>}
    */
@@ -98,130 +103,18 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Mark callback as being processed to prevent duplicates
       await new Promise(resolve => {
-        chrome.storage.local.set({ authCallbackProcessed: true }, resolve);
+        chrome.storage.local.set({ 'authCallbackProcessed': true }, resolve);
       });
       
-      // Add a timeout to clear the processed flag after 5 minutes
+      // Clean up after a short delay to allow any parallel processes to see it's been processed
       setTimeout(() => {
-        chrome.storage.local.remove('authCallbackProcessed', () => {
-          console.log('Cleared auth callback processed flag');
-        });
-      }, 5 * 60 * 1000);
-      
-      // Validate auth data
-      if (!authData || typeof authData !== 'object') {
-        showError('Auth data is missing or invalid');
-        return;
-      }
-      
-      if (!authData.code) {
-        showError('Auth code is missing from the callback');
-        return;
-      }
-      
-      // Store the callback data to be processed by background script
-      await new Promise(resolve => {
-        chrome.storage.local.set({ authCallback: authData }, resolve);
-      });
-      
-      // Show loading state
-      document.getElementById('connect-btn').innerHTML = 'Connecting...';
-      document.getElementById('connect-btn').disabled = true;
-      
-      try {
-        // Initialize RiotAuth
-        const riotAuth = new RiotAuth(riotConfig);
-        
-        // Wait for token exchange to complete
-        await new Promise((resolve, reject) => {
-          const checkTokens = async () => {
-            try {
-              const isAuthenticated = await riotAuth.isAuthenticated();
-              if (isAuthenticated) {
-                console.log('Successfully authenticated with Riot');
-                resolve();
-              } else {
-                // Check again in a second
-                setTimeout(checkTokens, 1000);
-              }
-            } catch (error) {
-              reject(error);
-            }
-          };
-          
-          // Start checking
-          checkTokens();
-          
-          // Add a timeout after 20 seconds
-          setTimeout(() => {
-            reject(new Error('Timed out waiting for token exchange'));
-          }, 20000);
-        });
-        
-        // Get user data after successful authentication
-        const userData = await riotAuth.getUserData();
-        
-        console.log('Received user data:', userData);
-        
-        // Update UI with user data
-        document.getElementById('status').classList.remove('hidden');
-        document.getElementById('summoner-name').innerText = userData.summonerName || 'Unknown';
-        document.getElementById('summoner-level').innerText = userData.summonerLevel || 'N/A';
-        
-        const rankDisplay = document.getElementById('rank-display');
-        rankDisplay.classList.remove('hidden');
-        
-        if (userData.rankInfo) {
-          const { tier, rank: division, leaguePoints } = userData.rankInfo;
-          document.getElementById('rank-tier').innerText = tier || 'Unranked';
-          document.getElementById('rank-division').innerText = division || '';
-          document.getElementById('rank-lp').innerText = leaguePoints !== undefined ? `${leaguePoints} LP` : '';
-          
-          // Update rank badge image
-          const rankBadgePreview = document.getElementById('rankBadgePreview');
-          if (rankBadgePreview) {
-            const tierLower = tier ? tier.toLowerCase() : 'unranked';
-            rankBadgePreview.src = `../images/ranks/${tierLower}.png`;
-          }
-        } else {
-          document.getElementById('rank-tier').innerText = 'Unranked';
-          document.getElementById('rank-division').innerText = '';
-          document.getElementById('rank-lp').innerText = '';
-          
-          // Set to unranked image
-          const rankBadgePreview = document.getElementById('rankBadgePreview');
-          if (rankBadgePreview) {
-            rankBadgePreview.src = '../images/ranks/unranked.png';
-          }
-        }
-        
-        // Update button state
-        document.getElementById('connect-btn').innerHTML = 'Refresh';
-        document.getElementById('connect-btn').disabled = false;
-        
-      } catch (error) {
-        console.error('Error processing authentication:', error);
-        
-        // Show error to user
-        showError(getReadableErrorMessage(error));
-        
-        // Reset button state
-        document.getElementById('connect-btn').innerHTML = 'Connect';
-        document.getElementById('connect-btn').disabled = false;
-        
-        // Clean up auth callback processing flag
         chrome.storage.local.remove('authCallbackProcessed');
-      }
+      }, 5000);
+      
+      // Check authentication status to update UI
+      await checkAuthStatus();
     } catch (error) {
-      console.error('Error in processAuthCallback:', error);
-      showError('Failed to process auth callback: ' + getReadableErrorMessage(error));
-      
-      // Reset button state
-      document.getElementById('connect-btn').innerHTML = 'Connect';
-      document.getElementById('connect-btn').disabled = false;
-      
-      // Clean up auth callback processing flag
-      chrome.storage.local.remove('authCallbackProcessed');
+      console.error('Error processing auth callback:', error);
     }
   }
 
@@ -328,35 +221,53 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Check if the user is currently authenticated
+   * Check authentication status for Riot and Twitch
    */
   async function checkAuthStatus() {
     try {
-      // Show loading state
-      riotConnectionStatus.textContent = 'Checking...';
+      // Check Riot auth status
+      const isRiotAuthenticated = await RiotAuth.isAuthenticated();
       
-      // Check if user is authenticated
-      const isAuthenticated = await RiotAuth.isAuthenticated();
-      
-      if (isAuthenticated) {
-        // Get user data and update UI
+      if (isRiotAuthenticated) {
+        // Update UI to show connected
+        riotConnectionStatus.textContent = 'Connected';
+        riotConnectionStatus.classList.add('connected');
+        connectRiotBtn.textContent = 'Disconnect';
+        
+        // Get user data
         const userData = await RiotAuth.getUserData();
+        
+        // Update UI with user data
         updateUserInterface(userData);
       } else {
-        // Not authenticated
+        // Update UI to show not connected
         riotConnectionStatus.textContent = 'Not Connected';
+        riotConnectionStatus.classList.remove('connected');
         connectRiotBtn.textContent = 'Connect';
       }
       
-      // Load saved region
-      chrome.storage.local.get('selectedRegion', (result) => {
-        if (result.selectedRegion) {
-          regionSelect.value = result.selectedRegion;
+      // Check Twitch auth status
+      const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
+      
+      if (isTwitchAuthenticated) {
+        // Update UI to show connected
+        twitchConnectionStatus.textContent = 'Connected';
+        twitchConnectionStatus.classList.add('connected');
+        connectTwitchBtn.textContent = 'Disconnect';
+        
+        // Optionally, get user display name
+        const displayName = await TwitchAuth.getUserDisplayName();
+        if (displayName) {
+          twitchConnectionStatus.textContent = `Connected (${displayName})`;
         }
-      });
+      } else {
+        // Update UI to show not connected
+        twitchConnectionStatus.textContent = 'Not Connected';
+        twitchConnectionStatus.classList.remove('connected');
+        connectTwitchBtn.textContent = 'Connect';
+      }
     } catch (error) {
       console.error('Error checking auth status:', error);
-      riotConnectionStatus.textContent = 'Not Connected';
     }
   }
 
@@ -574,5 +485,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     return null;
+  }
+
+  /**
+   * Connect Twitch account
+   */
+  async function connectTwitchAccount() {
+    // Disable button during operation
+    connectTwitchBtn.disabled = true;
+    
+    try {
+      // Check if we need to authenticate or disconnect
+      const isAuthenticated = await TwitchAuth.isAuthenticated();
+      
+      if (isAuthenticated) {
+        // Disconnect flow
+        connectTwitchBtn.textContent = 'Disconnecting...';
+        twitchConnectionStatus.textContent = 'Disconnecting...';
+        
+        // Log out
+        await TwitchAuth.logout();
+        
+        // Update UI
+        twitchConnectionStatus.textContent = 'Not Connected';
+        twitchConnectionStatus.classList.remove('connected');
+        connectTwitchBtn.textContent = 'Connect';
+      } else {
+        // Connect flow
+        connectTwitchBtn.textContent = 'Connecting...';
+        twitchConnectionStatus.textContent = 'Connecting...';
+        twitchConnectionStatus.classList.remove('error');
+        
+        // Start authentication flow
+        const userData = await TwitchAuth.authenticate();
+        
+        // Update UI
+        twitchConnectionStatus.textContent = 'Connected';
+        if (userData && userData.display_name) {
+          twitchConnectionStatus.textContent = `Connected (${userData.display_name})`;
+        }
+        twitchConnectionStatus.classList.add('connected');
+        connectTwitchBtn.textContent = 'Disconnect';
+      }
+    } catch (error) {
+      console.error('Twitch authentication error:', error);
+      
+      // Log detailed error message for debugging
+      const detailedError = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+      console.log('Detailed error:', detailedError);
+      
+      // Show error in UI
+      twitchConnectionStatus.textContent = 'Connection Error';
+      twitchConnectionStatus.classList.add('error');
+      
+      // Handle specific error cases
+      if (detailedError.includes('cancelled by user')) {
+        // User closed the auth window
+        twitchConnectionStatus.textContent = 'Authentication Cancelled';
+      } else if (detailedError.includes('state parameter mismatch')) {
+        // CSRF protection triggered
+        twitchConnectionStatus.textContent = 'Security Verification Failed';
+      }
+    } finally {
+      // Re-enable button
+      connectTwitchBtn.disabled = false;
+      connectTwitchBtn.textContent = 'Connect';
+    }
   }
 }); 

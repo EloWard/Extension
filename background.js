@@ -1,6 +1,7 @@
 // EloWard Background Service Worker
 import './js/config.js';
 import { RiotAuth } from './js/riotAuth.js';
+import { TwitchAuth } from './js/twitchAuth.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
@@ -62,12 +63,16 @@ function handleAuthCallback(params) {
   }, () => {
     console.log(`Stored ${serviceType} auth callback data in chrome.storage.local`);
     
-    // Only initiate token exchange for Riot auth
+    // Process different service types
     if (serviceType === 'riot') {
       initiateTokenExchange(params);
     } else if (serviceType === 'twitch') {
-      // For Twitch auth we might want to do something different
-      console.log('Twitch auth callback received, no token exchange needed in extension');
+      // For Twitch auth we store in the appropriate key
+      chrome.storage.local.set({
+        'twitch_auth_callback': params
+      }, () => {
+        console.log('Twitch auth callback data stored in chrome.storage');
+      });
     }
   });
 }

@@ -235,7 +235,7 @@
         // Save to localStorage as fallback mechanism
         try {
           // Use a specific key for each service type
-          const storageKey = serviceType === 'riot' ? 'eloward_riot_auth_callback_data' : 'eloward_twitch_auth_callback_data';
+          const storageKey = serviceType === 'twitch' ? 'eloward_twitch_auth_callback_data' : 'eloward_riot_auth_callback_data';
           
           localStorage.setItem(storageKey, JSON.stringify({
             type: 'auth_callback',
@@ -246,19 +246,17 @@
           }));
           
           // Also set the original key for backward compatibility
-          if (serviceType === 'riot') {
-            localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
-              type: 'auth_callback',
-              service: 'riot',
-              code: params.code,
-              state: params.state,
-              timestamp: new Date().toISOString()
-            }));
-          }
+          localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
+            type: 'auth_callback',
+            service: serviceType,
+            code: params.code,
+            state: params.state,
+            timestamp: new Date().toISOString()
+          }));
           
-          console.log(`${serviceType} auth data stored in localStorage`);
+          console.log(`Saved ${serviceType} auth callback data to localStorage as fallback`);
         } catch (e) {
-          console.error("Error storing in localStorage:", e);
+          console.warn("Could not save auth data to localStorage:", e);
         }
         
       } else if (params.error) {
