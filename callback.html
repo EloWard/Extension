@@ -203,11 +203,21 @@
       // Check URL path to determine service if not in params
       const path = window.location.pathname;
       if (!params.service) {
-        if (path.includes('/twitch/auth/redirect')) {
+        if (path.includes('/twitch/auth')) {
           serviceType = 'twitch';
-        } else if (path.includes('/riot/auth/redirect')) {
+        } else if (path.includes('/riot/auth')) {
           serviceType = 'riot';
         }
+      }
+
+      console.log(`Detected service type: ${serviceType} from path: ${path}`);
+      
+      // Set service badge early
+      const serviceBadgeElement = document.getElementById('service-badge');
+      if (serviceType === 'twitch') {
+        serviceBadgeElement.innerHTML = '<span class="badge twitch">Twitch Authentication</span>';
+      } else {
+        serviceBadgeElement.innerHTML = '<span class="badge riot">Riot Authentication</span>';
       }
       
       if (params.code && params.state) {
