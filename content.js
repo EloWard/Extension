@@ -168,12 +168,15 @@ function processNewMessage(messageNode) {
   const usernameElement = messageNode.querySelector('.chat-author__display-name');
   if (!usernameElement) return;
   
-  // Get the username
-  const username = usernameElement.textContent.trim();
+  // Get the Twitch username
+  const twitchUsername = usernameElement.textContent.trim();
   
   // Check if we already have rank data for this user in the cache
-  if (cachedUserMap[username.toLowerCase()]) {
-    addBadgeToMessage(usernameElement, cachedUserMap[username.toLowerCase()]);
+  if (cachedUserMap[twitchUsername.toLowerCase()]) {
+    // Only display badge if valid rank data exists (not null or undefined)
+    if (cachedUserMap[twitchUsername.toLowerCase()] !== null) {
+      addBadgeToMessage(usernameElement, cachedUserMap[twitchUsername.toLowerCase()]);
+    }
     return;
   }
   
@@ -182,18 +185,23 @@ function processNewMessage(messageNode) {
     const selectedRegion = data.selectedRegion || 'na1';
     const platformRegion = EloWardConfig.riot.platformRouting[selectedRegion].region;
     
-    // Request rank data from the background script
+    // Request rank data for the Twitch username from the background script
     chrome.runtime.sendMessage({
-      action: 'get_rank_for_user',
-      username: username,
+      action: 'get_rank_for_twitch_user',
+      twitchUsername: twitchUsername,
       platform: platformRegion
     }, (response) => {
       if (response && response.rank) {
-        // Cache the rank data
-        cachedUserMap[username.toLowerCase()] = response.rank;
+        // Cache the rank data (including null values to avoid repeated lookups)
+        cachedUserMap[twitchUsername.toLowerCase()] = response.rank;
         
-        // Add the badge to the message
-        addBadgeToMessage(usernameElement, response.rank);
+        // Only add the badge if valid rank data exists
+        if (response.rank !== null) {
+          addBadgeToMessage(usernameElement, response.rank);
+        }
+      } else {
+        // If no response or no rank data, cache as null to avoid repeated lookups
+        cachedUserMap[twitchUsername.toLowerCase()] = null;
       }
     });
   });
