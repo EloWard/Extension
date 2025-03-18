@@ -1,6 +1,7 @@
 // EloWard Popup Script
 import { EloWardConfig } from './config.js';
 import { RiotAuth } from './riotAuth.js';
+import { TwitchAuth } from './twitchAuth.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM elements
@@ -12,6 +13,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const streamerHeader = document.getElementById('streamer-header');
   const streamerContent = document.getElementById('streamer-content');
   const dropdownArrow = streamerHeader.querySelector('.dropdown-arrow');
+  const connectTwitchBtn = document.getElementById('connect-twitch');
+  const twitchConnectionStatus = document.getElementById('twitch-connection-status');
+  
+  console.log('TwitchAuth module loaded:', typeof TwitchAuth !== 'undefined');
+  console.log('Element check - connect-twitch button exists:', !!connectTwitchBtn);
 
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
@@ -23,6 +29,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
+  
+  // Add event listener for Twitch connect button
+  if (connectTwitchBtn) {
+    console.log('Adding click event listener to Twitch connect button');
+    connectTwitchBtn.addEventListener('click', connectTwitchAccount);
+  } else {
+    console.error('Could not find connect-twitch button');
+  }
   
   // Add toggle functionality for the streamer section
   streamerHeader.addEventListener('click', () => {
@@ -221,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Functions
   async function checkAuthStatus() {
     try {
-      // Check if user is authenticated
+      // Check if user is authenticated with Riot
       const isAuthenticated = await RiotAuth.isAuthenticated();
       
       if (isAuthenticated) {
@@ -258,6 +272,32 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
       }
+      
+      // Check Twitch authentication status
+      try {
+        console.log('Checking Twitch authentication status...');
+        const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
+        console.log('Twitch auth status:', isTwitchAuthenticated);
+        
+        if (isTwitchAuthenticated) {
+          // User is authenticated with Twitch, update UI
+          const displayName = await TwitchAuth.getUserDisplayName();
+          twitchConnectionStatus.textContent = displayName || 'Connected';
+          twitchConnectionStatus.classList.add('connected');
+          connectTwitchBtn.textContent = 'Disconnect';
+        } else {
+          // User is not authenticated with Twitch
+          twitchConnectionStatus.textContent = 'Not Connected';
+          twitchConnectionStatus.classList.remove('connected');
+          connectTwitchBtn.textContent = 'Connect';
+        }
+      } catch (twitchError) {
+        console.error('Error checking Twitch auth status:', twitchError);
+        twitchConnectionStatus.textContent = 'Not Connected';
+        twitchConnectionStatus.classList.remove('connected');
+        connectTwitchBtn.textContent = 'Connect';
+      }
+      
     } catch (error) {
       console.error('Error checking auth status:', error);
       showNotConnectedUI();
@@ -408,6 +448,79 @@ document.addEventListener('DOMContentLoaded', () => {
       rankBadgePreview.style.transform = 'translateY(0)';
     } else {
       rankBadgePreview.style.transform = 'translateY(-3px)';
+    }
+  }
+  
+  // Function to handle Twitch account connection and disconnection
+  async function connectTwitchAccount() {
+    console.log('connectTwitchAccount function called');
+    
+    // Check if TwitchAuth is available
+    if (typeof TwitchAuth === 'undefined') {
+      console.error('TwitchAuth module is not loaded properly');
+      twitchConnectionStatus.textContent = 'Error: Module not loaded';
+      twitchConnectionStatus.classList.add('error');
+      return;
+    }
+    
+    console.log('TwitchAuth object:', Object.keys(TwitchAuth));
+    
+    try {
+      // Check if user is already authenticated
+      const isAuthenticated = await TwitchAuth.isAuthenticated();
+      console.log('Twitch auth status:', isAuthenticated);
+      
+      if (isAuthenticated) {
+        // Disconnect flow
+        twitchConnectionStatus.textContent = 'Disconnecting...';
+        connectTwitchBtn.textContent = 'Disconnecting...';
+        connectTwitchBtn.disabled = true;
+        
+        await TwitchAuth.logout();
+        
+        // Update UI after logout
+        twitchConnectionStatus.textContent = 'Not Connected';
+        connectTwitchBtn.textContent = 'Connect';
+        twitchConnectionStatus.classList.remove('connected');
+      } else {
+        // Connect flow
+        twitchConnectionStatus.textContent = 'Connecting...';
+        connectTwitchBtn.textContent = 'Connecting...';
+        connectTwitchBtn.disabled = true;
+        
+        try {
+          const userData = await TwitchAuth.authenticate();
+          console.log('Twitch authentication successful:', userData);
+          
+          // Update UI with user data
+          if (userData && (userData.display_name || userData.login)) {
+            twitchConnectionStatus.textContent = userData.display_name || userData.login;
+            twitchConnectionStatus.classList.add('connected');
+            connectTwitchBtn.textContent = 'Disconnect';
+          } else {
+            throw new Error('Invalid user data received');
+          }
+        } catch (authError) {
+          console.error('Twitch authentication error:', authError);
+          twitchConnectionStatus.textContent = authError.message || 'Authentication Failed';
+          twitchConnectionStatus.classList.add('error');
+          connectTwitchBtn.textContent = 'Connect';
+          
+          // Reset error after 5 seconds
+          setTimeout(() => {
+            if (twitchConnectionStatus.classList.contains('error')) {
+              twitchConnectionStatus.textContent = 'Not Connected';
+              twitchConnectionStatus.classList.remove('error');
+            }
+          }, 5000);
+        }
+      }
+    } catch (error) {
+      console.error('Error in connectTwitchAccount:', error);
+      twitchConnectionStatus.textContent = error.message || 'Error';
+      twitchConnectionStatus.classList.add('error');
+    } finally {
+      connectTwitchBtn.disabled = false;
     }
   }
 }); 

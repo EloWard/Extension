@@ -972,4 +972,13 @@ export const TwitchAuth = {
 };
 
 // Initialize with default config
-TwitchAuth.init(); 
+TwitchAuth.init();
+
+// Expose TwitchAuth globally for testing
+window.TwitchAuth = TwitchAuth;
+
+// Add a global helper function that can be called from anywhere
+window.runTwitchAuthTest = function() {
+  console.log("Running TwitchAuth test from global function...");
+  TwitchAuth.runTest();
+}; 
