@@ -508,19 +508,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async response
   }
   
-  if (message.action === 'get_rank_for_twitch_user') {
-    // New optimized method that uses Twitch username directly
-    fetchRankByTwitchUsername(message.twitchUsername, message.platform, message.forceRefresh || false)
-      .then(rankData => {
-        sendResponse({ rank: rankData });
-      })
-      .catch(error => {
-        console.error('Error fetching rank by Twitch username:', error);
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
-  
   // If no handlers matched, send an error response
   sendResponse({ error: 'Unknown action', action: message.action });
   return true;
@@ -648,7 +635,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'check_streamer_subscription') {
     // Check if this streamer has an active subscription
     const isSubscribed = checkStreamerSubscription(message.streamer);
-    console.log(`Checked subscription for ${message.streamer}: ${isSubscribed}`);
     sendResponse({ subscribed: isSubscribed });
   }
   
@@ -748,31 +734,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 /**
  * Checks if a streamer has an active subscription
  * @param {string} streamerName - The streamer's Twitch username
- * @returns {boolean} - Whether the streamer has an active subscription
+ * @returns {Promise<boolean>} - Resolves with subscription status
  */
 function checkStreamerSubscription(streamerName) {
-  if (!streamerName) return false;
-  
-  // Normalize the streamer name for case-insensitive comparison
-  const normalizedName = streamerName.toLowerCase();
-  
-  // First check if it's in our mock list (case-insensitive)
-  const inMockList = ACTIVE_STREAMERS.some(name => name.toLowerCase() === normalizedName);
-  
-  if (inMockList) {
-    console.log(`${streamerName} is an active streamer (from mock list)`);
-    return true;
-  }
-  
-  // For development: Add extra active streamers for testing
-  const devStreamersList = ['yomata1', 'eloward', 'test'];
-  if (devStreamersList.includes(normalizedName)) {
-    console.log(`${streamerName} is in dev testing streamers list`);
-    return true;
-  }
-  
-  console.log(`${streamerName} is not an active streamer`);
-  return false;
+  return new Promise((resolve, reject) => {
+    // For MVP, check against mock list
+    // In production, this would call the backend API
+    if (ACTIVE_STREAMERS.includes(streamerName.toLowerCase())) {
+      resolve(true);
+      return;
+    }
+    
+    // Call backend API to check subscription
+    // For now, just use the health endpoint since the worker doesn't have a subscription endpoint yet
+    fetch(`${API_BASE_URL}/health`)
+      .then(response => {
+        if (!response.ok) {
+          // If API fails, fall back to mock list
+          return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
+        }
+        return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
+      })
+      .then(data => {
+        resolve(data.subscribed);
+      })
+      .catch(error => {
+        console.error('Error checking subscription:', error);
+        // If API fails, fall back to mock list
+        resolve(ACTIVE_STREAMERS.includes(streamerName.toLowerCase()));
+      });
+  });
 }
 
 /**
@@ -1312,11 +1303,13 @@ self.eloward = {
 function getUserLinkedAccount(twitchUsername) {
   return new Promise((resolve) => {
     if (!twitchUsername) {
+      console.log('EloWard: Empty username passed to getUserLinkedAccount');
       resolve(null);
       return;
     }
     
     const normalizedTwitchUsername = twitchUsername.toLowerCase();
+    console.log(`EloWard: Looking up linked account for Twitch user: ${twitchUsername} (${normalizedTwitchUsername})`);
     
     // Check our database of linked accounts
     chrome.storage.local.get('linkedAccounts', data => {
@@ -1324,7 +1317,7 @@ function getUserLinkedAccount(twitchUsername) {
       
       // First, try direct lookup by Twitch username (most efficient path)
       if (linkedAccounts[normalizedTwitchUsername]) {
-        console.log(`Found linked account for Twitch user ${twitchUsername}`);
+        console.log(`EloWard: Found linked account for Twitch user ${twitchUsername}`);
         resolve(linkedAccounts[normalizedTwitchUsername]);
         return;
       }
@@ -1340,17 +1333,37 @@ function getUserLinkedAccount(twitchUsername) {
             linkedAccounts[normalizedTwitchUsername] = {
               ...currentUserData.riotAccountInfo,
               twitchUsername: currentUserData.twitchUsername,
-              linkedAt: Date.now()
+              normalizedTwitchUsername: normalizedTwitchUsername,
+              linkedAt: Date.now(),
+              lastUpdated: Date.now()
             };
             
-            chrome.storage.local.set({ linkedAccounts });
+            chrome.storage.local.set({ linkedAccounts }, () => {
+              console.log(`EloWard: Added current user ${twitchUsername} to linked accounts cache`);
+            });
           }
           
-          console.log(`Current user is viewing their own account: ${twitchUsername}`);
+          console.log(`EloWard: Current user is viewing their own account: ${twitchUsername}`);
           resolve(currentUserData.riotAccountInfo);
         } else {
-          // No linked account found
-          console.log(`No linked account found for Twitch user ${twitchUsername}`);
+          // No case-sensitive match, try a case-insensitive scan of all accounts
+          const keys = Object.keys(linkedAccounts);
+          for (const key of keys) {
+            const account = linkedAccounts[key];
+            // Check all possible variations of the username
+            if (account.twitchUsername && 
+                (account.twitchUsername.toLowerCase() === normalizedTwitchUsername ||
+                 (account.normalizedTwitchUsername && 
+                  account.normalizedTwitchUsername === normalizedTwitchUsername))) {
+              
+              console.log(`EloWard: Found linked account via case-insensitive search: ${account.twitchUsername}`);
+              resolve(account);
+              return;
+            }
+          }
+          
+          // No linked account found after trying all methods
+          console.log(`EloWard: No linked account found for Twitch user ${twitchUsername}`);
           resolve(null);
         }
       });
@@ -1359,137 +1372,27 @@ function getUserLinkedAccount(twitchUsername) {
 }
 
 /**
- * Fetch rank data using Twitch username directly
- * @param {string} twitchUsername - The Twitch username
- * @param {string} platform - The platform code (e.g., 'na1')
- * @param {boolean} forceRefresh - Whether to force refresh rank data
- * @returns {Promise} - Resolves with the rank data or null if not found
- */
-function fetchRankByTwitchUsername(twitchUsername, platform, forceRefresh = false) {
-  return new Promise((resolve, reject) => {
-    console.log(`Fetching rank for Twitch user: ${twitchUsername}, platform: ${platform}, forceRefresh: ${forceRefresh}`);
-    
-    // Look up the linked account by Twitch username
-    getUserLinkedAccount(twitchUsername)
-      .then(linkedAccount => {
-        if (linkedAccount) {
-          console.log(`Found linked account for ${twitchUsername}:`, linkedAccount);
-          
-          // Get real rank data
-          getRankForLinkedAccount(linkedAccount, platform, forceRefresh)
-            .then(rankData => {
-              console.log(`Got rank data for ${twitchUsername}:`, rankData);
-              resolve(rankData);
-            })
-            .catch(error => {
-              console.error(`Error getting rank for linked account ${twitchUsername}:`, error);
-              resolve(null);
-            });
-        } else {
-          console.log(`No linked account found for Twitch user ${twitchUsername}`);
-          
-          // If this is a special test username, create a mock account for demonstration
-          if (twitchUsername.toLowerCase() === 'yomata1') {
-            console.log('Creating test rank data for Yomata1');
-            
-            // Create a gold rank for Yomata1
-            const rankData = {
-              tier: 'Gold',
-              division: 'II',
-              leaguePoints: 45,
-              wins: 120,
-              losses: 80
-            };
-            
-            // Store this in the linked accounts for future use
-            storeTestAccount(twitchUsername, rankData);
-            
-            resolve(rankData);
-          } else {
-            resolve(null);
-          }
-        }
-      });
-  });
-}
-
-/**
- * Store a test account in the linked accounts storage
- * @param {string} twitchUsername - The Twitch username
- * @param {object} rankData - The rank data to store
- */
-function storeTestAccount(twitchUsername, rankData) {
-  chrome.storage.local.get('linkedAccounts', (data) => {
-    const linkedAccounts = data.linkedAccounts || {};
-    
-    const normalizedUsername = twitchUsername.toLowerCase();
-    
-    // Create a mock linked account
-    linkedAccounts[normalizedUsername] = {
-      twitchUsername: twitchUsername,
-      normalizedTwitchUsername: normalizedUsername,
-      gameName: twitchUsername,
-      tagLine: 'NA1',
-      puuid: 'test-puuid-' + Date.now(),
-      summonerId: 'test-summoner-id-' + Date.now(),
-      rankInfo: rankData,
-      rankUpdatedAt: Date.now(),
-      linkedAt: Date.now(),
-      lastUpdated: Date.now()
-    };
-    
-    // Store in chrome storage
-    chrome.storage.local.set({ linkedAccounts }, () => {
-      console.log(`Stored test account for ${twitchUsername}`);
-    });
-  });
-}
-
-/**
  * Get rank data for a linked account
  * @param {Object} linkedAccount - The linked account info
  * @param {string} platform - The platform code
- * @param {boolean} forceRefresh - Whether to force refresh the data
  * @returns {Promise} - Resolves with the rank data
  */
-function getRankForLinkedAccount(linkedAccount, platform, forceRefresh = false) {
+function getRankForLinkedAccount(linkedAccount, platform) {
   return new Promise((resolve, reject) => {
     // Check if we need to fetch fresh data or if we have cached data
-    if (!forceRefresh && linkedAccount.rankInfo && linkedAccount.rankUpdatedAt && 
+    if (linkedAccount.rankInfo && linkedAccount.rankUpdatedAt && 
         (Date.now() - linkedAccount.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
       // Use cached rank data
-      console.log(`Using cached rank data for ${linkedAccount.twitchUsername}`);
       resolve(linkedAccount.rankInfo);
     } else {
-      console.log(`Fetching fresh rank data for ${linkedAccount.twitchUsername}`);
-      
-      // If this is a test account without a proper summonerId, return the stored rank
-      if (linkedAccount.summonerId && linkedAccount.summonerId.startsWith('test-')) {
-        console.log(`Returning test rank data for ${linkedAccount.twitchUsername}`);
-        resolve(linkedAccount.rankInfo);
-        return;
-      }
-      
       // Fetch fresh rank data
-      chrome.storage.local.get(['riotAuthToken', 'eloward_riot_access_token', 'riotAuth'], data => {
-        // Try various token storage locations
-        const token = data.riotAuthToken || 
-                     data.eloward_riot_access_token || 
-                     (data.riotAuth ? data.riotAuth.access_token : null);
-        
-        if (!token) {
-          console.warn(`No Riot auth token available for ${linkedAccount.twitchUsername}`);
-          
-          // If we have stored rank data, use it as fallback
-          if (linkedAccount.rankInfo) {
-            resolve(linkedAccount.rankInfo);
-          } else {
-            reject(new Error('No Riot auth token available'));
-          }
+      chrome.storage.local.get('riotAuthToken', data => {
+        if (!data.riotAuthToken) {
+          reject(new Error('No Riot auth token available'));
           return;
         }
         
-        getRankBySummonerId(token, linkedAccount.summonerId, platform)
+        getRankBySummonerId(data.riotAuthToken, linkedAccount.summonerId, platform)
           .then(rankData => {
             // Update cache
             linkedAccount.rankInfo = rankData;
@@ -1504,16 +1407,7 @@ function getRankForLinkedAccount(linkedAccount, platform, forceRefresh = false) 
             
             resolve(rankData);
           })
-          .catch(error => {
-            console.error(`Error fetching rank data for ${linkedAccount.twitchUsername}:`, error);
-            
-            // If we have stored rank data, use it as fallback
-            if (linkedAccount.rankInfo) {
-              resolve(linkedAccount.rankInfo);
-            } else {
-              reject(error);
-            }
-          });
+          .catch(reject);
       });
     }
   });
@@ -1728,9 +1622,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background script received message:', request);
   
   if (request.action === 'check_streamer_subscription') {
-    // Check if this streamer has an active subscription
     const isSubscribed = checkStreamerSubscription(request.streamer);
-    console.log(`Checked subscription for ${request.streamer}: ${isSubscribed}`);
     sendResponse({ subscribed: isSubscribed });
     return true;
   }
@@ -1750,7 +1642,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   if (request.action === 'get_rank_for_twitch_user') {
     // New optimized method that uses Twitch username directly
-    fetchRankByTwitchUsername(request.twitchUsername, request.platform, request.forceRefresh || false)
+    fetchRankByTwitchUsername(request.twitchUsername, request.platform)
       .then(rankData => {
         sendResponse({ rank: rankData });
       })
@@ -1761,8 +1653,52 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
+  // Add message handler for refresh_linked_accounts
+  if (request.action === 'refresh_linked_accounts') {
+    console.log('EloWard: Received request to refresh linked accounts');
+    preloadLinkedAccounts();
+    sendResponse({ success: true });
+    return true;
+  }
+  
   // ... existing code with other message handlers ...
 });
+
+/**
+ * Fetch rank data using Twitch username directly
+ * @param {string} twitchUsername - The Twitch username
+ * @param {string} platform - The platform code (e.g., 'na1')
+ * @returns {Promise} - Resolves with the rank data or null if not found
+ */
+function fetchRankByTwitchUsername(twitchUsername, platform) {
+  return new Promise((resolve, reject) => {
+    console.log(`EloWard: Fetching rank for Twitch user: ${twitchUsername}`);
+    
+    // Look up the linked account by Twitch username
+    getUserLinkedAccount(twitchUsername)
+      .then(linkedAccount => {
+        if (linkedAccount) {
+          console.log(`EloWard: Found linked account for ${twitchUsername}, getting rank data`);
+          
+          // We have a linked account, get real rank data
+          getRankForLinkedAccount(linkedAccount, platform)
+            .then(rankData => {
+              console.log(`EloWard: Got rank data for ${twitchUsername}:`, rankData);
+              resolve(rankData);
+            })
+            .catch(error => {
+              console.error(`EloWard: Error getting rank for linked account ${twitchUsername}:`, error);
+              // If there's an error getting rank data, return null instead of mock data
+              resolve(null);
+            });
+        } else {
+          // No linked account found
+          console.log(`EloWard: No linked account found for Twitch user ${twitchUsername}, returning null`);
+          resolve(null);
+        }
+      });
+  });
+}
 
 function cleanupAuthWindows() {
   // Implementation of cleanupAuthWindows function
@@ -1770,4 +1706,69 @@ function cleanupAuthWindows() {
 
 function trackAuthWindow(createdWindow) {
   // Implementation of trackAuthWindow function
-} 
+}
+
+// Add a function to preload and sync all linked accounts
+function preloadLinkedAccounts() {
+  console.log('EloWard: Preloading linked accounts');
+  
+  // First, ensure the linkedAccounts object exists in storage
+  chrome.storage.local.get('linkedAccounts', (data) => {
+    const linkedAccounts = data.linkedAccounts || {};
+    
+    // Check if we have the current user's account info
+    chrome.storage.local.get(['twitchUsername', 'riotAccountInfo'], (userData) => {
+      let updated = false;
+      
+      // If current user has linked their account, make sure it's in the linkedAccounts
+      if (userData.twitchUsername && userData.riotAccountInfo) {
+        const normalizedUsername = userData.twitchUsername.toLowerCase();
+        
+        // Update or add current user's linked account
+        if (!linkedAccounts[normalizedUsername] || 
+            !linkedAccounts[normalizedUsername].summonerId) {
+          
+          console.log(`EloWard: Adding current user's account (${userData.twitchUsername}) to linked accounts`);
+          
+          linkedAccounts[normalizedUsername] = {
+            ...userData.riotAccountInfo,
+            twitchUsername: userData.twitchUsername,
+            normalizedTwitchUsername: normalizedUsername,
+            linkedAt: Date.now(),
+            lastUpdated: Date.now()
+          };
+          
+          updated = true;
+        }
+      }
+      
+      // Store the updated linkedAccounts if changes were made
+      if (updated) {
+        chrome.storage.local.set({ linkedAccounts }, () => {
+          console.log('EloWard: Updated linked accounts in storage');
+        });
+      }
+      
+      // Log the available linked accounts for debugging
+      const accountCount = Object.keys(linkedAccounts).length;
+      console.log(`EloWard: ${accountCount} linked accounts available:`);
+      Object.keys(linkedAccounts).forEach(username => {
+        const account = linkedAccounts[username];
+        console.log(`- ${username}: ${account.gameName || 'Unknown'} (${account.summonerId ? 'has summonerId' : 'missing summonerId'})`);
+      });
+    });
+  });
+}
+
+// Call preload on extension startup
+preloadLinkedAccounts();
+
+// Also call it whenever user data changes
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local') {
+    if (changes.riotAccountInfo || changes.twitchUsername) {
+      console.log('EloWard: User account data changed, updating linked accounts');
+      preloadLinkedAccounts();
+    }
+  }
+}); 
