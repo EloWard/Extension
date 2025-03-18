@@ -29,14 +29,6 @@
         </div>
         <button id="connect-riot" class="btn">Connect</button>
       </div>
-      
-      <div class="connection-item">
-        <div class="connection-info">
-          <span class="connection-label">Twitch</span>
-          <span id="twitch-connection-status" class="connection-status">Not Connected</span>
-        </div>
-        <button id="connect-twitch" class="btn">Connect</button>
-      </div>
     </div>
     
     <div class="card">
@@ -88,53 +80,8 @@
     
     <footer>
       <p>EloWard v0.1.0</p>
-      <div id="debug-section" style="font-size: 10px; margin-top: 10px; display: none;">
-        <button id="debug-button" style="font-size: 10px; padding: 2px 5px; margin-bottom: 5px;">Show Debug Info</button>
-        <div id="debug-info" style="display: none; color: #888; text-align: left; overflow-wrap: break-word;"></div>
-      </div>
     </footer>
   </div>
-
-  <script>
-    // Add debug functionality
-    document.addEventListener('DOMContentLoaded', function() {
-      const debugButton = document.getElementById('debug-button');
-      const debugInfo = document.getElementById('debug-info');
-      const debugSection = document.getElementById('debug-section');
-      
-      // Show debug section if you click 5 times on the version
-      let versionClickCount = 0;
-      document.querySelector('footer p').addEventListener('click', function() {
-        versionClickCount++;
-        if (versionClickCount >= 5) {
-          debugSection.style.display = 'block';
-          versionClickCount = 0;
-        }
-      });
-      
-      // Toggle debug info when button is clicked
-      debugButton.addEventListener('click', function() {
-        if (debugInfo.style.display === 'none') {
-          // Show debug info
-          debugInfo.style.display = 'block';
-          debugButton.textContent = 'Hide Debug Info';
-          
-          // Get client IDs and other debug info
-          const debugText = `
-            Twitch Client ID: 95gj4vbntft75cxm53zmgv89ncc68j
-            Redirect URI: https://www.eloward.xyz/auth/redirect?service=twitch
-            Extension ID: ${chrome.runtime.id}
-            Browser: ${navigator.userAgent}
-          `;
-          
-          debugInfo.textContent = debugText;
-        } else {
-          debugInfo.style.display = 'none';
-          debugButton.textContent = 'Show Debug Info';
-        }
-      });
-    });
-  </script>
 
   <script type="module" src="js/popup.js"></script>
 </body>

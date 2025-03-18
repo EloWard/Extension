@@ -44,9 +44,6 @@ const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/auth/redirect?service=rio
 /* Track any open auth windows */
 let authWindows = {};
 
-/* Database of linked accounts (Twitch username -> Riot account) */
-let linkedAccountsCache = {};
-
 /* Handle auth callbacks */
 function handleAuthCallback(params) {
   console.log('Handling auth callback in background script', params);
@@ -69,12 +66,8 @@ function handleAuthCallback(params) {
     if (serviceType === 'riot') {
       initiateTokenExchange(params);
     } else if (serviceType === 'twitch') {
-      // For Twitch auth we don't need to exchange tokens in the background script
-      // The popup will handle this
-      console.log('Twitch auth callback received, handled by popup');
-      
-      // Update linkedAccountsCache after successful Twitch auth
-      refreshLinkedAccounts();
+      // For Twitch auth we might want to do something different
+      console.log('Twitch auth callback received, no token exchange needed in extension');
     }
   });
 }
@@ -400,42 +393,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async response
   }
   
-  if (message.action === 'get_rank_for_twitch_user') {
-    getRankForTwitchUsername(message.username)
-      .then(rankData => {
-        sendResponse({ success: true, rankData });
-      })
-      .catch(error => {
-        console.error('Error getting rank for Twitch user:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep the message channel open for async response
-  }
-  
-  if (message.action === 'refresh_linked_accounts') {
-    refreshLinkedAccounts()
-      .then(() => {
-        sendResponse({ success: true, count: Object.keys(linkedAccountsCache).length });
-      })
-      .catch(error => {
-        console.error('Error refreshing linked accounts:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep the message channel open for async response
-  }
-  
-  if (message.action === 'link_accounts') {
-    linkTwitchToRiotAccount(message.twitchUsername, message.riotId, message.puuid)
-      .then(result => {
-        sendResponse({ success: true, result });
-      })
-      .catch(error => {
-        console.error('Error linking accounts:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep the message channel open for async response
-  }
-  
   // If no handlers matched, send an error response
   sendResponse({ error: 'Unknown action', action: message.action });
   return true;
@@ -477,8 +434,7 @@ chrome.runtime.onInstalled.addListener((details) => {
     activeStreamers: ACTIVE_STREAMERS,
     cachedRanks: {},
     lastRankUpdate: 0,
-    selectedRegion: 'na1', // Default region
-    linked_accounts: {} // Initialize the linked accounts
+    selectedRegion: 'na1' // Default region
   });
   
   // Set icon badge to show it's active
@@ -499,9 +455,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   
   // Load any saved configuration
   loadConfiguration();
-  
-  // Initialize linked accounts cache
-  refreshLinkedAccounts();
 });
 
 // Function to clear all stored data
@@ -1384,174 +1337,4 @@ function syncUserRanks() {
 }
 
 // Set up periodic rank syncing
-setInterval(syncUserRanks, BADGE_REFRESH_INTERVAL);
-
-/**
- * Get rank for a Twitch username - this is the main function that's 
- * called from content script when displaying badges
- */
-async function getRankForTwitchUsername(twitchUsername) {
-  console.log(`Getting rank for Twitch username: ${twitchUsername}`);
-  try {
-    // First check if the current user's Twitch username matches
-    const data = await new Promise(resolve => {
-      chrome.storage.local.get(['twitch_username', 'riotAccountInfo', 'riotSummonerInfo'], resolve);
-    });
-    
-    // If this is the current user's Twitch account and they have linked their Riot account
-    if (data.twitch_username && 
-        data.riotAccountInfo && 
-        data.riotSummonerInfo && 
-        data.twitch_username.toLowerCase() === twitchUsername.toLowerCase()) {
-      
-      console.log('Found rank for current user');
-      return {
-        source: 'self',
-        riotId: `${data.riotAccountInfo.gameName}#${data.riotAccountInfo.tagLine}`,
-        rankInfo: data.riotSummonerInfo.rankInfo || { tier: 'Unranked' }
-      };
-    }
-    
-    // Next, check our cache of linked accounts
-    if (linkedAccountsCache[twitchUsername.toLowerCase()]) {
-      const linkedAccount = linkedAccountsCache[twitchUsername.toLowerCase()];
-      console.log(`Found linked account for ${twitchUsername}: ${linkedAccount.riotId}`);
-      
-      return {
-        source: 'linked',
-        riotId: linkedAccount.riotId,
-        rankInfo: linkedAccount.rankInfo
-      };
-    }
-    
-    // If we get here, we need to check our database or API
-    // For MVP, we'll use mock data since we don't have a real database yet
-    return await getMockRankData(twitchUsername);
-  } catch (error) {
-    console.error(`Error getting rank for ${twitchUsername}:`, error);
-    return {
-      source: 'error',
-      error: error.message,
-      rankInfo: { tier: 'Unranked' }
-    };
-  }
-}
-
-/**
- * Refresh the cache of linked accounts from storage
- */
-async function refreshLinkedAccounts() {
-  try {
-    const data = await new Promise(resolve => {
-      chrome.storage.local.get(['linked_accounts'], resolve);
-    });
-    
-    if (data.linked_accounts) {
-      linkedAccountsCache = data.linked_accounts;
-      console.log(`Loaded ${Object.keys(linkedAccountsCache).length} linked accounts from storage`);
-    } else {
-      linkedAccountsCache = {};
-      console.log('No linked accounts found in storage');
-    }
-    
-    // Also check if the current user has linked accounts
-    const userData = await new Promise(resolve => {
-      chrome.storage.local.get(['twitch_username', 'riotAccountInfo'], resolve);
-    });
-    
-    if (userData.twitch_username && userData.riotAccountInfo) {
-      // Add the current user's linked account to the cache
-      linkedAccountsCache[userData.twitch_username.toLowerCase()] = {
-        twitchUsername: userData.twitch_username,
-        riotId: `${userData.riotAccountInfo.gameName}#${userData.riotAccountInfo.tagLine}`,
-        puuid: userData.riotAccountInfo.puuid,
-        linkedAt: Date.now()
-      };
-      
-      // Save back to storage
-      chrome.storage.local.set({
-        'linked_accounts': linkedAccountsCache
-      });
-      
-      console.log(`Added current user's linked account to cache: ${userData.twitch_username} -> ${userData.riotAccountInfo.gameName}#${userData.riotAccountInfo.tagLine}`);
-    }
-  } catch (error) {
-    console.error('Error refreshing linked accounts:', error);
-  }
-}
-
-/**
- * Get mock rank data for a Twitch username (temporary until we have a real database)
- */
-async function getMockRankData(twitchUsername) {
-  // Generate a hash from the username
-  const hash = Array.from(twitchUsername).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
-  // Use the hash to deterministically generate mock data
-  const tiers = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Grandmaster', 'Challenger'];
-  const divisions = ['IV', 'III', 'II', 'I'];
-  
-  // Determine tier based on hash
-  let tierIndex = hash % tiers.length;
-  
-  // Determine division for tiers that have divisions
-  let division = null;
-  if (tierIndex < 6) { // Iron through Diamond have divisions
-    const divisionIndex = Math.floor((hash / 10) % 4);
-    division = divisions[divisionIndex];
-  }
-  
-  // Determine LP
-  const lp = hash % 100;
-  
-  // Create mock Riot ID
-  const mockRiotId = `${twitchUsername}#${(hash % 9000) + 1000}`;
-  
-  // Create rank data object
-  return {
-    source: 'mock',
-    riotId: mockRiotId,
-    rankInfo: {
-      tier: tiers[tierIndex],
-      division: division,
-      leaguePoints: lp,
-      wins: 100 + (hash % 200),
-      losses: 50 + (hash % 150)
-    }
-  };
-}
-
-/**
- * Link a Twitch username to a Riot account
- */
-async function linkTwitchToRiotAccount(twitchUsername, riotId, puuid) {
-  try {
-    if (!twitchUsername || !riotId) {
-      throw new Error('Twitch username and Riot ID are required');
-    }
-    
-    // First, refresh our cache
-    await refreshLinkedAccounts();
-    
-    // Add or update the linked account
-    linkedAccountsCache[twitchUsername.toLowerCase()] = {
-      twitchUsername,
-      riotId,
-      puuid,
-      linkedAt: Date.now()
-    };
-    
-    // Save to storage
-    await new Promise(resolve => {
-      chrome.storage.local.set({
-        'linked_accounts': linkedAccountsCache
-      }, resolve);
-    });
-    
-    console.log(`Linked Twitch user ${twitchUsername} to Riot ID ${riotId}`);
-    return { twitchUsername, riotId };
-  } catch (error) {
-    console.error('Error linking accounts:', error);
-    throw error;
-  }
-} 
+setInterval(syncUserRanks, BADGE_REFRESH_INTERVAL); 

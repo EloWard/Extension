@@ -45,9 +45,8 @@
     }
     .countdown {
       margin-top: 16px;
-      font-size: 18px;
-      color: #D9A336;
-      font-weight: bold;
+      font-size: 14px;
+      color: #999;
     }
     .badge {
       display: inline-block;
@@ -126,38 +125,8 @@
             }, '*');
             showSuccess(message.service || 'riot');
           } else {
-            console.log("No window.opener available, trying localStorage");
-            
-            // Store in localStorage as last resort
-            try {
-              // Use a specific key for each service type
-              const storageKey = message.service === 'twitch' ? 
-                'eloward_twitch_auth_callback_data' : 
-                'eloward_riot_auth_callback_data';
-              
-              localStorage.setItem(storageKey, JSON.stringify({
-                type: 'auth_callback',
-                service: message.service || 'riot',
-                code: message.code,
-                state: message.state,
-                timestamp: new Date().toISOString()
-              }));
-              
-              // Also set original key for backward compatibility
-              localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
-                type: 'auth_callback',
-                service: message.service || 'riot',
-                code: message.code,
-                state: message.state,
-                timestamp: new Date().toISOString()
-              }));
-              
-              console.log("Stored auth data in localStorage, showing success");
-              showSuccess(message.service || 'riot');
-            } catch (e) {
-              console.error("Failed to store in localStorage:", e);
-              showError("Unable to communicate with the extension. Please try again.");
-            }
+            console.log("No window.opener available");
+            showError("Unable to communicate with the extension. Please try again.");
           }
         } catch (e2) {
           console.error("Failed to send message via window.opener:", e2);
@@ -179,7 +148,6 @@
       document.getElementById('message').innerHTML = `
         <p class="success">Authentication successful!</p>
         <p>You have successfully authenticated with ${serviceType === 'twitch' ? 'Twitch' : 'Riot Games'}.</p>
-        <p>Your account has been linked to the EloWard extension.</p>
         <p>This window will close automatically in a few seconds.</p>
       `;
       startCountdown();
@@ -273,9 +241,6 @@
           console.error("Error storing in localStorage:", e);
         }
         
-        // Show success immediately - we'll assume it worked for a better UX
-        // even if the message passing fails
-        showSuccess(serviceType);
       } else if (params.error) {
         // We have an error
         console.error("Auth error:", params.error);

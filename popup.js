@@ -1,10 +1,6 @@
 // EloWard Popup Script
 import { RiotAuth } from './js/riotAuth.js';
 
-// Twitch API constants
-const TWITCH_CLIENT_ID = '95gj4vbntft75cxm53zmgv89ncc68j';
-const TWITCH_REDIRECT_URI = 'https://www.eloward.xyz/auth/redirect?service=twitch';
-
 document.addEventListener('DOMContentLoaded', () => {
   // DOM elements
   const connectRiotBtn = document.getElementById('connect-riot');
@@ -13,26 +9,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
   const refreshRankBtn = document.getElementById('refresh-rank');
-  
-  // Add Twitch DOM elements
-  const connectTwitchBtn = document.getElementById('connect-twitch');
-  const twitchConnectionStatus = document.getElementById('twitch-connection-status');
-  
+
   // Flag to prevent recursive message handling
   let processingMessage = false;
 
   // Check authentication status on load
   checkAuthStatus();
-  checkTwitchAuthStatus();
 
   // Set up event listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
-  connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   regionSelect.addEventListener('change', handleRegionChange);
   refreshRankBtn.addEventListener('click', refreshRank);
-  
-  // Also add a debug console.log
-  console.log('Event listeners set up. Twitch button:', connectTwitchBtn);
   
   // Listen for messages from the auth window or background script
   window.addEventListener('message', (event) => {
@@ -49,31 +36,21 @@ document.addEventListener('DOMContentLoaded', () => {
       
       console.log('Received auth callback via window message:', {
         hasCode: !!event.data.code,
-        hasState: !!event.data.state,
-        service: event.data.service
+        hasState: !!event.data.state
       });
       
-      // Determine if this is a Twitch or Riot callback
-      if (event.data.service === 'twitch') {
-        // Process Twitch auth callback
-        processTwitchAuthCallback(event.data)
+      // Store in chrome.storage for retrieval by RiotAuth
+      chrome.storage.local.set({
+        'auth_callback': event.data,
+        'eloward_auth_callback': event.data
+      }, () => {
+        // Process the auth callback now
+        processAuthCallback(event.data)
           .finally(() => {
+            // Reset flag after processing is complete
             processingMessage = false;
           });
-      } else {
-        // Store in chrome.storage for retrieval by RiotAuth
-        chrome.storage.local.set({
-          'auth_callback': event.data,
-          'eloward_auth_callback': event.data
-        }, () => {
-          // Process the auth callback now
-          processAuthCallback(event.data)
-            .finally(() => {
-              // Reset flag after processing is complete
-              processingMessage = false;
-            });
-        });
-      }
+      });
     }
   });
   
@@ -82,13 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Popup received message from runtime:', message);
     
     if (message.type === 'auth_callback' && message.params) {
-      // Check if this is a Twitch or Riot callback
-      if (message.params.service === 'twitch') {
-        processTwitchAuthCallback(message.params);
-      } else {
-        // Handle auth callback from background script
-        processAuthCallback(message.params);
-      }
+      // Handle auth callback from background script
+      processAuthCallback(message.params);
       sendResponse({ success: true });
     }
     
@@ -250,243 +222,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Clean up auth callback processing flag
       chrome.storage.local.remove('authCallbackProcessed');
-    }
-  }
-
-  /**
-   * Process authentication callback from Twitch
-   * @param {Object} authData - The authentication data containing Twitch code
-   * @returns {Promise<void>}
-   */
-  async function processTwitchAuthCallback(authData) {
-    try {
-      console.log('Processing Twitch auth callback:', {
-        hasCode: !!authData.code,
-        hasState: !!authData.state
-      });
-      
-      // Check if we already have Twitch auth data in storage
-      const twitchData = await new Promise(resolve => {
-        chrome.storage.local.get('twitch_auth', (result) => {
-          resolve(result.twitch_auth);
-        });
-      });
-      
-      if (twitchData) {
-        console.log('Existing Twitch auth found, refreshing data');
-      }
-      
-      // Exchange the code for a token using the Cloudflare worker
-      const apiUrl = 'https://eloward-twitchrso.unleashai-inquiries.workers.dev';
-      
-      const response = await fetch(`${apiUrl}/auth/twitch/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          code: authData.code,
-          redirect_uri: TWITCH_REDIRECT_URI
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error_description || errorData.error || 'Failed to exchange code for token');
-      }
-      
-      const tokenData = await response.json();
-      console.log('Received Twitch token data:', {
-        hasAccessToken: !!tokenData.access_token,
-        scope: tokenData.scope
-      });
-      
-      // Now get the user's information
-      const userResponse = await fetch(`${apiUrl}/auth/twitch/user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ access_token: tokenData.access_token }),
-      });
-      
-      if (!userResponse.ok) {
-        const errorData = await userResponse.json();
-        throw new Error(errorData.error || 'Failed to get user information');
-      }
-      
-      const userData = await userResponse.json();
-      console.log('Received Twitch user data:', {
-        userId: userData.data[0]?.id,
-        login: userData.data[0]?.login
-      });
-      
-      // Store the Twitch auth data
-      const twitchAuth = {
-        access_token: tokenData.access_token,
-        refresh_token: tokenData.refresh_token,
-        expires_in: tokenData.expires_in,
-        scope: tokenData.scope,
-        user: userData.data[0],
-        timestamp: Date.now()
-      };
-      
-      await new Promise(resolve => {
-        chrome.storage.local.set({
-          'twitch_auth': twitchAuth,
-          'twitch_username': userData.data[0].login
-        }, resolve);
-      });
-      
-      // Update the UI to show connected state
-      updateTwitchUI(twitchAuth);
-      
-    } catch (error) {
-      console.error('Twitch auth error:', error);
-      showTwitchAuthError(error.message);
-    }
-  }
-  
-  /**
-   * Update the UI with Twitch user information
-   * @param {Object} twitchAuth - The Twitch auth data
-   */
-  function updateTwitchUI(twitchAuth) {
-    if (twitchAuth && twitchAuth.user) {
-      // Update connection status
-      twitchConnectionStatus.textContent = 'Connected';
-      twitchConnectionStatus.classList.add('connected');
-      
-      // Update button
-      connectTwitchBtn.textContent = 'Disconnect';
-      connectTwitchBtn.classList.add('disconnect');
-      connectTwitchBtn.removeEventListener('click', connectTwitchAccount);
-      connectTwitchBtn.addEventListener('click', disconnectTwitchAccount);
-      
-      console.log('Updated Twitch UI with user data:', twitchAuth.user.login);
-    } else {
-      // Reset UI to disconnected state
-      twitchConnectionStatus.textContent = 'Not Connected';
-      twitchConnectionStatus.classList.remove('connected');
-      
-      connectTwitchBtn.textContent = 'Connect';
-      connectTwitchBtn.classList.remove('disconnect');
-      connectTwitchBtn.removeEventListener('click', disconnectTwitchAccount);
-      connectTwitchBtn.addEventListener('click', connectTwitchAccount);
-    }
-  }
-  
-  /**
-   * Show Twitch authentication error
-   * @param {string} message - The error message
-   */
-  function showTwitchAuthError(message) {
-    twitchConnectionStatus.textContent = 'Connection Error';
-    twitchConnectionStatus.classList.add('error');
-    console.error('Twitch auth error:', message);
-    
-    // Reset after 3 seconds
-    setTimeout(() => {
-      twitchConnectionStatus.textContent = 'Not Connected';
-      twitchConnectionStatus.classList.remove('error');
-    }, 3000);
-  }
-  
-  /**
-   * Check the Twitch authentication status on page load
-   */
-  async function checkTwitchAuthStatus() {
-    try {
-      const data = await new Promise(resolve => {
-        chrome.storage.local.get(['twitch_auth'], resolve);
-      });
-      
-      if (data.twitch_auth && data.twitch_auth.access_token) {
-        const expiryTime = data.twitch_auth.timestamp + (data.twitch_auth.expires_in * 1000);
-        
-        if (Date.now() < expiryTime) {
-          // Token is still valid
-          updateTwitchUI(data.twitch_auth);
-        } else {
-          // Token is expired, try to refresh it
-          // For MVP, we'll just clear it and require re-auth
-          await new Promise(resolve => {
-            chrome.storage.local.remove(['twitch_auth', 'twitch_username'], resolve);
-          });
-          updateTwitchUI(null);
-        }
-      } else {
-        // No auth data
-        updateTwitchUI(null);
-      }
-    } catch (error) {
-      console.error('Error checking Twitch auth status:', error);
-      updateTwitchUI(null);
-    }
-  }
-  
-  /**
-   * Initiate Twitch account connection
-   */
-  function connectTwitchAccount() {
-    try {
-      console.log('Initiating Twitch authentication...');
-      
-      // Generate a random state for CSRF protection
-      const state = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-      
-      // Store state for verification after callback
-      chrome.storage.local.set({
-        'twitch_auth_state': state
-      }, () => {
-        console.log('Stored Twitch auth state:', state);
-        
-        // Construct Twitch OAuth URL
-        const scopes = 'user:read:email';
-        const twitchAuthUrl = `https://id.twitch.tv/oauth2/authorize` +
-          `?client_id=${TWITCH_CLIENT_ID}` +
-          `&redirect_uri=${encodeURIComponent(TWITCH_REDIRECT_URI)}` +
-          `&response_type=code` +
-          `&scope=${encodeURIComponent(scopes)}` +
-          `&state=${state}` +
-          `&force_verify=true`;
-        
-        console.log('Opening Twitch auth URL:', twitchAuthUrl);
-        
-        // Open the Twitch authorization window
-        chrome.windows.create({
-          url: twitchAuthUrl,
-          type: 'popup',
-          width: 800,
-          height: 700
-        }, (window) => {
-          console.log('Twitch auth window opened:', window);
-        });
-      });
-    } catch (error) {
-      console.error('Error initiating Twitch auth:', error);
-      showTwitchAuthError(error.message);
-    }
-  }
-  
-  /**
-   * Disconnect Twitch account
-   */
-  async function disconnectTwitchAccount() {
-    try {
-      // Clear Twitch auth data from storage
-      await new Promise(resolve => {
-        chrome.storage.local.remove(['twitch_auth', 'twitch_username'], resolve);
-      });
-      
-      // Reset UI
-      updateTwitchUI(null);
-      
-      console.log('Twitch account disconnected');
-    } catch (error) {
-      console.error('Error disconnecting Twitch account:', error);
     }
   }
 
