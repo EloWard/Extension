@@ -48,28 +48,58 @@ let authWindows = {};
 
 /* Handle auth callbacks */
 function handleAuthCallback(params) {
-  console.log('Handling auth callback in background script', params);
+  console.log('Handling auth callback in background script:', params ? 'data received' : 'no data');
   
-  // Determine the service type (riot or twitch)
-  const serviceType = params.service || (params.source === 'twitch_auth_callback' ? 'twitch' : 'riot');
-  console.log(`Handling ${serviceType} authentication callback`);
+  // Validate params - provide defaults if empty
+  if (!params) {
+    console.error('Empty params in handleAuthCallback');
+    return;
+  }
+  
+  // Determine the service type (riot or twitch) with better fallbacks
+  const serviceType = params.service || 
+                     (params.source === 'twitch_auth_callback' ? 'twitch' : 
+                     (params.source === 'riot_auth_callback' ? 'riot' : 
+                     (params.code ? 'twitch' : 'riot')));
+  
+  console.log(`Handling ${serviceType} authentication callback with keys:`, Object.keys(params));
+  
+  // Add timestamp to track when this callback was processed
+  const enhancedParams = {
+    ...params,
+    processed_timestamp: Date.now()
+  };
   
   // Add the auth data to chrome.storage.local under multiple keys for compatibility
   const storageData = {
-    'authCallback': params,
-    'auth_callback': params,
-    'eloward_auth_callback': params
+    'authCallback': enhancedParams,
+    'auth_callback': enhancedParams,
+    'eloward_auth_callback': enhancedParams
   };
   
   // Add service-specific storage key
   if (serviceType === 'twitch') {
-    storageData['twitch_auth_callback'] = params;
+    storageData['twitch_auth_callback'] = enhancedParams;
+    
+    // Also store in localStorage as a fallback
+    try {
+      localStorage.setItem('eloward_twitch_auth_callback_data', JSON.stringify(enhancedParams));
+      console.log('Stored Twitch auth data in localStorage as fallback');
+    } catch (e) {
+      console.warn('Failed to store Twitch auth data in localStorage:', e);
+    }
   } else if (serviceType === 'riot') {
-    storageData['riot_auth_callback'] = params;
+    storageData['riot_auth_callback'] = enhancedParams;
   }
   
+  // Store with a completion callback to ensure it completes
   chrome.storage.local.set(storageData, () => {
-    console.log(`Stored ${serviceType} auth callback data in chrome.storage.local with keys:`, Object.keys(storageData));
+    if (chrome.runtime.lastError) {
+      console.error('Error storing auth callback data:', chrome.runtime.lastError);
+      return;
+    }
+    
+    console.log(`Successfully stored ${serviceType} auth callback data with ${Object.keys(storageData).length} keys`);
     
     // Process different service types
     if (serviceType === 'riot') {
@@ -159,37 +189,84 @@ async function initiateTokenExchange(authData) {
 
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background script received message:', message);
+  console.log('Background script received message type:', message?.type || 'unknown');
   
   // Special handler for Twitch auth callback from the extension redirect page
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
-    console.log('Background received Twitch auth callback from ExtTwitchAuthRedirect:', message);
+    console.log('Background received Twitch auth callback message');
     
-    // Extract params depending on message format
-    const params = message.params || {
-      code: message.code,
-      state: message.state,
-      service: 'twitch',
-      source: 'twitch_auth_callback'
-    };
-    
-    // Process the auth data
-    handleAuthCallback({
-      ...params,
-      source: 'twitch_auth_callback'
-    });
-    
-    sendResponse({ success: true });
-    return true; // Keep the message channel open for the async response
+    try {
+      // Extract params depending on message format
+      const params = message.params || {
+        code: message.code,
+        state: message.state,
+        service: 'twitch',
+        source: 'twitch_auth_callback'
+      };
+      
+      if (!params.code) {
+        console.error('Missing required code in Twitch auth callback');
+        sendResponse({ 
+          success: false, 
+          error: 'Missing required authorization code' 
+        });
+        return true;
+      }
+      
+      // Process the auth data with enhanced metadata
+      handleAuthCallback({
+        ...params,
+        source: 'twitch_auth_callback',
+        received_at: Date.now(),
+        sender_info: {
+          id: sender.id || 'unknown',
+          url: sender.url || 'unknown'
+        }
+      });
+      
+      // Send success response immediately and don't wait for async operations
+      sendResponse({ 
+        success: true, 
+        message: 'Twitch auth callback received and processing',
+      });
+      
+      // Notify any listeners that we received a Twitch auth callback
+      setTimeout(() => {
+        chrome.runtime.sendMessage({
+          type: 'twitch_auth_processed',
+          success: true,
+          timestamp: Date.now()
+        }).catch(err => console.log('Error sending auth processed notification:', err));
+      }, 500);
+      
+      return true; // Keep the message channel open for the async response
+    } catch (error) {
+      console.error('Error handling Twitch auth callback:', error);
+      sendResponse({ 
+        success: false, 
+        error: error.message || 'Unknown error processing Twitch auth callback'
+      });
+      return true;
+    }
   }
   
   if (message.type === 'get_auth_callback') {
+    console.log('Handling get_auth_callback request');
+    // Also check for Twitch-specific callback
     chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
       // Try to find the callback data in any of the possible storage keys
       const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
-      sendResponse({ data: callback });
       
-      // Don't clear the stored callback as it may be needed by other components
+      if (callback) {
+        console.log('Found auth callback data to return', {
+          keys: Object.keys(callback),
+          service: callback.service || callback.source
+        });
+      } else {
+        console.log('No auth callback data found');
+      }
+      
+      sendResponse({ data: callback });
     });
     return true; // Required for async sendResponse
   }

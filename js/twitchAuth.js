@@ -460,18 +460,54 @@ export const TwitchAuth = {
     const left = (window.screen.width / 2) - (width / 2);
     const top = (window.screen.height / 2) - (height / 2);
     
-    // Open a new window in the center of the screen
-    this.authWindow = window.open(
-      authUrl,
-      'eloward_twitch_auth',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
-    );
+    console.log('Opening Twitch auth window with URL:', authUrl.substring(0, 60) + '...');
     
-    if (!this.authWindow) {
-      throw new Error('Failed to open authentication window. Please allow popups for this site.');
+    // Track if we closed the window ourselves
+    this.authWindowClosedByCode = false;
+    
+    try {
+      // Open a new window in the center of the screen
+      this.authWindow = window.open(
+        authUrl,
+        'eloward_twitch_auth',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+      );
+      
+      if (!this.authWindow) {
+        throw new Error('Failed to open authentication window. Please allow popups for this site.');
+      }
+      
+      // Try to focus the window
+      if (this.authWindow.focus) {
+        this.authWindow.focus();
+      }
+      
+      // Add a close handler to detect if user closed the window
+      if (this.authWindow) {
+        const checkClosed = setInterval(() => {
+          if (this.authWindow && this.authWindow.closed && !this.authWindowClosedByCode) {
+            console.log('Auth window was closed by user');
+            clearInterval(checkClosed);
+            
+            // Notify anyone waiting that the window was closed
+            this.authWindowClosedByUser = true;
+          }
+          
+          // Clean up interval after 5 minutes to avoid memory leaks
+          if (Date.now() - startTime > 5 * 60 * 1000) {
+            clearInterval(checkClosed);
+          }
+        }, 500);
+        
+        const startTime = Date.now();
+      }
+      
+      console.log('Successfully opened Twitch auth window');
+      return true;
+    } catch (error) {
+      console.error('Error opening auth window:', error);
+      throw error;
     }
-    
-    console.log('Opened Twitch auth window');
   },
   
   /**
@@ -480,95 +516,96 @@ export const TwitchAuth = {
    * @private
    */
   async _waitForAuthCallback() {
+    console.log('Starting to wait for Twitch auth callback');
+    
+    // Define the callback keys we'll check
+    const callbackKeys = [
+      this.config.storageKeys.authCallback,
+      'twitch_auth_callback',
+      'auth_callback'
+    ];
+    
+    console.log('Will check these storage keys for callback data:', callbackKeys);
+    
+    // Clear any existing data before we start
+    try {
+      await new Promise(resolve => {
+        chrome.storage.local.remove(callbackKeys, resolve);
+      });
+      localStorage.removeItem('eloward_twitch_auth_callback_data');
+      console.log('Cleared any existing callback data for a clean start');
+    } catch (e) {
+      console.warn('Failed to clear existing callback data:', e);
+    }
+    
+    // Check for callback immediately before starting interval (handle very fast redirects)
+    try {
+      const initialCallbackData = await this._checkForCallbackData(callbackKeys);
+      if (initialCallbackData) {
+        console.log('Found callback data immediately!');
+        return initialCallbackData;
+      }
+    } catch (e) {
+      console.warn('Error in initial callback check:', e);
+    }
+    
     return new Promise((resolve, reject) => {
       let timeoutId;
+      let intervalId;
+      const startTime = Date.now();
       
       const checkForCallback = async () => {
-        console.log('Checking for Twitch auth callback');
-        
         try {
-          // Check chrome.storage.local for auth callback data using multiple possible keys
-          const callbackKeys = [
-            this.config.storageKeys.authCallback,
-            'twitch_auth_callback',
-            'auth_callback'
-          ];
+          // Check if window was closed by user
+          if (this.authWindowClosedByUser) {
+            console.warn('Auth window was closed by user before callback received');
+            clearInterval(intervalId);
+            clearTimeout(timeoutId);
+            reject(new Error('Authentication cancelled by user'));
+            return true;
+          }
           
-          console.log('Checking for callback in these storage keys:', callbackKeys);
-          
-          const callbackData = await new Promise(storageResolve => {
-            chrome.storage.local.get(callbackKeys, result => {
-              // Check each possible key
-              for (const key of callbackKeys) {
-                if (result[key]) {
-                  console.log(`Found callback data in key: ${key}`);
-                  return storageResolve(result[key]);
-                }
-              }
-              storageResolve(null);
-            });
-          });
+          // Check for callback data
+          const callbackData = await this._checkForCallbackData(callbackKeys);
           
           if (callbackData) {
-            console.log('Found Twitch auth callback in chrome.storage:', {
+            console.log('Found auth callback data:', {
               hasCode: !!callbackData.code,
-              hasState: !!callbackData.state
+              hasState: !!callbackData.state,
+              elapsedMs: Date.now() - startTime
             });
             
-            // Clear the timeout
+            // Clear the timeout and interval
             clearTimeout(timeoutId);
-            
-            // Clear the interval
             clearInterval(intervalId);
             
-            // Clean up the callback data from all possible keys
-            chrome.storage.local.remove(callbackKeys);
+            // Mark that we're closing the window via code
+            this.authWindowClosedByCode = true;
             
-            // Clean up the auth window if it's still open
-            if (this.authWindow && !this.authWindow.closed) {
-              this.authWindow.close();
-              this.authWindow = null;
-            }
+            // Clean up the auth window with a slight delay to ensure data is received
+            setTimeout(() => {
+              if (this.authWindow && !this.authWindow.closed) {
+                console.log('Closing auth window after successful data reception');
+                this.authWindow.close();
+                this.authWindow = null;
+              }
+            }, 500);
             
             // Resolve the promise with the callback data
             resolve(callbackData);
             return true;
           }
           
-          // Also check localStorage as a fallback
-          try {
-            const localStorageData = localStorage.getItem('eloward_twitch_auth_callback_data');
-            if (localStorageData) {
-              const parsedData = JSON.parse(localStorageData);
-              console.log('Found callback data in localStorage');
-              
-              // Clear the interval and timeout
-              clearInterval(intervalId);
-              clearTimeout(timeoutId);
-              
-              // Clean up localStorage
-              localStorage.removeItem('eloward_twitch_auth_callback_data');
-              
-              // Clean up the auth window
-              if (this.authWindow && !this.authWindow.closed) {
-                this.authWindow.close();
-                this.authWindow = null;
-              }
-              
-              resolve(parsedData);
-              return true;
-            }
-          } catch (localStorageError) {
-            console.warn('Error checking localStorage:', localStorageError);
-          }
-          
           // Check if auth window is still open
           if (!this.authWindow || this.authWindow.closed) {
-            console.warn('Twitch auth window was closed');
-            clearInterval(intervalId);
-            clearTimeout(timeoutId);
-            reject(new Error('Authentication cancelled by user'));
-            return true;
+            // Only handle this as an error if we didn't close it ourselves
+            if (!this.authWindowClosedByCode) {
+              console.warn('Twitch auth window was closed without data');
+              clearInterval(intervalId);
+              clearTimeout(timeoutId);
+              reject(new Error('Authentication window was closed'));
+              return true;
+            }
           }
           
           return false;
@@ -578,8 +615,8 @@ export const TwitchAuth = {
         }
       };
       
-      // Set up an interval to check for the callback
-      const intervalId = setInterval(checkForCallback, 1000);
+      // Set up an interval to check for the callback - faster interval for better responsiveness
+      intervalId = setInterval(checkForCallback, 500);
       
       // Set a timeout to reject the promise after 5 minutes
       timeoutId = setTimeout(() => {
@@ -587,6 +624,7 @@ export const TwitchAuth = {
         
         // Clean up the auth window if it's still open
         if (this.authWindow && !this.authWindow.closed) {
+          this.authWindowClosedByCode = true;
           this.authWindow.close();
           this.authWindow = null;
         }
@@ -594,6 +632,54 @@ export const TwitchAuth = {
         reject(new Error('Authentication timed out after 5 minutes'));
       }, 5 * 60 * 1000);
     });
+  },
+  
+  /**
+   * Helper method to check for callback data in storage
+   * @param {Array<string>} callbackKeys - Keys to check in storage
+   * @returns {Promise<Object|null>} - Callback data if found, null otherwise
+   * @private
+   */
+  async _checkForCallbackData(callbackKeys) {
+    // Check chrome.storage.local for auth callback data
+    const chromeStorageData = await new Promise(resolve => {
+      chrome.storage.local.get(callbackKeys, result => {
+        // Check each possible key
+        for (const key of callbackKeys) {
+          if (result[key]) {
+            console.log(`Found callback data in chrome.storage key: ${key}`);
+            return resolve(result[key]);
+          }
+        }
+        resolve(null);
+      });
+    });
+    
+    if (chromeStorageData) {
+      // Clean up storage after retrieving data
+      chrome.storage.local.remove(callbackKeys);
+      return chromeStorageData;
+    }
+    
+    // Also check localStorage as a fallback
+    try {
+      const localStorageData = localStorage.getItem('eloward_twitch_auth_callback_data');
+      if (localStorageData) {
+        try {
+          const parsedData = JSON.parse(localStorageData);
+          console.log('Found callback data in localStorage');
+          // Clean up localStorage
+          localStorage.removeItem('eloward_twitch_auth_callback_data');
+          return parsedData;
+        } catch (parseError) {
+          console.warn('Could not parse localStorage data:', parseError);
+        }
+      }
+    } catch (localStorageError) {
+      console.warn('Error checking localStorage:', localStorageError);
+    }
+    
+    return null;
   },
   
   /**
