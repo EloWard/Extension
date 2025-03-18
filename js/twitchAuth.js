@@ -1,4 +1,6 @@
 // EloWard Twitch Authentication
+console.log('Loading TwitchAuth module...');
+
 import { EloWardConfig } from './config.js';
 
 /**
@@ -6,6 +8,8 @@ import { EloWardConfig } from './config.js';
  * This module handles the authentication flow with Twitch API
  * using the OAuth 2.0 protocol via a secure backend proxy.
  */
+
+console.log('TwitchAuth module executing...');
 
 // Safe localStorage wrapper to handle cases where localStorage is not available
 const safeStorage = {
@@ -39,10 +43,14 @@ const safeStorage = {
 
 // Set default configuration if not provided
 const defaultConfig = {
+  // Make sure this URL is correct and matches a deployed instance
   proxyBaseUrl: 'https://eloward-twitchrso.unleashai-inquiries.workers.dev',
+  // Make sure this matches the STANDARD_REDIRECT_URI in twitchRSO/src/index.ts
   redirectUri: 'https://www.eloward.xyz/twitch/auth/redirect',
+  // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
   endpoints: {
+    // These endpoints should match exactly what's in twitchRSO/src/index.ts
     authInit: '/auth/twitch/init',
     authToken: '/auth/twitch/token',
     authRefresh: '/auth/twitch/token/refresh',
@@ -60,12 +68,104 @@ const defaultConfig = {
   }
 };
 
+console.log('TwitchAuth config initialized with URL:', defaultConfig.proxyBaseUrl);
+console.log('TwitchAuth endpoints:', Object.keys(defaultConfig.endpoints).join(', '));
+
 export const TwitchAuth = {
   // Twitch Configuration
   config: defaultConfig,
   
   // Reference to the auth window if opened
   authWindow: null,
+  
+  /**
+   * Run a diagnostic test that can be called from the console
+   * Just call: TwitchAuth.runTest() from the console
+   */
+  async runTest() {
+    console.log('🔍 Running TwitchAuth diagnostic test...');
+    console.log('📋 Configuration:', {
+      proxyBaseUrl: this.config.proxyBaseUrl,
+      redirectUri: this.config.redirectUri,
+      endpoints: Object.keys(this.config.endpoints)
+    });
+    
+    // Test 1: Check storage access
+    console.log('🔍 Test 1: Storage access');
+    try {
+      const testKey = 'twitch_auth_test';
+      const testValue = 'test_' + Date.now();
+      
+      await this._storeValue(testKey, testValue);
+      const retrieved = await this._getStoredValue(testKey);
+      
+      if (retrieved === testValue) {
+        console.log('✅ Storage test passed - value stored and retrieved successfully');
+      } else {
+        console.warn('⚠️ Storage test failed - retrieved value does not match', {
+          stored: testValue,
+          retrieved
+        });
+      }
+      
+      // Clean up
+      await chrome.storage.local.remove([testKey]);
+    } catch (storageError) {
+      console.error('❌ Storage test error:', storageError);
+    }
+    
+    // Test 2: Check backend connectivity
+    console.log('🔍 Test 2: Backend connectivity');
+    try {
+      const healthResponse = await fetch(`${this.config.proxyBaseUrl}/health`, {
+        method: 'GET',
+        mode: 'cors',
+        cache: 'no-cache'
+      });
+      
+      if (healthResponse.ok) {
+        const healthData = await healthResponse.text();
+        console.log(`✅ Backend health check passed: ${healthData}`);
+      } else {
+        console.warn(`⚠️ Backend health check failed with status: ${healthResponse.status}`);
+      }
+    } catch (healthError) {
+      console.error('❌ Backend connectivity test error:', healthError);
+    }
+    
+    // Test 3: Try to generate an auth URL
+    console.log('🔍 Test 3: Auth URL generation');
+    try {
+      const testState = this._generateRandomState();
+      console.log('Generated test state:', testState.substring(0, 8) + '...');
+      
+      const authUrl = await this._getAuthUrl(testState);
+      
+      if (authUrl) {
+        console.log('✅ Auth URL generation test passed:', authUrl.substring(0, 30) + '...');
+      } else {
+        console.warn('⚠️ Auth URL generation returned empty result');
+      }
+    } catch (authUrlError) {
+      console.error('❌ Auth URL generation test error:', authUrlError);
+    }
+    
+    // Test 4: Check authentication status
+    console.log('🔍 Test 4: Current authentication status');
+    try {
+      const isAuthenticated = await this.isAuthenticated();
+      console.log(`Authentication status: ${isAuthenticated ? 'Authenticated ✅' : 'Not authenticated ⚠️'}`);
+      
+      if (isAuthenticated) {
+        const displayName = await this.getUserDisplayName();
+        console.log(`Authenticated as: ${displayName || 'Unknown user'}`);
+      }
+    } catch (authError) {
+      console.error('❌ Authentication status test error:', authError);
+    }
+    
+    console.log('🔍 Diagnostic test complete');
+  },
   
   /**
    * Initialize TwitchAuth with optional custom configuration
@@ -116,8 +216,13 @@ export const TwitchAuth = {
       
       // Clear any previous auth states
       console.log('Clearing any previous Twitch auth states');
-      await chrome.storage.local.remove([this.config.storageKeys.authState]);
-      localStorage.removeItem(this.config.storageKeys.authState);
+      try {
+        await chrome.storage.local.remove([this.config.storageKeys.authState]);
+        localStorage.removeItem(this.config.storageKeys.authState);
+      } catch (error) {
+        console.error('Error clearing previous auth states:', error);
+        // Continue despite this error
+      }
       
       // Generate a unique state
       const state = this._generateRandomState();
@@ -126,8 +231,15 @@ export const TwitchAuth = {
       // Store the state in both chrome.storage and localStorage for redundancy
       await this._storeAuthState(state);
       
+      console.log('Getting authentication URL from backend');
+      
       // Get authentication URL from backend
       const authUrl = await this._getAuthUrl(state);
+      console.log('Received auth URL:', authUrl ? 'valid URL' : 'empty or invalid URL');
+      
+      if (!authUrl) {
+        throw new Error('Failed to get a valid authentication URL');
+      }
       
       // Clear any existing callbacks before opening the window
       console.log('Clearing any existing Twitch auth callbacks');
@@ -242,34 +354,92 @@ export const TwitchAuth = {
    */
   async _getAuthUrl(state) {
     try {
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          state,
-          scopes: this.config.scopes,
-          redirect_uri: this.config.redirectUri
-        })
+      // First, check if the endpoint is reachable with a basic health check
+      console.log('Testing TwitchRSO backend reachability...');
+      try {
+        const healthCheck = await fetch(`${this.config.proxyBaseUrl}/health`, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        
+        if (healthCheck.ok) {
+          console.log('✅ TwitchRSO backend is reachable:', await healthCheck.text());
+        } else {
+          console.warn('⚠️ TwitchRSO backend health check failed:', healthCheck.status);
+        }
+      } catch (healthError) {
+        console.error('❌ TwitchRSO backend unreachable:', healthError);
+        // Continue anyway to try the actual request
+      }
+      
+      console.log('Fetching Twitch auth URL from:', `${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`);
+      console.log('With payload:', {
+        state: state.substring(0, 8) + '...',
+        scopes: this.config.scopes,
+        redirect_uri: this.config.redirectUri
       });
       
-      if (!response.ok) {
-        throw new Error(`Failed to get Twitch auth URL: ${response.status} ${response.statusText}`);
+      // Try with plain fetch to see if the request works
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          mode: 'cors',
+          credentials: 'omit',
+          body: JSON.stringify({
+            state,
+            scopes: this.config.scopes,
+            redirect_uri: this.config.redirectUri
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        console.log('Auth URL response status:', response.status);
+        
+        // Check if the response is ok (status in the range 200-299)
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error response content:', errorText);
+          throw new Error(`Failed to get Twitch auth URL: ${response.status} ${response.statusText}`);
+        }
+        
+        let data;
+        try {
+          data = await response.json();
+          console.log('Auth URL response data:', data);
+        } catch (jsonError) {
+          console.error('Error parsing auth URL JSON response:', jsonError);
+          const rawText = await response.text();
+          console.log('Raw response text:', rawText);
+          throw new Error('Invalid JSON response from auth URL endpoint');
+        }
+        
+        if (!data || !data.authUrl) {
+          console.error('Auth URL not found in response data:', data);
+          throw new Error('Auth URL not found in response');
+        }
+        
+        console.log('Received Twitch auth URL:', data.authUrl.substring(0, 50) + '...');
+        return data.authUrl;
+      } catch (fetchError) {
+        if (fetchError.name === 'AbortError') {
+          console.error('Request timed out');
+          throw new Error('Request to get auth URL timed out after 10 seconds');
+        }
+        throw fetchError;
       }
-      
-      const data = await response.json();
-      
-      if (!data.authUrl) {
-        throw new Error('Auth URL not found in response');
-      }
-      
-      console.log('Received Twitch auth URL:', data.authUrl.substring(0, 50) + '...');
-      
-      return data.authUrl;
     } catch (error) {
       console.error('Error getting Twitch auth URL:', error);
-      throw new Error(`Failed to get auth URL: ${error.message}`);
+      // Make sure we throw an error that will be caught by the authenticate method
+      throw error;
     }
   },
   
@@ -317,10 +487,25 @@ export const TwitchAuth = {
         console.log('Checking for Twitch auth callback');
         
         try {
-          // Check chrome.storage.local for auth callback data
+          // Check chrome.storage.local for auth callback data using multiple possible keys
+          const callbackKeys = [
+            this.config.storageKeys.authCallback,
+            'twitch_auth_callback',
+            'auth_callback'
+          ];
+          
+          console.log('Checking for callback in these storage keys:', callbackKeys);
+          
           const callbackData = await new Promise(storageResolve => {
-            chrome.storage.local.get([this.config.storageKeys.authCallback], result => {
-              storageResolve(result[this.config.storageKeys.authCallback]);
+            chrome.storage.local.get(callbackKeys, result => {
+              // Check each possible key
+              for (const key of callbackKeys) {
+                if (result[key]) {
+                  console.log(`Found callback data in key: ${key}`);
+                  return storageResolve(result[key]);
+                }
+              }
+              storageResolve(null);
             });
           });
           
@@ -336,8 +521,8 @@ export const TwitchAuth = {
             // Clear the interval
             clearInterval(intervalId);
             
-            // Clean up the callback data
-            chrome.storage.local.remove([this.config.storageKeys.authCallback]);
+            // Clean up the callback data from all possible keys
+            chrome.storage.local.remove(callbackKeys);
             
             // Clean up the auth window if it's still open
             if (this.authWindow && !this.authWindow.closed) {
@@ -348,6 +533,33 @@ export const TwitchAuth = {
             // Resolve the promise with the callback data
             resolve(callbackData);
             return true;
+          }
+          
+          // Also check localStorage as a fallback
+          try {
+            const localStorageData = localStorage.getItem('eloward_twitch_auth_callback_data');
+            if (localStorageData) {
+              const parsedData = JSON.parse(localStorageData);
+              console.log('Found callback data in localStorage');
+              
+              // Clear the interval and timeout
+              clearInterval(intervalId);
+              clearTimeout(timeoutId);
+              
+              // Clean up localStorage
+              localStorage.removeItem('eloward_twitch_auth_callback_data');
+              
+              // Clean up the auth window
+              if (this.authWindow && !this.authWindow.closed) {
+                this.authWindow.close();
+                this.authWindow = null;
+              }
+              
+              resolve(parsedData);
+              return true;
+            }
+          } catch (localStorageError) {
+            console.warn('Error checking localStorage:', localStorageError);
           }
           
           // Check if auth window is still open
@@ -466,11 +678,41 @@ export const TwitchAuth = {
    * @returns {Promise<boolean>} True if authenticated
    */
   async isAuthenticated() {
+    console.log('Checking if authenticated with Twitch...');
     try {
-      const token = await this.getValidToken();
-      return !!token;
+      // First check if we have tokens in storage
+      const accessToken = await this._getStoredValue(this.config.storageKeys.accessToken);
+      const refreshToken = await this._getStoredValue(this.config.storageKeys.refreshToken);
+      
+      console.log('Found Twitch tokens in storage:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken
+      });
+      
+      if (!accessToken) {
+        console.log('No Twitch access token found, not authenticated');
+        return false;
+      }
+      
+      if (!refreshToken) {
+        console.log('No Twitch refresh token found, but has access token');
+        // We could decide to still consider authenticated with just access token
+        // but it's safer to require both
+        return false;
+      }
+      
+      try {
+        // Try to get a valid token which might refresh if needed
+        const token = await this.getValidToken();
+        const isValid = !!token;
+        console.log('Twitch token validation result:', isValid);
+        return isValid;
+      } catch (tokenError) {
+        console.warn('Error validating Twitch token:', tokenError);
+        return false;
+      }
     } catch (error) {
-      console.log('Not authenticated with Twitch:', error.message);
+      console.log('Error checking Twitch authentication status:', error);
       return false;
     }
   },

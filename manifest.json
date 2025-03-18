@@ -24,6 +24,7 @@
   "host_permissions": [
     "*://*.twitch.tv/*",
     "https://eloward-riotrso.unleashai-inquiries.workers.dev/*",
+    "https://eloward-twitchrso.unleashai-inquiries.workers.dev/*",
     "https://www.eloward.xyz/*"
   ],
   "content_scripts": [

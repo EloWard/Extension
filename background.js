@@ -54,25 +54,28 @@ function handleAuthCallback(params) {
   console.log(`Handling ${serviceType} authentication callback`);
   
   // Add the auth data to chrome.storage.local under multiple keys for compatibility
-  chrome.storage.local.set({
+  const storageData = {
     'authCallback': params,
     'auth_callback': params,
-    'eloward_auth_callback': params,
-    // Add a service-specific storage key
-    [`${serviceType}_auth_callback`]: params
-  }, () => {
-    console.log(`Stored ${serviceType} auth callback data in chrome.storage.local`);
+    'eloward_auth_callback': params
+  };
+  
+  // Add service-specific storage key
+  if (serviceType === 'twitch') {
+    storageData['twitch_auth_callback'] = params;
+  } else if (serviceType === 'riot') {
+    storageData['riot_auth_callback'] = params;
+  }
+  
+  chrome.storage.local.set(storageData, () => {
+    console.log(`Stored ${serviceType} auth callback data in chrome.storage.local with keys:`, Object.keys(storageData));
     
     // Process different service types
     if (serviceType === 'riot') {
       initiateTokenExchange(params);
     } else if (serviceType === 'twitch') {
-      // For Twitch auth we store in the appropriate key
-      chrome.storage.local.set({
-        'twitch_auth_callback': params
-      }, () => {
-        console.log('Twitch auth callback data stored in chrome.storage');
-      });
+      // For Twitch auth, we've already saved the callback data to chrome.storage.local
+      console.log('Twitch auth callback ready for processing by the TwitchAuth module');
     }
   });
 }
