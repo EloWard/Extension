@@ -166,11 +166,6 @@ header h1 {
   padding-bottom: 0;
 }
 
-/* Twitch-specific styles */
-.connection-item:last-child .connection-status.connected {
-  color: var(--twitch-color);
-}
-
 .connection-info {
   display: flex;
   flex-direction: column;
