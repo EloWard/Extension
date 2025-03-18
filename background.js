@@ -1538,15 +1538,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             url: chrome.runtime.getURL('twitch-success.html')
           });
           
-          // Close the tab after a few seconds but with a longer delay
-          // to ensure everything is processed
-          setTimeout(() => {
-            try {
-              chrome.tabs.remove(tabId);
-            } catch (e) {
-              console.log('Tab already closed or error removing tab:', e);
-            }
-          }, 5000); // Increased from 3000 to 5000ms
+          // Let the success page handle its own closing with countdown
+          // DO NOT force close the tab here
         });
       } else {
         console.warn('Missing code or state in Twitch redirect URL');

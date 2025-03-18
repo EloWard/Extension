@@ -579,17 +579,12 @@ export const TwitchAuth = {
             clearTimeout(timeoutId);
             clearInterval(intervalId);
             
-            // Mark that we're closing the window via code
-            this.authWindowClosedByCode = true;
+            // Mark that we received callback data
+            this.authCallbackReceived = true;
             
-            // Clean up the auth window with a slight delay to ensure data is received
-            setTimeout(() => {
-              if (this.authWindow && !this.authWindow.closed) {
-                console.log('Closing auth window after successful data reception');
-                this.authWindow.close();
-                this.authWindow = null;
-              }
-            }, 500);
+            // DO NOT close the window here - let the success page handle this
+            // This ensures users see the success message with countdown
+            console.log('Auth callback data received - leaving window open for success page to display');
             
             // Resolve the promise with the callback data
             resolve(callbackData);
