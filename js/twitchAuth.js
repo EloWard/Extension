@@ -2,6 +2,7 @@
 console.log('Loading TwitchAuth module...');
 
 import { EloWardConfig } from './config.js';
+import { PersistentStorage } from './persistentStorage.js';
 
 /**
  * Twitch Authentication Module
@@ -214,83 +215,57 @@ export const TwitchAuth = {
     try {
       console.log('Starting Twitch authentication');
       
-      // Clear any previous auth states
-      console.log('Clearing any previous Twitch auth states');
-      try {
-        await chrome.storage.local.remove([this.config.storageKeys.authState]);
-        localStorage.removeItem(this.config.storageKeys.authState);
-      } catch (error) {
-        console.error('Error clearing previous auth states:', error);
-        // Continue despite this error
-      }
-      
-      // Generate a unique state
+      // Generate a unique state value for CSRF protection
       const state = this._generateRandomState();
-      console.log(`Generated Twitch auth state: ${state}`);
+      console.log('Generated Twitch auth state:', state.substring(0, 8) + '...');
       
-      // Store the state in both chrome.storage and localStorage for redundancy
+      // Store the state for verification when the user returns
       await this._storeAuthState(state);
+      console.log('Stored Twitch auth state for verification');
       
-      console.log('Getting authentication URL from backend');
-      
-      // Get authentication URL from backend
+      // Get authentication URL from the backend proxy
       const authUrl = await this._getAuthUrl(state);
-      console.log('Received auth URL:', authUrl ? 'valid URL' : 'empty or invalid URL');
-      
-      if (!authUrl) {
-        throw new Error('Failed to get a valid authentication URL');
-      }
-      
-      // Clear any existing callbacks before opening the window
-      console.log('Clearing any existing Twitch auth callbacks');
-      try {
-        await new Promise(resolve => {
-          chrome.storage.local.remove([this.config.storageKeys.authCallback], resolve);
-        });
-        localStorage.removeItem('eloward_twitch_auth_callback_data');
-        console.log('Twitch auth callback data cleared from storage');
-      } catch (e) {
-        console.warn('Error clearing Twitch auth callbacks:', e);
-        // Non-fatal error, continue with authentication
-      }
       
       // Open the auth window
       this._openAuthWindow(authUrl);
+      console.log('Opened Twitch auth window with URL');
       
-      // Wait for the authentication callback
+      // Wait for the user to complete authentication
       const authResult = await this._waitForAuthCallback();
+      console.log('Received Twitch auth callback');
       
       if (!authResult || !authResult.code) {
-        throw new Error('Twitch authentication cancelled or failed');
+        throw new Error('Twitch authentication failed or was cancelled');
       }
       
-      console.log('Twitch auth callback received with state:', authResult.state);
-      
-      // Verify the state parameter to prevent CSRF attacks
+      // Verify the state to prevent CSRF attacks
       if (authResult.state !== state) {
-        console.error('State mismatch during Twitch authentication:', {
-          receivedState: authResult.state ? `${authResult.state.substring(0, 8)}...` : 'undefined',
-          expectedState: state ? `${state.substring(0, 8)}...` : 'undefined'
+        console.error('State mismatch in Twitch auth callback:', {
+          expected: state.substring(0, 8) + '...',
+          received: authResult.state ? authResult.state.substring(0, 8) + '...' : 'undefined'
         });
         
-        // Try fallback state check using storage
+        // Try fallback state verification
         const storedState = await this._getStoredAuthState();
-        
         if (authResult.state !== storedState) {
-          // Security failure - state mismatch indicates potential CSRF attack
-          throw new Error('Security verification failed: state parameter mismatch. Please try again.');
+          throw new Error('Security verification failed: state mismatch in Twitch auth');
+        } else {
+          console.log('State verified via storage fallback');
         }
       }
       
-      console.log('Proceeding with token exchange for code');
-      
-      // Exchange code for tokens
+      // Exchange the authorization code for tokens
       const tokenData = await this.exchangeCodeForTokens(authResult.code);
+      console.log('Successfully exchanged code for Twitch tokens');
       
-      // Get user data
-      const userData = await this.getUserInfo();
+      // Get user info
+      const userInfo = await this.getUserInfo();
+      console.log('Retrieved Twitch user info for:', userInfo?.display_name || 'unknown user');
       
-      return userData;
+      // Store the user info in persistent storage
+      await PersistentStorage.storeTwitchUserData(userInfo);
+      
+      return userInfo;
     } catch (error) {
       console.error('Twitch authentication error:', error);
       throw error;
@@ -759,41 +734,25 @@ export const TwitchAuth = {
    * @returns {Promise<boolean>} True if authenticated
    */
   async isAuthenticated() {
-    console.log('Checking if authenticated with Twitch...');
     try {
-      // First check if we have tokens in storage
-      const accessToken = await this._getStoredValue(this.config.storageKeys.accessToken);
-      const refreshToken = await this._getStoredValue(this.config.storageKeys.refreshToken);
-      
-      console.log('Found Twitch tokens in storage:', {
-        hasAccessToken: !!accessToken,
-        hasRefreshToken: !!refreshToken
-      });
-      
-      if (!accessToken) {
-        console.log('No Twitch access token found, not authenticated');
-        return false;
-      }
-      
-      if (!refreshToken) {
-        console.log('No Twitch refresh token found, but has access token');
-        // We could decide to still consider authenticated with just access token
-        // but it's safer to require both
-        return false;
-      }
-      
+      // First check if we have a valid token
+      let hasValidToken = false;
       try {
-        // Try to get a valid token which might refresh if needed
         const token = await this.getValidToken();
-        const isValid = !!token;
-        console.log('Twitch token validation result:', isValid);
-        return isValid;
-      } catch (tokenError) {
-        console.warn('Error validating Twitch token:', tokenError);
-        return false;
+        hasValidToken = !!token;
+      } catch (e) {
+        console.warn('Error getting valid Twitch token:', e);
       }
+      
+      // If no valid token, check persistent storage
+      if (!hasValidToken) {
+        const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('twitch');
+        return isConnectedInPersistentStorage;
+      }
+      
+      return hasValidToken;
     } catch (error) {
-      console.log('Error checking Twitch authentication status:', error);
+      console.error('Error checking Twitch authentication status:', error);
       return false;
     }
   },
@@ -895,26 +854,32 @@ export const TwitchAuth = {
     try {
       console.log('Logging out from Twitch');
       
-      // Clear all stored token data
+      // Clear tokens and related data from storage
       await chrome.storage.local.remove([
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
         this.config.storageKeys.tokenExpiry,
         this.config.storageKeys.tokens,
-        this.config.storageKeys.userInfo
+        this.config.storageKeys.userInfo,
+        this.config.storageKeys.authState
       ]);
       
-      // Also clear from localStorage for completeness
+      // Clear data from localStorage as well for redundancy
       localStorage.removeItem(this.config.storageKeys.accessToken);
       localStorage.removeItem(this.config.storageKeys.refreshToken);
       localStorage.removeItem(this.config.storageKeys.tokenExpiry);
       localStorage.removeItem(this.config.storageKeys.tokens);
       localStorage.removeItem(this.config.storageKeys.userInfo);
+      localStorage.removeItem(this.config.storageKeys.authState);
       
-      console.log('Successfully logged out from Twitch');
+      // Clear persistent storage for Twitch
+      await PersistentStorage.clearServiceData('twitch');
+      
+      console.log('Twitch logout complete');
+      return true;
     } catch (error) {
-      console.error('Error logging out from Twitch:', error);
-      throw error;
+      console.error('Error during Twitch logout:', error);
+      return false;
     }
   },
   
@@ -936,57 +901,53 @@ export const TwitchAuth = {
    */
   async getUserInfo() {
     try {
-      console.log('Getting Twitch user information');
+      console.log('Getting Twitch user info');
       
-      // Check for cached user info first
-      const cachedUserInfo = await this._getStoredValue(this.config.storageKeys.userInfo);
-      
-      if (cachedUserInfo) {
-        try {
-          const userInfo = JSON.parse(cachedUserInfo);
-          console.log('Using cached Twitch user info');
-          return userInfo;
-        } catch (e) {
-          console.warn('Invalid cached Twitch user info, fetching new data');
-        }
+      // First try to get from persistent storage
+      const storedUserInfo = await this.getUserInfoFromStorage();
+      if (storedUserInfo) {
+        console.log('Using Twitch user info from persistent storage');
+        return storedUserInfo;
       }
       
-      // Get a valid token
-      const token = await this.getValidToken();
+      // If not in storage, get fresh data
+      console.log('No persistent data found, fetching from API...');
       
-      // Fetch user info - IMPORTANT: Use POST method to match backend implementation
+      // Get a valid access token
+      const accessToken = await this.getValidToken();
+      
+      if (!accessToken) {
+        throw new Error('No valid access token for Twitch API');
+      }
+      
+      // Call the backend proxy to get user info
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.userInfo}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          access_token: token
-        })
+        body: JSON.stringify({ access_token: accessToken })
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to get user info: ${response.status} ${response.statusText}`);
+        throw new Error(`Error getting Twitch user info: ${response.status} ${response.statusText}`);
       }
       
-      const responseData = await response.json();
+      const data = await response.json();
       
-      // The Twitch API returns data in a 'data' array with the first item being the user
-      const userInfo = responseData.data && responseData.data[0] ? responseData.data[0] : responseData;
-      
-      if (!userInfo || !userInfo.id) {
-        console.error('Invalid user info response:', responseData);
-        throw new Error('Invalid user info response');
+      // Twitch API returns an array of users in the "data" field
+      if (!data.data || !data.data.length) {
+        throw new Error('No user data returned from Twitch API');
       }
       
-      console.log('Successfully fetched Twitch user info:', {
-        id: userInfo.id,
-        login: userInfo.login,
-        display_name: userInfo.display_name
-      });
+      // The first (and only) user is the one we're interested in
+      const userInfo = data.data[0];
       
-      // Store the user info
+      // Store the user info for later use
       await this._storeUserInfo(userInfo);
+      
+      // Also store in persistent storage
+      await PersistentStorage.storeTwitchUserData(userInfo);
       
       return userInfo;
     } catch (error) {
@@ -1060,6 +1021,33 @@ export const TwitchAuth = {
     
     // Fall back to localStorage
     return safeStorage.getItem(key);
+  },
+  
+  /**
+   * Get user info from persistent storage
+   * @returns {Promise<Object|null>} User information or null if not found
+   */
+  async getUserInfoFromStorage() {
+    try {
+      console.log('Getting Twitch user info from persistent storage');
+      
+      // Try to get user info from persistent storage
+      const userInfo = await PersistentStorage.getTwitchUserData();
+      
+      if (userInfo) {
+        console.log('Found stored Twitch user info:', {
+          display_name: userInfo.display_name,
+          login: userInfo.login
+        });
+        return userInfo;
+      }
+      
+      console.log('No stored Twitch user info found');
+      return null;
+    } catch (error) {
+      console.error('Error getting Twitch user info from storage:', error);
+      return null;
+    }
   }
 };
 

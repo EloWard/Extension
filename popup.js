@@ -4,6 +4,7 @@ console.log('Popup script starting to load...');
 // Import auth modules
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
+import { PersistentStorage } from './js/persistentStorage.js';
 
 try {
   document.addEventListener('DOMContentLoaded', () => {
@@ -201,6 +202,97 @@ try {
       }
 
       /**
+       * Check if the user is authenticated with Riot and Twitch
+       * and update the UI accordingly
+       */
+      async function checkAuthStatus() {
+        try {
+          console.log('Checking auth status...');
+          
+          // First check persistent storage status for a quick UI update
+          const persistentConnectedState = await PersistentStorage.getConnectedState();
+          console.log('Persistent connected state:', persistentConnectedState);
+          
+          // Update Riot UI based on persistent storage first
+          if (persistentConnectedState.riot) {
+            const storedRiotData = await PersistentStorage.getRiotUserData();
+            if (storedRiotData) {
+              console.log('Using stored Riot data for initial UI update');
+              // Format data in the way updateUserInterface expects
+              const formattedData = {
+                ...storedRiotData,
+                soloQueueRank: storedRiotData.rankInfo
+              };
+              updateUserInterface(formattedData);
+            }
+          }
+          
+          // Update Twitch UI based on persistent storage first
+          if (persistentConnectedState.twitch) {
+            const storedTwitchData = await PersistentStorage.getTwitchUserData();
+            if (storedTwitchData) {
+              console.log('Using stored Twitch data for initial UI update');
+              twitchConnectionStatus.textContent = `Connected (${storedTwitchData.display_name})`;
+              twitchConnectionStatus.classList.add('connected');
+              connectTwitchBtn.textContent = 'Disconnect';
+            }
+          }
+          
+          // Now do the full auth check which may refresh tokens if needed
+          
+          // Check Riot auth status
+          const isRiotAuthenticated = await RiotAuth.isAuthenticated();
+          
+          if (isRiotAuthenticated) {
+            // Update UI to show connected
+            riotConnectionStatus.textContent = 'Connected';
+            riotConnectionStatus.classList.add('connected');
+            connectRiotBtn.textContent = 'Disconnect';
+            
+            // Get user data
+            const userData = await RiotAuth.getUserData();
+            
+            // Update UI with user data
+            updateUserInterface(userData);
+          } else {
+            // Only update UI if we don't have persistent data
+            if (!persistentConnectedState.riot) {
+              // Update UI to show not connected
+              riotConnectionStatus.textContent = 'Not Connected';
+              riotConnectionStatus.classList.remove('connected');
+              connectRiotBtn.textContent = 'Connect';
+            }
+          }
+          
+          // Check Twitch auth status
+          const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
+          
+          if (isTwitchAuthenticated) {
+            // Update UI to show connected
+            twitchConnectionStatus.textContent = 'Connected';
+            twitchConnectionStatus.classList.add('connected');
+            connectTwitchBtn.textContent = 'Disconnect';
+            
+            // Optionally, get user display name
+            const userInfo = await TwitchAuth.getUserInfo();
+            if (userInfo && userInfo.display_name) {
+              twitchConnectionStatus.textContent = `Connected (${userInfo.display_name})`;
+            }
+          } else {
+            // Only update UI if we don't have persistent data
+            if (!persistentConnectedState.twitch) {
+              // Update UI to show not connected
+              twitchConnectionStatus.textContent = 'Not Connected';
+              twitchConnectionStatus.classList.remove('connected');
+              connectTwitchBtn.textContent = 'Connect';
+            }
+          }
+        } catch (error) {
+          console.error('Error checking auth status:', error);
+        }
+      }
+
+      /**
        * Update the UI based on user data
        * @param {Object} userData - The user data object
        */
@@ -217,8 +309,10 @@ try {
             connectRiotBtn.textContent = 'Disconnect';
             
             // Show rank if available
-            if (userData.rankInfo) {
-              displayRank(userData.rankInfo);
+            // Check both soloQueueRank (from API) and rankInfo (from storage)
+            const rankData = userData.soloQueueRank || userData.rankInfo;
+            if (rankData) {
+              displayRank(rankData);
             } else {
               currentRank.textContent = 'Unranked';
               rankBadgePreview.style.backgroundImage = `url('images/ranks/unranked.png')`;
@@ -260,57 +354,6 @@ try {
             riotConnectionStatus.classList.remove('error');
           }
         }, 5000);
-      }
-
-      /**
-       * Check authentication status for Riot and Twitch
-       */
-      async function checkAuthStatus() {
-        try {
-          // Check Riot auth status
-          const isRiotAuthenticated = await RiotAuth.isAuthenticated();
-          
-          if (isRiotAuthenticated) {
-            // Update UI to show connected
-            riotConnectionStatus.textContent = 'Connected';
-            riotConnectionStatus.classList.add('connected');
-            connectRiotBtn.textContent = 'Disconnect';
-            
-            // Get user data
-            const userData = await RiotAuth.getUserData();
-            
-            // Update UI with user data
-            updateUserInterface(userData);
-          } else {
-            // Update UI to show not connected
-            riotConnectionStatus.textContent = 'Not Connected';
-            riotConnectionStatus.classList.remove('connected');
-            connectRiotBtn.textContent = 'Connect';
-          }
-          
-          // Check Twitch auth status
-          const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
-          
-          if (isTwitchAuthenticated) {
-            // Update UI to show connected
-            twitchConnectionStatus.textContent = 'Connected';
-            twitchConnectionStatus.classList.add('connected');
-            connectTwitchBtn.textContent = 'Disconnect';
-            
-            // Optionally, get user display name
-            const displayName = await TwitchAuth.getUserDisplayName();
-            if (displayName) {
-              twitchConnectionStatus.textContent = `Connected (${displayName})`;
-            }
-          } else {
-            // Update UI to show not connected
-            twitchConnectionStatus.textContent = 'Not Connected';
-            twitchConnectionStatus.classList.remove('connected');
-            connectTwitchBtn.textContent = 'Connect';
-          }
-        } catch (error) {
-          console.error('Error checking auth status:', error);
-        }
       }
 
       /**
@@ -433,24 +476,27 @@ try {
       }
 
       /**
-       * Clear localStorage data
+       * Clear local storage data
        */
       function clearLocalStorage() {
         try {
-          // Clear Riot auth data
-          localStorage.removeItem('eloward_riot_access_token');
-          localStorage.removeItem('eloward_riot_refresh_token');
-          localStorage.removeItem('eloward_riot_token_expiry');
+          console.log('Clearing local storage...');
+          
+          // Clear auth-related data
+          localStorage.removeItem('eloward_auth_callback_data');
           localStorage.removeItem('eloward_riot_tokens');
           localStorage.removeItem('eloward_riot_account_info');
           localStorage.removeItem('eloward_riot_summoner_info');
           localStorage.removeItem('eloward_riot_rank_info');
-          localStorage.removeItem('eloward_auth_state');
-          localStorage.removeItem('eloward_auth_callback_data');
+          localStorage.removeItem('eloward_twitch_tokens');
+          localStorage.removeItem('eloward_twitch_user_info');
           
-          console.log('Cleared auth data from localStorage');
-        } catch (e) {
-          console.error('Error clearing localStorage:', e);
+          // Clear persistent storage data
+          PersistentStorage.clearAllData();
+          
+          console.log('Local storage cleared');
+        } catch (error) {
+          console.error('Error clearing local storage:', error);
         }
       }
 

@@ -1,5 +1,6 @@
 // EloWard Riot RSO Authentication
 import { EloWardConfig } from './config.js';
+import { PersistentStorage } from './persistentStorage.js';
 
 /**
  * Riot RSO (Riot Sign On) Authentication Module
@@ -203,6 +204,9 @@ export const RiotAuth = {
       
       // Get user data
       const userData = await this.getUserData();
+      
+      // Store the user data in persistent storage
+      await PersistentStorage.storeRiotUserData(userData);
       
       return userData;
     } catch (error) {
@@ -673,9 +677,27 @@ export const RiotAuth = {
    */
   async isAuthenticated(ignoreInitialErrors = false) {
     try {
-      await this.getValidToken(ignoreInitialErrors);
-      return true;
+      // First check if we have a valid token
+      let hasValidToken = false;
+      try {
+        const token = await this.getValidToken(ignoreInitialErrors);
+        hasValidToken = !!token;
+      } catch (e) {
+        if (!ignoreInitialErrors) {
+          throw e;
+        }
+        console.warn('Error getting valid token (ignored):', e);
+      }
+      
+      // ADDED: If no valid token, check persistent storage
+      if (!hasValidToken) {
+        const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('riot');
+        return isConnectedInPersistentStorage;
+      }
+      
+      return hasValidToken;
     } catch (error) {
+      console.error('Error checking authentication status:', error);
       return false;
     }
   },
@@ -932,54 +954,46 @@ export const RiotAuth = {
    * @returns {Promise<void>}
    */
   async logout(forceReload = false) {
-    console.log('Logging out Riot account...');
-    
-    // Complete list of all keys that should be removed
-    const keysToRemove = [
-      this.config.storageKeys.accessToken,
-      this.config.storageKeys.refreshToken,
-      this.config.storageKeys.tokenExpiry,
-      this.config.storageKeys.tokens,
-      this.config.storageKeys.accountInfo,
-      this.config.storageKeys.summonerInfo,
-      this.config.storageKeys.rankInfo,
-      this.config.storageKeys.authState,
-      this.config.storageKeys.idToken,
-      'riotAuth',
-      'auth_callback',
-      'eloward_auth_callback',
-      'eloward_auth_callback_data',
-      'authCallbackProcessed'
-    ];
-    
-    // Clear tokens from chrome.storage
-    await new Promise(resolve => {
-      chrome.storage.local.remove(keysToRemove, resolve);
-    });
-    
-    // Clear tokens from localStorage
     try {
-      // Remove all keys from localStorage as well for redundancy
-      keysToRemove.forEach(key => {
-        try {
-          localStorage.removeItem(key);
-        } catch (e) {
-          // Ignore errors for individual items
-        }
-      });
-    } catch (e) {
-      console.error('Error clearing localStorage:', e);
+      console.log('Logging out from Riot RSO');
+      
+      // Remove tokens from storage
+      console.log('Removing stored tokens');
+      await chrome.storage.local.remove([
+        this.config.storageKeys.accessToken,
+        this.config.storageKeys.refreshToken,
+        this.config.storageKeys.tokenExpiry,
+        this.config.storageKeys.tokens,
+        this.config.storageKeys.idToken
+      ]);
+      
+      // Clean up localStorage for tokens
+      localStorage.removeItem(this.config.storageKeys.accessToken);
+      localStorage.removeItem(this.config.storageKeys.refreshToken);
+      localStorage.removeItem(this.config.storageKeys.tokenExpiry);
+      localStorage.removeItem(this.config.storageKeys.tokens);
+      localStorage.removeItem(this.config.storageKeys.idToken);
+      
+      // Remove additional user data
+      await chrome.storage.local.remove([
+        this.config.storageKeys.accountInfo,
+        this.config.storageKeys.summonerInfo,
+        this.config.storageKeys.rankInfo
+      ]);
+      
+      // ADDED: Clear persistent storage for Riot
+      await PersistentStorage.clearServiceData('riot');
+      
+      if (forceReload) {
+        window.location.reload();
+      }
+      
+      console.log('Logout complete');
+      return true;
+    } catch (error) {
+      console.error('Error during logout:', error);
+      return false;
     }
-    
-    console.log('Logged out successfully, all auth data cleared');
-    
-    // Only reload if explicitly requested and we're in the popup context
-    if (forceReload && window.location.href.includes('popup.html')) {
-      console.log('Reloading popup after logout');
-      window.location.reload();
-    }
-    
-    return true;
   },
   
   /**
@@ -1528,6 +1542,16 @@ export const RiotAuth = {
         }
       }
       
+      // ADDED: First try to get data from persistent storage
+      const persistentData = await this.getUserDataFromStorage();
+      if (persistentData) {
+        console.log('Using Riot user data from persistent storage');
+        return persistentData;
+      }
+      
+      // If no persistent data, proceed with API calls
+      console.log('No persistent data found, fetching from API...');
+      
       // Get account info
       console.log('Getting account info...');
       const accountInfo = await this.getAccountInfo();
@@ -1587,6 +1611,9 @@ export const RiotAuth = {
         soloQueueTier: userData.soloQueueRank?.tier,
         soloQueueDivision: userData.soloQueueRank?.rank
       });
+      
+      // Store in persistent storage for future use
+      await PersistentStorage.storeRiotUserData(userData);
       
       return userData;
     } catch (error) {
@@ -1704,6 +1731,41 @@ export const RiotAuth = {
     } catch (error) {
       console.error(`Error in _storeValue for key ${key}:`, error);
       throw error;
+    }
+  },
+  
+  /**
+   * Get user data from persistent storage
+   * @returns {Promise<Object>} - The stored user data
+   */
+  async getUserDataFromStorage() {
+    try {
+      console.log('Getting Riot user data from persistent storage');
+      
+      // Try to get user data from persistent storage
+      const userData = await PersistentStorage.getRiotUserData();
+      
+      if (userData) {
+        console.log('Found stored Riot user data:', {
+          gameName: userData.gameName,
+          tagLine: userData.tagLine,
+          hasRankInfo: !!userData.rankInfo
+        });
+        
+        // Create an object structure similar to what getUserData() would return
+        const formattedUserData = {
+          ...userData,
+          soloQueueRank: userData.rankInfo
+        };
+        
+        return formattedUserData;
+      }
+      
+      console.log('No stored Riot user data found');
+      return null;
+    } catch (error) {
+      console.error('Error getting user data from storage:', error);
+      return null;
     }
   }
 };

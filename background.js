@@ -2,6 +2,7 @@
 import './js/config.js';
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
+import { PersistentStorage } from './js/persistentStorage.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
@@ -50,140 +51,88 @@ let authWindows = {};
 function handleAuthCallback(params) {
   console.log('Handling auth callback in background script:', params ? 'data received' : 'no data');
   
-  // Validate params - provide defaults if empty
-  if (!params) {
-    console.error('Empty params in handleAuthCallback');
+  if (!params || !params.code) {
+    console.error('Invalid auth callback data');
     return;
   }
   
-  // Determine the service type (riot or twitch) with better fallbacks
-  const serviceType = params.service || 
-                     (params.source === 'twitch_auth_callback' ? 'twitch' : 
-                     (params.source === 'riot_auth_callback' ? 'riot' : 
-                     (params.code ? 'twitch' : 'riot')));
+  // Store the auth callback data
+  const promiseStorage = new Promise(resolve => {
+    chrome.storage.local.set({
+      'auth_callback': params,
+      'eloward_auth_callback': params
+    }, resolve);
+  });
   
-  console.log(`Handling ${serviceType} authentication callback with keys:`, Object.keys(params));
+  // Determine if this is a Twitch callback or a Riot callback
+  const isTwitchCallback = params.service === 'twitch';
   
-  // Add timestamp to track when this callback was processed
-  const enhancedParams = {
-    ...params,
-    processed_timestamp: Date.now()
-  };
-  
-  // Add the auth data to chrome.storage.local under multiple keys for compatibility
-  const storageData = {
-    'authCallback': enhancedParams,
-    'auth_callback': enhancedParams,
-    'eloward_auth_callback': enhancedParams
-  };
-  
-  // Add service-specific storage key
-  if (serviceType === 'twitch') {
-    storageData['twitch_auth_callback'] = enhancedParams;
-    
-    // Also store in localStorage as a fallback
-    try {
-      localStorage.setItem('eloward_twitch_auth_callback_data', JSON.stringify(enhancedParams));
-      console.log('Stored Twitch auth data in localStorage as fallback');
-    } catch (e) {
-      console.warn('Failed to store Twitch auth data in localStorage:', e);
-    }
-  } else if (serviceType === 'riot') {
-    storageData['riot_auth_callback'] = enhancedParams;
+  if (isTwitchCallback) {
+    console.log('Processing Twitch auth callback');
+    chrome.storage.local.set({
+      'twitch_auth_callback': params
+    }, () => {
+      initiateTokenExchange(params, 'twitch');
+    });
+  } else {
+    console.log('Processing Riot auth callback');
+    chrome.storage.local.set({
+      'riot_auth_callback': params
+    }, () => {
+      initiateTokenExchange(params, 'riot');
+    });
   }
   
-  // Store with a completion callback to ensure it completes
-  chrome.storage.local.set(storageData, () => {
-    if (chrome.runtime.lastError) {
-      console.error('Error storing auth callback data:', chrome.runtime.lastError);
-      return;
-    }
-    
-    console.log(`Successfully stored ${serviceType} auth callback data with ${Object.keys(storageData).length} keys`);
-    
-    // Process different service types
-    if (serviceType === 'riot') {
-      initiateTokenExchange(params);
-    } else if (serviceType === 'twitch') {
-      // For Twitch auth, we need to tell the popup about the callback
-      chrome.runtime.sendMessage({
-        type: 'twitch_auth_complete',
-        success: true,
-        data: params
-      });
-      
-      console.log('Twitch auth callback ready for processing by the TwitchAuth module');
-    }
+  // Send message to any open popups
+  chrome.runtime.sendMessage({
+    type: 'auth_callback',
+    params: params
   });
 }
 
-/* Initiate token exchange with Riot RSO */
-async function initiateTokenExchange(authData) {
-  if (!authData || !authData.code) {
-    console.error('Cannot exchange tokens: Missing auth code');
-    return;
-  }
-  
+/**
+ * Exchange authorization code for tokens
+ * @param {Object} authData - The authorization data with code
+ * @param {string} service - The service ('riot' or 'twitch')
+ */
+async function initiateTokenExchange(authData, service = 'riot') {
   try {
-    console.log('Initiating token exchange with code');
+    console.log(`Initiating ${service} token exchange`);
     
-    // Create RiotAuth instance
-    const riotAuth = new RiotAuth({
-      proxyBaseUrl: API_BASE_URL,
-      clientId: RIOT_RSO_CLIENT_ID,
-      redirectUri: STANDARD_REDIRECT_URI,
-      storageKeys: {
-        tokens: 'riotTokens',
-        idToken: 'riotIdToken',
-        accountInfo: 'riotAccountInfo',
-        summonerInfo: 'riotSummonerInfo',
-        rankInfo: 'riotRankInfo',
-        authState: 'riotAuthState',
-        authCallback: 'authCallback'
-      }
-    });
-    
-    // Exchange code for tokens
-    const tokens = await riotAuth.exchangeCodeForTokens(authData.code);
-    
-    if (!tokens || !tokens.access_token) {
-      throw new Error('Token exchange failed: No tokens returned');
+    if (!authData || !authData.code) {
+      throw new Error('Invalid auth data for token exchange');
     }
     
-    console.log('Successfully exchanged code for tokens');
-    
-    // Fetch and store account info
-    try {
-      await riotAuth.getUserData();
-      console.log('Successfully retrieved and stored user data');
-    } catch (userDataError) {
-      console.error('Error getting user data after token exchange:', userDataError);
-      // Continue anyway as we at least have the tokens
+    if (service === 'twitch') {
+      // Exchange code for Twitch tokens
+      const tokenData = await TwitchAuth.exchangeCodeForTokens(authData.code);
+      console.log('Twitch token exchange successful');
+      
+      // Get user info
+      const userInfo = await TwitchAuth.getUserInfo();
+      console.log('Retrieved Twitch user info:', userInfo?.display_name || 'unknown');
+      
+      // Store in persistent storage
+      await PersistentStorage.storeTwitchUserData(userInfo);
+      
+      return userInfo;
+    } else {
+      // Exchange code for Riot tokens
+      const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
+      console.log('Riot token exchange successful');
+      
+      // Get user data
+      const userData = await RiotAuth.getUserData();
+      console.log('Retrieved Riot user data:', userData?.gameName || 'unknown');
+      
+      // Store in persistent storage
+      await PersistentStorage.storeRiotUserData(userData);
+      
+      return userData;
     }
-    
-    // Notify any listeners that auth is complete
-    chrome.runtime.sendMessage({
-      type: 'auth_complete',
-      success: true
-    });
-    
   } catch (error) {
-    console.error('Token exchange error:', error);
-    
-    // Notify any listeners that auth failed
-    chrome.runtime.sendMessage({
-      type: 'auth_complete',
-      success: false,
-      error: error.message || 'Token exchange failed'
-    });
-  } finally {
-    // Clean up the auth callback processing flag after 10 seconds
-    // This allows time for other components to process the callback if needed
-    setTimeout(() => {
-      chrome.storage.local.remove('authCallbackProcessed', () => {
-        console.log('Cleaned up auth callback processed flag');
-      });
-    }, 10000);
+    console.error(`Error during ${service} token exchange:`, error);
+    throw error;
   }
 }
 
@@ -572,27 +521,63 @@ chrome.runtime.onInstalled.addListener((details) => {
   loadConfiguration();
 });
 
-// Function to clear all stored data
+/**
+ * Clear all stored authentication and user data
+ */
 function clearAllStoredData() {
-  // Clear chrome.storage.local
-  chrome.storage.local.clear(() => {
-    console.log('Cleared all chrome.storage.local data');
-  });
-  
-  // Try to send a message to any open extension pages
-  // This will fail silently if no receivers exist
-  try {
-    chrome.runtime.sendMessage({ action: 'clear_local_storage' })
-      .catch(error => {
-        // It's normal for this to fail if no popup is open to receive the message
-        console.log('No receivers for clear_local_storage message (this is normal if popup is closed)');
+  return new Promise((resolve) => {
+    try {
+      console.log('Clearing all stored data');
+      
+      // Define the keys to remove from chrome.storage
+      const keysToRemove = [
+        // Riot auth keys
+        'eloward_riot_access_token',
+        'eloward_riot_refresh_token',
+        'eloward_riot_token_expiry',
+        'eloward_riot_tokens',
+        'eloward_riot_account_info',
+        'eloward_riot_summoner_info',
+        'eloward_riot_rank_info',
+        'eloward_auth_state',
+        'eloward_riot_id_token',
+        
+        // Twitch auth keys
+        'eloward_twitch_access_token',
+        'eloward_twitch_refresh_token',
+        'eloward_twitch_token_expiry',
+        'eloward_twitch_tokens',
+        'eloward_twitch_user_info',
+        'eloward_twitch_auth_state',
+        
+        // Callback data
+        'auth_callback',
+        'eloward_auth_callback',
+        'twitch_auth_callback',
+        'riot_auth_callback',
+        'authCallbackProcessed'
+      ];
+      
+      // Clear from chrome.storage
+      chrome.storage.local.remove(keysToRemove, () => {
+        console.log('Cleared auth data from chrome.storage');
+        
+        // Clear persistent storage
+        PersistentStorage.clearAllData()
+          .then(() => {
+            console.log('Cleared data from persistent storage');
+            resolve();
+          })
+          .catch(error => {
+            console.error('Error clearing persistent storage:', error);
+            resolve(); // Still resolve to continue cleanup
+          });
       });
-  } catch (error) {
-    console.log('No receivers for clear_local_storage message (this is normal if popup is closed)');
-  }
-  
-  // Note: Service workers don't have access to localStorage
-  // We'll handle localStorage clearing in the popup instead
+    } catch (error) {
+      console.error('Error clearing stored data:', error);
+      resolve(); // Still resolve to continue cleanup
+    }
+  });
 }
 
 // Handle messages from popup and content scripts
