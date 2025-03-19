@@ -112,8 +112,9 @@ async function initiateTokenExchange(authData, service = 'riot') {
       const userInfo = await TwitchAuth.getUserInfo();
       console.log('Retrieved Twitch user info:', userInfo?.display_name || 'unknown');
       
-      // Store in persistent storage
+      // Store in persistent storage with indefinite retention
       await PersistentStorage.storeTwitchUserData(userInfo);
+      await PersistentStorage.updateConnectedState('twitch', true);
       
       return userInfo;
     } else {
@@ -125,8 +126,9 @@ async function initiateTokenExchange(authData, service = 'riot') {
       const userData = await RiotAuth.getUserData();
       console.log('Retrieved Riot user data:', userData?.gameName || 'unknown');
       
-      // Store in persistent storage
+      // Store in persistent storage with indefinite retention
       await PersistentStorage.storeRiotUserData(userData);
+      await PersistentStorage.updateConnectedState('riot', true);
       
       return userData;
     }
@@ -566,6 +568,10 @@ function clearAllStoredData() {
         PersistentStorage.clearAllData()
           .then(() => {
             console.log('Cleared data from persistent storage');
+            
+            // Initialize persistent storage to reset persistence flag
+            PersistentStorage.init();
+            
             resolve();
           })
           .catch(error => {

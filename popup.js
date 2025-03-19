@@ -12,6 +12,9 @@ try {
       console.log('DOM content loaded, initializing popup...');
       console.log('TwitchAuth module loaded:', typeof TwitchAuth !== 'undefined');
       
+      // Initialize persistent storage first thing
+      PersistentStorage.init();
+      
       // DOM elements
       const connectRiotBtn = document.getElementById('connect-riot');
       const riotConnectionStatus = document.getElementById('riot-connection-status');
@@ -209,54 +212,65 @@ try {
         try {
           console.log('Checking auth status...');
           
-          // First check persistent storage status for a quick UI update
+          // First prioritize persistent storage for UI updates
+          // This ensures immediate display of stored data
           const persistentConnectedState = await PersistentStorage.getConnectedState();
           console.log('Persistent connected state:', persistentConnectedState);
           
-          // Update Riot UI based on persistent storage first
+          let skipRiotAuthCheck = false;
+          let skipTwitchAuthCheck = false;
+          
+          // Update Riot UI based on persistent storage
           if (persistentConnectedState.riot) {
             const storedRiotData = await PersistentStorage.getRiotUserData();
             if (storedRiotData) {
-              console.log('Using stored Riot data for initial UI update');
+              console.log('Using stored Riot data for UI update');
               // Format data in the way updateUserInterface expects
               const formattedData = {
                 ...storedRiotData,
                 soloQueueRank: storedRiotData.rankInfo
               };
               updateUserInterface(formattedData);
+              
+              // Skip further Riot auth checks if we have persistent data
+              // This eliminates unnecessary token validation that might fail
+              console.log('Using persistent Riot data, skipping token validation');
+              skipRiotAuthCheck = true;
             }
           }
           
-          // Update Twitch UI based on persistent storage first
+          // Update Twitch UI based on persistent storage
           if (persistentConnectedState.twitch) {
             const storedTwitchData = await PersistentStorage.getTwitchUserData();
             if (storedTwitchData) {
-              console.log('Using stored Twitch data for initial UI update');
+              console.log('Using stored Twitch data for UI update');
               twitchConnectionStatus.textContent = `Connected (${storedTwitchData.display_name})`;
               twitchConnectionStatus.classList.add('connected');
               connectTwitchBtn.textContent = 'Disconnect';
+              
+              // Skip further Twitch auth checks
+              console.log('Using persistent Twitch data, skipping token validation');
+              skipTwitchAuthCheck = true;
             }
           }
           
-          // Now do the full auth check which may refresh tokens if needed
-          
-          // Check Riot auth status
-          const isRiotAuthenticated = await RiotAuth.isAuthenticated();
-          
-          if (isRiotAuthenticated) {
-            // Update UI to show connected
-            riotConnectionStatus.textContent = 'Connected';
-            riotConnectionStatus.classList.add('connected');
-            connectRiotBtn.textContent = 'Disconnect';
+          // Only check Riot auth status if no persistent data
+          if (!skipRiotAuthCheck) {
+            console.log('No persistent Riot data, checking token auth');
+            const isRiotAuthenticated = await RiotAuth.isAuthenticated();
             
-            // Get user data
-            const userData = await RiotAuth.getUserData();
-            
-            // Update UI with user data
-            updateUserInterface(userData);
-          } else {
-            // Only update UI if we don't have persistent data
-            if (!persistentConnectedState.riot) {
+            if (isRiotAuthenticated) {
+              // Update UI to show connected
+              riotConnectionStatus.textContent = 'Connected';
+              riotConnectionStatus.classList.add('connected');
+              connectRiotBtn.textContent = 'Disconnect';
+              
+              // Get user data
+              const userData = await RiotAuth.getUserData();
+              
+              // Update UI with user data
+              updateUserInterface(userData);
+            } else {
               // Update UI to show not connected
               riotConnectionStatus.textContent = 'Not Connected';
               riotConnectionStatus.classList.remove('connected');
@@ -264,23 +278,23 @@ try {
             }
           }
           
-          // Check Twitch auth status
-          const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
-          
-          if (isTwitchAuthenticated) {
-            // Update UI to show connected
-            twitchConnectionStatus.textContent = 'Connected';
-            twitchConnectionStatus.classList.add('connected');
-            connectTwitchBtn.textContent = 'Disconnect';
+          // Only check Twitch auth status if no persistent data
+          if (!skipTwitchAuthCheck) {
+            console.log('No persistent Twitch data, checking token auth');
+            const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
             
-            // Optionally, get user display name
-            const userInfo = await TwitchAuth.getUserInfo();
-            if (userInfo && userInfo.display_name) {
-              twitchConnectionStatus.textContent = `Connected (${userInfo.display_name})`;
-            }
-          } else {
-            // Only update UI if we don't have persistent data
-            if (!persistentConnectedState.twitch) {
+            if (isTwitchAuthenticated) {
+              // Update UI to show connected
+              twitchConnectionStatus.textContent = 'Connected';
+              twitchConnectionStatus.classList.add('connected');
+              connectTwitchBtn.textContent = 'Disconnect';
+              
+              // Optionally, get user display name
+              const userInfo = await TwitchAuth.getUserInfo();
+              if (userInfo && userInfo.display_name) {
+                twitchConnectionStatus.textContent = `Connected (${userInfo.display_name})`;
+              }
+            } else {
               // Update UI to show not connected
               twitchConnectionStatus.textContent = 'Not Connected';
               twitchConnectionStatus.classList.remove('connected');

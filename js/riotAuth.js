@@ -677,7 +677,16 @@ export const RiotAuth = {
    */
   async isAuthenticated(ignoreInitialErrors = false) {
     try {
-      // First check if we have a valid token
+      // FIRST check persistent storage - this takes priority
+      const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('riot');
+      
+      // If connected in persistent storage, return true immediately without token checks
+      if (isConnectedInPersistentStorage) {
+        console.log('User is authenticated according to persistent storage');
+        return true;
+      }
+      
+      // If not connected in persistent storage, try token validation as fallback
       let hasValidToken = false;
       try {
         const token = await this.getValidToken(ignoreInitialErrors);
@@ -687,12 +696,6 @@ export const RiotAuth = {
           throw e;
         }
         console.warn('Error getting valid token (ignored):', e);
-      }
-      
-      // ADDED: If no valid token, check persistent storage
-      if (!hasValidToken) {
-        const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('riot');
-        return isConnectedInPersistentStorage;
       }
       
       return hasValidToken;
@@ -957,6 +960,11 @@ export const RiotAuth = {
     try {
       console.log('Logging out from Riot RSO');
       
+      // FIRST clear the persistent storage to ensure user appears logged out
+      // even if token removal fails
+      await PersistentStorage.clearServiceData('riot');
+      console.log('Cleared persistent Riot data');
+      
       // Remove tokens from storage
       console.log('Removing stored tokens');
       await chrome.storage.local.remove([
@@ -980,9 +988,6 @@ export const RiotAuth = {
         this.config.storageKeys.summonerInfo,
         this.config.storageKeys.rankInfo
       ]);
-      
-      // ADDED: Clear persistent storage for Riot
-      await PersistentStorage.clearServiceData('riot');
       
       if (forceReload) {
         window.location.reload();

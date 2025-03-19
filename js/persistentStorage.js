@@ -13,10 +13,22 @@ const STORAGE_KEYS = {
   RIOT_USER_DATA: 'eloward_persistent_riot_user_data',
   TWITCH_USER_DATA: 'eloward_persistent_twitch_user_data',
   LAST_UPDATED: 'eloward_persistent_last_updated',
-  CONNECTED_STATE: 'eloward_persistent_connected_state' // Tracks if accounts are connected
+  CONNECTED_STATE: 'eloward_persistent_connected_state', // Tracks if accounts are connected
+  DATA_PERSISTENCE_ENABLED: 'eloward_data_persistence_enabled' // Flag to control persistence
 };
 
 export const PersistentStorage = {
+  /**
+   * Initialize persistence
+   * Sets up the persistence flag to ensure data doesn't expire
+   */
+  init() {
+    chrome.storage.local.set({
+      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
+    });
+    console.log('PersistentStorage initialized with infinite persistence');
+  },
+  
   /**
    * Store Riot user data persistently
    * @param {Object} userData - The Riot user data to store
@@ -47,10 +59,11 @@ export const PersistentStorage = {
       };
     }
     
-    // Store the data
+    // Store the data and set persistence flag
     await chrome.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,
-      [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString()
+      [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
+      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
     
     // Update connected state
@@ -92,10 +105,11 @@ export const PersistentStorage = {
       profile_image_url: userData.profile_image_url
     };
     
-    // Store the data
+    // Store the data and set persistence flag
     await chrome.storage.local.set({
       [STORAGE_KEYS.TWITCH_USER_DATA]: persistentData,
-      [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString()
+      [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
+      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
     
     // Update connected state

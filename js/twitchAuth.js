@@ -735,19 +735,22 @@ export const TwitchAuth = {
    */
   async isAuthenticated() {
     try {
-      // First check if we have a valid token
+      // FIRST check persistent storage - this takes priority
+      const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('twitch');
+      
+      // If connected in persistent storage, return true immediately
+      if (isConnectedInPersistentStorage) {
+        console.log('User is authenticated with Twitch according to persistent storage');
+        return true;
+      }
+      
+      // Fall back to token validation if not in persistent storage
       let hasValidToken = false;
       try {
         const token = await this.getValidToken();
         hasValidToken = !!token;
       } catch (e) {
         console.warn('Error getting valid Twitch token:', e);
-      }
-      
-      // If no valid token, check persistent storage
-      if (!hasValidToken) {
-        const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('twitch');
-        return isConnectedInPersistentStorage;
       }
       
       return hasValidToken;
@@ -854,6 +857,11 @@ export const TwitchAuth = {
     try {
       console.log('Logging out from Twitch');
       
+      // FIRST clear the persistent storage to ensure user appears logged out
+      // even if token removal fails
+      await PersistentStorage.clearServiceData('twitch');
+      console.log('Cleared persistent Twitch data');
+      
       // Clear tokens and related data from storage
       await chrome.storage.local.remove([
         this.config.storageKeys.accessToken,
@@ -871,9 +879,6 @@ export const TwitchAuth = {
       localStorage.removeItem(this.config.storageKeys.tokens);
       localStorage.removeItem(this.config.storageKeys.userInfo);
       localStorage.removeItem(this.config.storageKeys.authState);
-      
-      // Clear persistent storage for Twitch
-      await PersistentStorage.clearServiceData('twitch');
       
       console.log('Twitch logout complete');
       return true;
