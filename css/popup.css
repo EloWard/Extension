@@ -266,22 +266,23 @@ header h1 {
 
 /* Refresh Button Styling */
 .btn-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background-color: var(--surface);
-  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
-  color: var(--text-secondary);
   padding: 0;
+  outline: none;
 }
 
 .btn-icon:hover {
-  background-color: var(--border);
+  border-color: var(--primary);
   color: var(--primary);
 }
 
@@ -290,6 +291,10 @@ header h1 {
 }
 
 .btn-icon.loading svg {
+  animation: spin 1s linear infinite;
+}
+
+.btn-icon.refreshing svg {
   animation: spin 1s linear infinite;
 }
 

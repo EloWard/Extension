@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const currentRank = document.getElementById('current-rank');
   const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
+  const refreshRankBtn = document.getElementById('refresh-rank');
   const streamerHeader = document.getElementById('streamer-header');
   const streamerContent = document.getElementById('streamer-content');
   const dropdownArrow = streamerHeader.querySelector('.dropdown-arrow');
@@ -29,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
+  refreshRankBtn.addEventListener('click', refreshRank);
   
   // Add event listener for Twitch connect button
   if (connectTwitchBtn) {
@@ -416,6 +418,63 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
     chrome.storage.local.set({ selectedRegion });
+  }
+
+  // Refresh rank function to update player rank information
+  async function refreshRank() {
+    try {
+      console.log('Refreshing rank information...');
+      
+      // First check if the user is authenticated
+      const isAuthenticated = await RiotAuth.isAuthenticated();
+      if (!isAuthenticated) {
+        console.log('User is not authenticated, cannot refresh rank');
+        showAuthError('Please connect your account first');
+        return;
+      }
+      
+      // Show a loading state on the button (add a rotating animation class)
+      refreshRankBtn.classList.add('refreshing');
+      
+      // Get stored account/summoner info first
+      const accountInfo = await RiotAuth.getAccountInfo();
+      
+      if (!accountInfo || !accountInfo.puuid) {
+        throw new Error('Account information not available');
+      }
+      
+      // Get summoner info using the puuid
+      const summonerInfo = await RiotAuth.getSummonerInfo(accountInfo.puuid);
+      
+      if (!summonerInfo || !summonerInfo.id) {
+        throw new Error('Summoner information not available');
+      }
+      
+      // Force a fresh rank lookup by explicitly calling getRankInfo
+      const rankEntries = await RiotAuth.getRankInfo(summonerInfo.id);
+      
+      // Get the freshly updated user data
+      const userData = await RiotAuth.getUserData(true);
+      
+      // Update the UI with the fresh data
+      updateUserInterface(userData);
+      
+      console.log('Rank information successfully refreshed');
+    } catch (error) {
+      console.error('Error refreshing rank:', error);
+      
+      // Show error briefly on the rank text
+      const originalText = currentRank.textContent;
+      currentRank.textContent = 'Refresh failed';
+      
+      // Reset to original text after a short delay
+      setTimeout(() => {
+        currentRank.textContent = originalText;
+      }, 3000);
+    } finally {
+      // Remove the loading state
+      refreshRankBtn.classList.remove('refreshing');
+    }
   }
 
   function displayRank(rankData) {
