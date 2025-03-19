@@ -2,6 +2,7 @@
 import { EloWardConfig } from './config.js';
 import { RiotAuth } from './riotAuth.js';
 import { TwitchAuth } from './twitchAuth.js';
+import { PersistentStorage } from './persistentStorage.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM elements
@@ -19,6 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
   
   console.log('TwitchAuth module loaded:', typeof TwitchAuth !== 'undefined');
   console.log('Element check - connect-twitch button exists:', !!connectTwitchBtn);
+
+  // Initialize persistent storage
+  PersistentStorage.init();
+  console.log('Persistent storage initialized');
 
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
@@ -237,6 +242,42 @@ document.addEventListener('DOMContentLoaded', () => {
   // Functions
   async function checkAuthStatus() {
     try {
+      console.log('Checking auth status...');
+      
+      // First check persistent storage for connected states
+      const persistentConnectedState = await PersistentStorage.getConnectedState();
+      console.log('Persistent connected state:', persistentConnectedState);
+      
+      // If Riot is connected in persistent storage, display that data immediately
+      if (persistentConnectedState.riot) {
+        const storedRiotData = await PersistentStorage.getRiotUserData();
+        if (storedRiotData) {
+          console.log('Using Riot data from persistent storage for initial UI display');
+          // Adapt stored data to match the format expected by updateUserInterface
+          const userData = {
+            gameName: storedRiotData.gameName,
+            tagLine: storedRiotData.tagLine,
+            puuid: storedRiotData.puuid,
+            soloQueueRank: storedRiotData.rankInfo
+          };
+          updateUserInterface(userData);
+        }
+      }
+      
+      // If Twitch is connected in persistent storage, display that data immediately
+      if (persistentConnectedState.twitch) {
+        const storedTwitchData = await PersistentStorage.getTwitchUserData();
+        if (storedTwitchData) {
+          console.log('Using Twitch data from persistent storage for initial UI display');
+          twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
+          twitchConnectionStatus.classList.add('connected');
+          connectTwitchBtn.textContent = 'Disconnect';
+        }
+      }
+      
+      // Now perform standard authentication checks to validate tokens
+      // This ensures we verify that the stored tokens are still valid
+      
       // Check if user is authenticated with Riot
       const isAuthenticated = await RiotAuth.isAuthenticated();
       
@@ -247,24 +288,31 @@ document.addEventListener('DOMContentLoaded', () => {
           // Get all user data
           const userData = await RiotAuth.getUserData();
           updateUserInterface(userData);
+          
+          // Update persistent storage with latest data
+          await PersistentStorage.storeRiotUserData(userData);
         } catch (error) {
           console.error('Error getting user data from RiotAuth:', error);
           
-          // Fallback to chrome.storage
-          chrome.storage.local.get(['riotAuth', 'userRank', 'selectedRegion'], (result) => {
-            if (result.riotAuth && result.riotAuth.gameName) {
-              updateUserInterface(result.riotAuth);
-            } else {
-              showNotConnectedUI();
-            }
-            
-            // Set selected region if available
-            if (result.selectedRegion) {
-              regionSelect.value = result.selectedRegion;
-            }
-          });
+          // If we already displayed data from persistent storage, keep it
+          if (!persistentConnectedState.riot) {
+            // Fallback to chrome.storage only if no persistent data was shown
+            chrome.storage.local.get(['riotAuth', 'userRank', 'selectedRegion'], (result) => {
+              if (result.riotAuth && result.riotAuth.gameName) {
+                updateUserInterface(result.riotAuth);
+              } else {
+                showNotConnectedUI();
+              }
+              
+              // Set selected region if available
+              if (result.selectedRegion) {
+                regionSelect.value = result.selectedRegion;
+              }
+            });
+          }
         }
-      } else {
+      } else if (!persistentConnectedState.riot) {
+        // Only show not connected UI if we haven't already displayed data from persistent storage
         showNotConnectedUI();
         
         // Set region from storage if available
@@ -287,17 +335,26 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.textContent = displayName || 'Connected';
           twitchConnectionStatus.classList.add('connected');
           connectTwitchBtn.textContent = 'Disconnect';
-        } else {
-          // User is not authenticated with Twitch
+          
+          // Update persistent storage with latest data if available
+          const userData = await TwitchAuth.getUserData();
+          if (userData) {
+            await PersistentStorage.storeTwitchUserData(userData);
+          }
+        } else if (!persistentConnectedState.twitch) {
+          // Only update UI if we haven't already displayed data from persistent storage
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected');
           connectTwitchBtn.textContent = 'Connect';
         }
       } catch (twitchError) {
         console.error('Error checking Twitch auth status:', twitchError);
-        twitchConnectionStatus.textContent = 'Not Connected';
-        twitchConnectionStatus.classList.remove('connected');
-        connectTwitchBtn.textContent = 'Connect';
+        if (!persistentConnectedState.twitch) {
+          // Only update UI if we haven't already displayed data from persistent storage
+          twitchConnectionStatus.textContent = 'Not Connected';
+          twitchConnectionStatus.classList.remove('connected');
+          connectTwitchBtn.textContent = 'Connect';
+        }
       }
       
     } catch (error) {
@@ -341,6 +398,10 @@ document.addEventListener('DOMContentLoaded', () => {
           riotConnectionStatus.classList.add('disconnecting');
           
           try {
+            // Clear persistent storage data for Riot before logout
+            await PersistentStorage.clearServiceData('riot');
+            console.log('Cleared Riot persistent storage data during disconnect');
+            
             // Log out via RiotAuth WITHOUT forcing reload (smooth transition)
             await RiotAuth.logout(false);
             
@@ -388,6 +449,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use the Riot RSO authentication module
         const userData = await RiotAuth.authenticate(region);
         console.log('Authentication successful:', userData);
+        
+        // Store user data in persistent storage
+        await PersistentStorage.storeRiotUserData(userData);
+        console.log('Stored Riot user data in persistent storage during connect');
         
         // Update UI with the user data
         updateUserInterface(userData);
@@ -458,6 +523,10 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Update the UI with the fresh data
       updateUserInterface(userData);
+      
+      // Update persistent storage with the fresh user data including new rank
+      await PersistentStorage.storeRiotUserData(userData);
+      console.log('Updated persistent storage with refreshed rank information');
       
       console.log('Rank information successfully refreshed');
     } catch (error) {
@@ -535,6 +604,10 @@ document.addEventListener('DOMContentLoaded', () => {
         connectTwitchBtn.textContent = 'Disconnecting...';
         connectTwitchBtn.disabled = true;
         
+        // Clear persistent storage data for Twitch before logout
+        await PersistentStorage.clearServiceData('twitch');
+        console.log('Cleared Twitch persistent storage data during disconnect');
+        
         await TwitchAuth.logout();
         
         // Update UI after logout
@@ -550,6 +623,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           const userData = await TwitchAuth.authenticate();
           console.log('Twitch authentication successful:', userData);
+          
+          // Store user data in persistent storage
+          await PersistentStorage.storeTwitchUserData(userData);
+          console.log('Stored Twitch user data in persistent storage during connect');
           
           // Update UI with user data
           if (userData && (userData.display_name || userData.login)) {
