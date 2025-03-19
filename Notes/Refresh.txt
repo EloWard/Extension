@@ -1,5 +1,0 @@
-now implmenet the refresh button for the riot rank in @ext  . This will be used if the user has just ranked up or has changes to their rank and will trigger a refresh of their rank. I think this can be implemented using refresh tokens but check the various documentation to design a flow and implmenet it concisely and efficiently. @index.ts here is the bakcend currently. Here are some docs: @RiotAuthFlow.txt @riot.txt @RiotDocs.txt @Riot RSO @Riot API @Riot @Riot Dev 
-
-Make sure that previous functionality is not affected. It should still automatically display the rank image based on whatever user rank is pulled. Try not to affect any previous funcionality and only add on this refresh functoiality by either adding concise efficient changes or linking the button into already built parts. 
-
-Do not change any visual elements. The entire idea is that the refesh retriggers the riot api to get the rank again, which will get the most updated rank from the riot servers. To be able to do this, you might need to use a refresh token
