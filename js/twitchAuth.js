@@ -831,5 +831,3 @@ export const TwitchAuth = {
     }
   }
 };
-
-window.TwitchAuth = TwitchAuth;
