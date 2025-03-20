@@ -140,7 +140,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background script received message type:', message?.type || 'unknown');
+  console.log('Background script received message type:', message?.type || 'unknown', message?.action || '');
   
   // Special handler for Twitch auth callback from the extension redirect page
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
@@ -459,6 +459,118 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async response
   }
   
+  // Handle rank fetch requests from content script
+  if (message.action === 'fetch_rank_for_username') {
+    console.log(`Background: Received request to fetch rank for username ${message.username} in channel ${message.channel}`);
+    
+    // Check if we have a cached response
+    if (cachedRankResponses && cachedRankResponses[message.username]) {
+      console.log(`Background: Found cached rank data for ${message.username}:`, cachedRankResponses[message.username]);
+      sendResponse({
+        success: true,
+        rankData: cachedRankResponses[message.username],
+        source: 'cache'
+      });
+      return true; // Keep the message channel open for async response
+    }
+    
+    // Check if the streamer has a subscription
+    checkStreamerSubscription(message.channel).then(isSubscribed => {
+      if (!isSubscribed) {
+        console.log(`Background: Channel ${message.channel} is not subscribed`);
+        sendResponse({ 
+          success: false, 
+          error: 'Channel not subscribed' 
+        });
+        return;
+      }
+      
+      // Get the user's selected region from storage
+      chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
+        const selectedRegion = data.selectedRegion || 'na1';
+        console.log(`Background: Using region ${selectedRegion} for rank lookup`);
+        
+        // Try to find a linked account for this username
+        const linkedAccounts = data.linkedAccounts || {};
+        console.log('Background: Available linked accounts:', linkedAccounts);
+        
+        // Check if we have this Twitch username mapped to a Riot ID
+        if (linkedAccounts[message.username]) {
+          const linkedAccount = linkedAccounts[message.username];
+          console.log(`Background: Found linked account for ${message.username}:`, linkedAccount);
+          
+          // Get rank for the linked account
+          fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
+            console.log(`Background: Fetched rank data for ${message.username}:`, rankData);
+            
+            // Cache the response
+            if (!cachedRankResponses) cachedRankResponses = {};
+            cachedRankResponses[message.username] = rankData;
+            
+            sendResponse({
+              success: true,
+              rankData: rankData,
+              source: 'linked_account'
+            });
+          }).catch(error => {
+            console.error(`Background: Error fetching rank for ${message.username}:`, error);
+            sendResponse({
+              success: false,
+              error: error.message
+            });
+          });
+        } else {
+          console.log(`Background: No linked account found for ${message.username}, using username as summoner name`);
+          
+          // Try using the Twitch username as the summoner name as a fallback
+          fetchRankFromBackend(message.username, selectedRegion).then(rankData => {
+            console.log(`Background: Fetched rank data for ${message.username}:`, rankData);
+            
+            // Cache the response if we found something
+            if (rankData && rankData.tier) {
+              if (!cachedRankResponses) cachedRankResponses = {};
+              cachedRankResponses[message.username] = rankData;
+            }
+            
+            sendResponse({
+              success: true,
+              rankData: rankData,
+              source: 'username_match'
+            });
+          }).catch(error => {
+            console.error(`Background: Error fetching rank for ${message.username}:`, error);
+            
+            // Generate mock data for testing if enabled
+            if (EloWardConfig.extension.debug) {
+              const mockRank = generateMockRankData(message.username, selectedRegion);
+              console.log(`Background: Generated mock rank data for ${message.username}:`, mockRank);
+              
+              sendResponse({
+                success: true,
+                rankData: mockRank,
+                source: 'mock_data',
+                note: 'Using mock data because real lookup failed'
+              });
+            } else {
+              sendResponse({
+                success: false,
+                error: error.message
+              });
+            }
+          });
+        }
+      });
+    }).catch(error => {
+      console.error(`Background: Error checking subscription for ${message.channel}:`, error);
+      sendResponse({
+        success: false,
+        error: 'Subscription check failed'
+      });
+    });
+    
+    return true; // Keep the message channel open for the async response
+  }
+  
   // If no handlers matched, send an error response
   sendResponse({ error: 'Unknown action', action: message.action });
   return true;
@@ -728,29 +840,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * @returns {Promise<boolean>} - Resolves with subscription status
  */
 function checkStreamerSubscription(streamerName) {
+  console.log(`Background: Checking if streamer ${streamerName} has a subscription`);
+  
   return new Promise((resolve, reject) => {
+    // In debug mode, always return true for testing
+    if (EloWardConfig.extension.debug) {
+      console.log(`Background: Debug mode ON - treating ${streamerName} as subscribed for testing`);
+      resolve(true);
+      return;
+    }
+    
     // For MVP, check against mock list
     // In production, this would call the backend API
     if (ACTIVE_STREAMERS.includes(streamerName.toLowerCase())) {
+      console.log(`Background: ${streamerName} found in active streamers list`);
       resolve(true);
       return;
     }
     
     // Call backend API to check subscription
-    // For now, just use the health endpoint since the worker doesn't have a subscription endpoint yet
+    console.log(`Background: ${streamerName} not in mock list, checking API`);
     fetch(`${API_BASE_URL}/health`)
       .then(response => {
         if (!response.ok) {
+          console.log(`Background: API response not OK, falling back to mock list`);
           // If API fails, fall back to mock list
           return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
         }
         return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
       })
       .then(data => {
+        console.log(`Background: ${streamerName} subscription status:`, data.subscribed);
         resolve(data.subscribed);
       })
       .catch(error => {
-        console.error('Error checking subscription:', error);
+        console.error('Background: Error checking subscription:', error);
         // If API fails, fall back to mock list
         resolve(ACTIVE_STREAMERS.includes(streamerName.toLowerCase()));
       });
@@ -833,14 +957,16 @@ function getRankBySummonerId(token, summonerId, platform) {
 }
 
 // Generate mock rank data for testing
-function generateMockRankData(username, region, callback) {
+function generateMockRankData(username, region) {
+  console.log(`Background: Generating mock rank data for ${username} in ${region}`);
+  
   // For MVP, we'll generate consistent mock data based on username
   // In a real implementation, this would call the Riot API
   
   // Use username to deterministically generate a rank
   const hash = Array.from(username).reduce((acc, char) => acc + char.charCodeAt(0), 0);
   
-  const tiers = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Grandmaster', 'Challenger'];
+  const tiers = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger'];
   const divisions = ['IV', 'III', 'II', 'I'];
   
   // Determine tier based on hash
@@ -848,7 +974,7 @@ function generateMockRankData(username, region, callback) {
   
   // Determine division for tiers that have divisions
   let division = null;
-  if (tierIndex < 6) { // Iron through Diamond have divisions
+  if (tierIndex < 7) { // Iron through Diamond have divisions
     const divisionIndex = Math.floor((hash / 10) % 4);
     division = divisions[divisionIndex];
   }
@@ -862,13 +988,13 @@ function generateMockRankData(username, region, callback) {
     division: division,
     leaguePoints: lp,
     wins: 100 + (hash % 200),
-    losses: 50 + (hash % 150)
+    losses: 50 + (hash % 150),
+    summonerName: username + '_LoL' // Add a mock summoner name
   };
   
-  // Simulate API delay
-  setTimeout(() => {
-    callback(rankData);
-  }, 300);
+  console.log(`Background: Generated mock rank: ${rankData.tier} ${rankData.division || ''} ${rankData.leaguePoints} LP`);
+  
+  return rankData;
 }
 
 // Helper function to get rank icon URL
@@ -1762,4 +1888,44 @@ chrome.storage.onChanged.addListener((changes, area) => {
       preloadLinkedAccounts();
     }
   }
-}); 
+});
+
+// Cache for rank responses to reduce API calls
+let cachedRankResponses = {};
+
+// Helper function to fetch rank for a linked account
+async function fetchRankForLinkedAccount(linkedAccount, region) {
+  console.log(`Background: Fetching rank for linked account:`, linkedAccount);
+  
+  if (!linkedAccount.summonerId || !linkedAccount.platform) {
+    console.log('Background: Missing summonerId or platform in linked account');
+    return null;
+  }
+  
+  try {
+    // Get the user's riot access token
+    const tokenData = await RiotAuth.getAccessToken();
+    if (!tokenData || !tokenData.access_token) {
+      console.error('Background: No valid Riot access token');
+      throw new Error('No valid Riot access token');
+    }
+    
+    // Fetch the rank data using the access token
+    const rankData = await getRankBySummonerId(
+      tokenData.access_token,
+      linkedAccount.summonerId,
+      linkedAccount.platform || region
+    );
+    
+    return rankData;
+  } catch (error) {
+    console.error('Background: Error in fetchRankForLinkedAccount:', error);
+    return null;
+  }
+}
+
+// Clear the rank cache periodically
+setInterval(() => {
+  console.log('Background: Clearing rank cache');
+  cachedRankResponses = {};
+}, BADGE_REFRESH_INTERVAL); 

@@ -337,9 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
           connectTwitchBtn.textContent = 'Disconnect';
           
           // Update persistent storage with latest data if available
-          const userData = await TwitchAuth.getUserData();
-          if (userData) {
-            await PersistentStorage.storeTwitchUserData(userData);
+          try {
+            const userData = await TwitchAuth.getUserInfo();
+            if (userData) {
+              await PersistentStorage.storeTwitchUserData(userData);
+            }
+          } catch (error) {
+            console.warn('Could not get Twitch user info for storage:', error);
           }
         } else if (!persistentConnectedState.twitch) {
           // Only update UI if we haven't already displayed data from persistent storage

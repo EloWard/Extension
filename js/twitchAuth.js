@@ -772,7 +772,8 @@ export const TwitchAuth = {
       const tokenExpiry = await this._getStoredValue(this.config.storageKeys.tokenExpiry);
       
       if (!accessToken) {
-        throw new Error('No access token found');
+        console.log('No Twitch access token found');
+        return null;
       }
       
       if (!tokenExpiry) {
