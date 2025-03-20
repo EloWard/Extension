@@ -1,6 +1,3 @@
-- refresh when no token
-- clean logging so no error
-
 - Change Vercel deployment to Cloudflare Pages
 
 Pricing:
