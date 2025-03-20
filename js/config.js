@@ -18,7 +18,7 @@ export const EloWardConfig = {
     defaultSize: 16,
     // Chat badge specific configuration
     chat: {
-      position: 'after-username', // Can be 'before-username' or 'after-username'
+      position: 'before-username', // Can be 'before-username' or 'after-username'
       animationEnabled: true,
       hoverScaleFactor: 1.2,
       tooltipEnabled: true
