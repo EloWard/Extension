@@ -331,14 +331,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (isTwitchAuthenticated) {
           // User is authenticated with Twitch, update UI
-          const displayName = await TwitchAuth.getUserDisplayName();
-          twitchConnectionStatus.textContent = displayName || 'Connected';
+          const userData = await TwitchAuth.getUserInfo();
+          const displayName = userData?.display_name || userData?.login || 'Connected';
+          twitchConnectionStatus.textContent = displayName;
           twitchConnectionStatus.classList.add('connected');
           connectTwitchBtn.textContent = 'Disconnect';
           
           // Update persistent storage with latest data if available
           try {
-            const userData = await TwitchAuth.getUserInfo();
             if (userData) {
               await PersistentStorage.storeTwitchUserData(userData);
             }
