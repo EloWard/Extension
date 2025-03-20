@@ -1,0 +1,144 @@
+
+# Code Organization Review
+
+After reviewing the EloWard extension codebase, I've identified several opportunities to improve organization and scalability for future auth options and game integrations. Here are my recommendations:
+
+## Authentication System
+
+The authentication system is already well-structured with separate files for different providers (`riotAuth.js` and `twitchAuth.js`), and a unified callback handler (`callback.html`). This structure is good for scaling to additional game services.
+
+**Improvement opportunities:**
+
+1. Create a base `GameAuth` class or interface that `RiotAuth` and `TwitchAuth` implement to ensure consistent patterns and methods across all auth providers.
+
+2. Add a central `authManager.js` module that coordinates between different auth providers:
+
+```javascript
+// Proposed authManager.js
+import { RiotAuth } from './riotAuth.js';
+import { TwitchAuth } from './twitchAuth.js';
+
+export const AuthManager = {
+  providers: {
+    riot: RiotAuth,
+    twitch: TwitchAuth
+    // Future: discord: DiscordAuth, etc.
+  },
+  
+  // Get the appropriate auth provider
+  getProvider(service) {
+    return this.providers[service] || null;
+  },
+  
+  // Initialize all auth providers
+  initializeAll() {
+    Object.values(this.providers).forEach(provider => provider.init());
+  }
+};
+```
+
+## Configuration Structure
+
+The `config.js` file is well-organized but could be improved for easier expansion.
+
+**Improvement opportunities:**
+
+1. Restructure the config to have a clearer separation for game-specific settings:
+
+```javascript
+// Structure config.js like this
+export const EloWardConfig = {
+  // Core extension configuration
+  extension: { /*...*/ },
+  
+  // Auth providers configuration
+  auth: {
+    riot: { /*...*/ },
+    twitch: { /*...*/ }
+    // Future: discord: {...}
+  },
+  
+  // Game-specific configurations
+  games: {
+    leagueOfLegends: { /*...*/ }
+    // Future: valorant: {...}, etc.
+  },
+  
+  // UI/Badge configurations
+  badges: { /*...*/ }
+};
+```
+
+## Background Service
+
+`background.js` is quite large (1931 lines) and handles many different responsibilities, making it difficult to maintain and scale.
+
+**Improvement opportunities:**
+
+1. Split `background.js` into multiple focused modules:
+   - `authHandler.js` - Authentication-related functionality
+   - `rankService.js` - Fetching and processing rank data
+   - `storageManager.js` - Data persistence operations
+   - `messageHandler.js` - Communication between components
+
+2. Keep `background.js` as the entry point that initializes and coordinates these modules.
+
+## Content Scripts and UI
+
+The UI components are well-structured but could use some improvements for scalability.
+
+**Improvement opportunities:**
+
+1. Modify `content.js` to support badge injection for multiple games:
+
+```javascript
+// In content.js
+function addBadgeToMessage(usernameElement, gameData) {
+  // Detect which game badge to show based on available data
+  if (gameData.leagueOfLegends) {
+    addLeagueBadge(usernameElement, gameData.leagueOfLegends);
+  }
+  
+  if (gameData.valorant) { // Future expansion
+    addValorantBadge(usernameElement, gameData.valorant);
+  }
+}
+```
+
+2. Update `popup.html` to include a tab or selector for different game connections.
+
+3. Ensure `styles.css` separates badge styling by game to allow easy extension.
+
+## Manifest and Permissions
+
+The `manifest.json` is well-structured but should be reviewed for future scaling.
+
+**Improvement opportunities:**
+
+1. Ensure host permissions are organized to accommodate future game API domains.
+
+2. Consider using optional permissions where possible for better user experience.
+
+## Specific File Recommendations
+
+1. **callback.html**: Already well-organized to handle multiple auth services. Keep this consolidated approach.
+
+2. **config.js**: Restructure as suggested above to clearly separate game-specific configurations.
+
+3. **background.js**: Split into smaller modules with clear responsibilities.
+
+4. **content.js**: Refactor to support multiple game badges with a modular approach.
+
+5. **popup.html/css**: Add structure to support multiple game connections in the UI.
+
+6. **loading.html**: Make this more generic (not Twitch-specific) to handle any authentication process.
+
+7. **js/persistentStorage.js**: Ensure this has a consistent pattern for storing data from different game services.
+
+## Testing/Development Code to Remove
+
+1. Any `console.log` statements used for debugging
+2. The diagnostic/test methods (like `runTest()` in twitchAuth.js)
+3. Commented-out code blocks that aren't needed
+
+These changes will create a more modular, maintainable codebase that can easily scale to support additional authentication providers and game services in the future, aligning with the project's goals as outlined in the Design and RankDisplay documentation.
