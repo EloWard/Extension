@@ -1,5 +1,7 @@
 - Change Vercel deployment to Cloudflare Pages
 
+- Logging non error
+
 Pricing:
 
 - Paid for streamers
