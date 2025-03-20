@@ -832,7 +832,4 @@ export const TwitchAuth = {
   }
 };
 
-// Initialize with default config
-TwitchAuth.init();
-
 window.TwitchAuth = TwitchAuth;
