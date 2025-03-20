@@ -4,12 +4,6 @@ import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
 
-// Check execution environment
-const isServiceWorker = typeof window === 'undefined';
-if (isServiceWorker) {
-  console.log('Running in service worker environment - window is not available');
-}
-
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
