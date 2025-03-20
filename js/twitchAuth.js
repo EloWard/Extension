@@ -295,7 +295,7 @@ export const TwitchAuth = {
       }
       
       // Try to open directly with window.open
-      this.authWindow = window.open(authUrl, 'twitchAuthWindow', 'width=800,height=700');
+      this.authWindow = window.open(authUrl, 'twitchAuthWindow', 'width=500,height=700');
       
       if (this.authWindow) {
         console.log('Twitch auth window opened with window.open');
