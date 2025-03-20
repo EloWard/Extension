@@ -13,7 +13,7 @@ import { PersistentStorage } from './persistentStorage.js';
 console.log('TwitchAuth module executing...');
 
 // Safe localStorage wrapper to handle cases where localStorage is not available
-const safeStorage = {
+const twitchSafeStorage = {
   getItem: (key) => {
     try {
       return localStorage.getItem(key);
@@ -284,7 +284,7 @@ export const TwitchAuth = {
     });
     
     // Also try to store in localStorage for redundancy
-    safeStorage.setItem(this.config.storageKeys.authState, state);
+    twitchSafeStorage.setItem(this.config.storageKeys.authState, state);
     
     console.log('Stored Twitch auth state in both storage locations:', {
       state: state.substring(0, 8) + '...'
@@ -310,7 +310,7 @@ export const TwitchAuth = {
     }
     
     // Fall back to localStorage
-    const localStorageState = safeStorage.getItem(this.config.storageKeys.authState);
+    const localStorageState = twitchSafeStorage.getItem(this.config.storageKeys.authState);
     
     if (localStorageState) {
       console.log('Retrieved Twitch auth state from localStorage');
@@ -1004,7 +1004,7 @@ export const TwitchAuth = {
     });
     
     // Also try to store in localStorage for redundancy
-    safeStorage.setItem(key, value);
+    twitchSafeStorage.setItem(key, value);
   },
   
   /**
@@ -1026,7 +1026,7 @@ export const TwitchAuth = {
     }
     
     // Fall back to localStorage
-    return safeStorage.getItem(key);
+    return twitchSafeStorage.getItem(key);
   },
   
   /**
@@ -1061,10 +1061,12 @@ export const TwitchAuth = {
 TwitchAuth.init();
 
 // Expose TwitchAuth globally for testing
-window.TwitchAuth = TwitchAuth;
+if (typeof window !== 'undefined') {
+  window.TwitchAuth = TwitchAuth;
 
-// Add a global helper function that can be called from anywhere
-window.runTwitchAuthTest = function() {
-  console.log("Running TwitchAuth test from global function...");
-  TwitchAuth.runTest();
-}; 
+  // Add a global helper function that can be called from anywhere
+  window.runTwitchAuthTest = function() {
+    console.log("Running TwitchAuth test from global function...");
+    TwitchAuth.runTest();
+  };
+} 
