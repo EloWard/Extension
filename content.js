@@ -1,6 +1,5 @@
 // EloWard Content Script
 // This script runs on Twitch pages and adds rank badges to chat messages
-import { EloWardConfig } from './js/config.js';
 
 // Global state
 let isChannelSubscribed = false;
@@ -9,7 +8,6 @@ let processedMessages = new Set();
 let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
-let debugOverlayElement = null; // Debug overlay element
 
 // Initialize when the page is loaded
 initializeExtension();
@@ -18,146 +16,14 @@ setTimeout(initializeExtension, 3000);
 
 // Add keyboard shortcut for debug overlay (Ctrl+Shift+E)
 document.addEventListener('keydown', function(event) {
-  // Check for Ctrl+Shift+E
-  if (event.ctrlKey && event.shiftKey && event.key === 'E') {
-    console.log('EloWard DEBUG: Debug shortcut triggered (Ctrl+Shift+E)');
-    if (!debugOverlayElement || debugOverlayElement.style.display === 'none') {
-      addDebugOverlay();
-      debugOverlayElement.style.display = 'block';
-    } else {
-      debugOverlayElement.style.display = 'none';
-    }
-  }
+  // Removed debug shortcut functionality
 });
 
-// Add debug overlay to help with troubleshooting
-function addDebugOverlay() {
-  // Only add if it doesn't exist already
-  if (document.getElementById('eloward-debug-overlay')) {
-    return;
-  }
-  
-  // Create debug overlay
-  debugOverlayElement = document.createElement('div');
-  debugOverlayElement.id = 'eloward-debug-overlay';
-  debugOverlayElement.style.position = 'fixed';
-  debugOverlayElement.style.bottom = '50px';
-  debugOverlayElement.style.right = '10px';
-  debugOverlayElement.style.padding = '10px';
-  debugOverlayElement.style.background = 'rgba(0, 0, 0, 0.8)';
-  debugOverlayElement.style.color = '#ffffff';
-  debugOverlayElement.style.borderRadius = '5px';
-  debugOverlayElement.style.zIndex = '9999';
-  debugOverlayElement.style.fontSize = '12px';
-  debugOverlayElement.style.maxWidth = '250px';
-  debugOverlayElement.style.boxShadow = '0 0 5px rgba(220, 33, 35, 0.7)';
-  
-  // Add debug info
-  const statusInfo = document.createElement('div');
-  statusInfo.innerHTML = `
-    <strong>EloWard Debug Status:</strong><br>
-    Extension Active: Yes<br>
-    Channel: ${channelName || 'Unknown'}<br>
-    Subscription: ${isChannelSubscribed ? 'Active ✓' : 'Inactive ✗'}<br>
-    Observer: ${observerInitialized ? 'Active ✓' : 'Inactive ✗'}<br>
-    Cached Users: ${Object.keys(cachedUserMap).length}<br>
-    <button id="eloward-force-refresh">Force Refresh</button>
-    <button id="eloward-close-debug">Close</button>
-  `;
-  
-  debugOverlayElement.appendChild(statusInfo);
-  document.body.appendChild(debugOverlayElement);
-  
-  // Add event listeners
-  document.getElementById('eloward-force-refresh').addEventListener('click', () => {
-    console.log('EloWard DEBUG: Force refreshing extension');
-    processedMessages.clear();
-    cachedUserMap = {};
-    observerInitialized = false;
-    initializeExtension();
-    updateDebugOverlay();
-  });
-  
-  document.getElementById('eloward-close-debug').addEventListener('click', () => {
-    debugOverlayElement.style.display = 'none';
-  });
-  
-  // Log that debug overlay was added
-  console.log('EloWard DEBUG: Debug overlay added to page');
-}
-
-// Update debug overlay information
-function updateDebugOverlay() {
-  if (!debugOverlayElement) return;
-  
-  const statusInfo = debugOverlayElement.querySelector('div');
-  statusInfo.innerHTML = `
-    <strong>EloWard Debug Status:</strong><br>
-    Extension Active: Yes<br>
-    Channel: ${channelName || 'Unknown'}<br>
-    Subscription: ${isChannelSubscribed ? 'Active ✓' : 'Inactive ✗'}<br>
-    Observer: ${observerInitialized ? 'Active ✓' : 'Inactive ✗'}<br>
-    Cached Users: ${Object.keys(cachedUserMap).length}<br>
-    <button id="eloward-force-refresh">Force Refresh</button>
-    <button id="eloward-close-debug">Close</button>
-  `;
-  
-  // Re-add event listeners
-  document.getElementById('eloward-force-refresh').addEventListener('click', () => {
-    console.log('EloWard DEBUG: Force refreshing extension');
-    processedMessages.clear();
-    cachedUserMap = {};
-    observerInitialized = false;
-    initializeExtension();
-    updateDebugOverlay();
-  });
-  
-  document.getElementById('eloward-close-debug').addEventListener('click', () => {
-    debugOverlayElement.style.display = 'none';
-  });
-}
-
 function initializeExtension() {
-  console.log('EloWard: Starting initialization');
-  
   // Extract channel name from URL
   channelName = window.location.pathname.split('/')[1];
   if (!channelName) {
-    console.log('EloWard: No channel name found in URL');
     return;
-  }
-  
-  console.log(`EloWard: Initializing on channel ${channelName}`);
-  
-  // Add debug info to page for testing
-  if (EloWardConfig.extension.debug) {
-    console.log('EloWard: Debug mode ENABLED - will show mock data if real data unavailable');
-    
-    // Create a small debug indicator
-    const debugIndicator = document.createElement('div');
-    debugIndicator.style.position = 'fixed';
-    debugIndicator.style.right = '10px';
-    debugIndicator.style.top = '10px';
-    debugIndicator.style.background = 'rgba(255,0,0,0.5)';
-    debugIndicator.style.color = 'white';
-    debugIndicator.style.padding = '5px';
-    debugIndicator.style.borderRadius = '3px';
-    debugIndicator.style.fontSize = '10px';
-    debugIndicator.style.zIndex = '99999';
-    debugIndicator.textContent = 'EloWard Debug Mode';
-    debugIndicator.id = 'eloward-debug-indicator';
-    
-    // Add click handler to toggle debug overlay
-    debugIndicator.addEventListener('click', () => {
-      if (!debugOverlayElement || debugOverlayElement.style.display === 'none') {
-        addDebugOverlay();
-        debugOverlayElement.style.display = 'block';
-      } else {
-        debugOverlayElement.style.display = 'none';
-      }
-    });
-    
-    document.body.appendChild(debugIndicator);
   }
   
   // Pre-check if extension CSS has been added
@@ -166,15 +32,11 @@ function initializeExtension() {
   }
   
   // Check if this streamer has a subscription
-  console.log(`EloWard DEBUG: Checking if streamer ${channelName} has a subscription...`);
   chrome.runtime.sendMessage(
     { action: 'check_streamer_subscription', streamer: channelName },
     (response) => {
-      console.log(`EloWard DEBUG: Streamer subscription check response:`, response);
-      
       if (response && response.subscribed) {
         isChannelSubscribed = true;
-        console.log(`EloWard DEBUG: Channel ${channelName} is subscribed ✓`);
         
         // Inject the style needed for badges if it doesn't exist
         if (!document.querySelector('#eloward-extension-styles')) {
@@ -189,16 +51,8 @@ function initializeExtension() {
         
         // Force refresh linked accounts from the background script
         chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
-        
-        // Update debug overlay if it exists
-        updateDebugOverlay();
       } else {
         isChannelSubscribed = false;
-        console.log(`EloWard DEBUG: Channel ${channelName} is NOT subscribed ✗`);
-        console.log('EloWard DEBUG: Subscription status is required for rank badges to appear');
-        
-        // Update debug overlay if it exists
-        updateDebugOverlay();
       }
     }
   );
@@ -208,10 +62,8 @@ function initializeExtension() {
     window.elowardUrlChangeObserver = true;
     let lastUrl = window.location.href;
     
-    console.log('EloWard: Setting up URL change observer');
     new MutationObserver(() => {
       if (window.location.href !== lastUrl) {
-        console.log(`EloWard: URL changed from ${lastUrl} to ${window.location.href}`);
         lastUrl = window.location.href;
         
         // Reset state
@@ -225,13 +77,11 @@ function initializeExtension() {
         
         // Check if the new channel is subscribed
         if (channelName) {
-          console.log(`EloWard: Checking if new channel ${channelName} is subscribed`);
           chrome.runtime.sendMessage(
             { action: 'check_streamer_subscription', streamer: channelName },
             (response) => {
               if (response && response.subscribed) {
                 isChannelSubscribed = true;
-                console.log(`EloWard: Channel ${channelName} is subscribed`);
                 
                 // Force refresh of linked accounts
                 chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
@@ -252,9 +102,7 @@ function initializeExtension() {
 }
 
 function initializeObserver() {
-  console.log('EloWard DEBUG: Initializing chat observer...');
   if (observerInitialized) {
-    console.log('EloWard DEBUG: Observer already initialized, skipping');
     return;
   }
   
@@ -277,7 +125,6 @@ function initializeObserver() {
     for (const selector of chatContainerSelectors) {
       const container = document.querySelector(selector);
       if (container) {
-        console.log(`EloWard: Found chat container with selector: ${selector}`);
         return container;
       }
     }
@@ -288,12 +135,10 @@ function initializeObserver() {
     for (const container of potentialContainers) {
       // Check if this element contains chat messages (has children with usernames)
       if (container.querySelectorAll('.chat-author__display-name, [data-a-target="chat-message-username"]').length > 0) {
-        console.log('EloWard: Found chat container using fallback method');
         return container;
       }
     }
     
-    console.log('EloWard: Could not find chat container with any selector');
     return null;
   }
   
@@ -308,12 +153,10 @@ function initializeObserver() {
     // Also set up a fallback observer for the whole chat area in case messages appear in a different container
     const chatArea = document.querySelector('.chat-room, .right-column, [data-test-selector="chat-room"]');
     if (chatArea && chatArea !== chatContainer) {
-      console.log('EloWard: Setting up fallback observer for entire chat area');
       setupChatObserver(chatArea, true);
     }
   } else {
     // Chat container not found yet, wait and try again
-    console.log('EloWard: Chat container not found, waiting...');
     setTimeout(() => {
       chatContainer = findChatContainer();
       if (chatContainer) {
@@ -326,12 +169,9 @@ function initializeObserver() {
           setupChatObserver(chatArea, true);
         }
       } else {
-        console.log('EloWard: Chat container still not found after delay');
-        
         // Last resort: observe the whole right column where chat usually is
         const rightColumn = document.querySelector('.right-column, [data-test-selector="right-column"]');
         if (rightColumn) {
-          console.log('EloWard: Setting up observer on right column as last resort');
           setupChatObserver(rightColumn, true);
           observerInitialized = true;
         }
@@ -341,8 +181,6 @@ function initializeObserver() {
 }
 
 function setupChatObserver(chatContainer, isFallbackObserver = false) {
-  console.log(`EloWard: Setting up chat observer for container:`, chatContainer);
-  
   // Create a MutationObserver to watch for new chat messages
   const chatObserver = new MutationObserver((mutations) => {
     if (!isChannelSubscribed) return;
@@ -365,9 +203,6 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
             } else if (isFallbackObserver) {
               // For fallback observers, look deeper for chat messages
               const messages = node.querySelectorAll('[data-a-target="chat-line-message"], .chat-line__message, .chat-line');
-              if (messages.length > 0) {
-                console.log(`EloWard: Fallback observer found ${messages.length} messages in added node`);
-              }
               messages.forEach(message => {
                 processNewMessage(message);
                 newMessagesProcessed++;
@@ -376,10 +211,6 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
           }
         }
       }
-    }
-    
-    if (newMessagesProcessed > 0) {
-      console.log(`EloWard: Processed ${newMessagesProcessed} new messages from mutation`);
     }
   });
   
@@ -394,7 +225,6 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
     chatContainer.querySelectorAll('[data-a-target="chat-line-message"], .chat-line__message, .chat-line') : 
     chatContainer.children;
     
-  console.log(`EloWard: Processing ${existingMessages.length} existing messages`);
   for (const message of existingMessages) {
     processNewMessage(message);
   }
@@ -413,27 +243,21 @@ function processNewMessage(messageNode) {
   // Mark this message as processed
   processedMessages.add(messageNode);
   
-  console.log('EloWard DEBUG: Processing message node', messageNode);
-  
   // Find the username element in the message
   const usernameElement = messageNode.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"]');
   if (!usernameElement) {
-    console.log('EloWard DEBUG: No username element found in message - DOM structure:', messageNode.innerHTML);
     return;
   }
   
   const username = usernameElement.textContent.trim().toLowerCase();
-  console.log(`EloWard DEBUG: Found username: ${username}, element:`, usernameElement);
   
   // Check if this user has a cached rank
   if (cachedUserMap[username]) {
-    console.log(`EloWard DEBUG: Found cached rank data for ${username}:`, cachedUserMap[username]);
     addBadgeToMessage(usernameElement, cachedUserMap[username]);
     return;
   }
   
   // If we don't have the rank data, fetch it from the background script
-  console.log(`EloWard DEBUG: Fetching rank data for ${username} from background script`);
   chrome.runtime.sendMessage(
     { 
       action: 'fetch_rank_for_username',
@@ -441,16 +265,12 @@ function processNewMessage(messageNode) {
       channel: channelName
     },
     response => {
-      console.log(`EloWard DEBUG: Rank data response for ${username}:`, response);
-      
       if (response && response.success && response.rankData) {
         // Cache the response
         cachedUserMap[username] = response.rankData;
         
         // Add the badge to the message
         addBadgeToMessage(usernameElement, response.rankData);
-      } else {
-        console.log(`EloWard DEBUG: No rank data available for ${username} or error occurred:`, response);
       }
     }
   );
@@ -459,23 +279,18 @@ function processNewMessage(messageNode) {
 function addBadgeToMessage(usernameElement, rankData) {
   // Skip if no rank data
   if (!rankData || !rankData.tier) {
-    console.log('EloWard DEBUG: No valid rank data to display:', rankData);
     return;
   }
-  
-  console.log(`EloWard DEBUG: Adding badge for ${rankData.tier} rank to message for element:`, usernameElement);
   
   // Check if badge already exists to avoid duplicates
   const messageContainer = findMessageContainer(usernameElement);
   if (!messageContainer) {
-    console.log('EloWard DEBUG: Could not find message container for badge, DOM path:', getElementPath(usernameElement));
     return;
   }
   
   // Check if this username already has a badge in this message
   const existingBadge = messageContainer.querySelector('.eloward-rank-badge');
   if (existingBadge) {
-    console.log('EloWard DEBUG: Badge already exists for this message');
     return;
   }
   
@@ -502,18 +317,6 @@ function addBadgeToMessage(usernameElement, rankData) {
   const tier = rankData.tier.toLowerCase();
   rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}18.png`);
   
-  // Log the image URL for debugging
-  console.log(`EloWard DEBUG: Badge image URL: ${rankImg.src}, file exists check will appear in console`);
-  
-  // Check if the image file exists by attempting to load it
-  fetch(rankImg.src)
-    .then(response => {
-      console.log(`EloWard DEBUG: Image file ${tier}18.png exists:`, response.ok);
-    })
-    .catch(error => {
-      console.error(`EloWard DEBUG: Error checking image file ${tier}18.png:`, error);
-    });
-  
   // Add the image to the badge container
   badgeContainer.appendChild(rankImg);
   
@@ -528,25 +331,20 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.dataset.username = rankData.summonerName || '';
   
   // Insert the badge after the username element
-  const chatConfig = EloWardConfig.badges.chat;
+  // Default to 'before-username' if config is not available
+  const position = 'before-username';
   
-  if (chatConfig.position === 'before-username') {
+  if (position === 'before-username') {
     // Insert before username
     usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
-    console.log('EloWard DEBUG: Inserted badge BEFORE username element');
   } else {
     // Insert after username (default)
     if (usernameElement.nextSibling) {
       usernameElement.parentNode.insertBefore(badgeContainer, usernameElement.nextSibling);
-      console.log('EloWard DEBUG: Inserted badge AFTER username element (before next sibling)');
     } else {
       usernameElement.parentNode.appendChild(badgeContainer);
-      console.log('EloWard DEBUG: Inserted badge AFTER username element (appended to parent)');
     }
   }
-  
-  console.log('EloWard DEBUG: Badge element after insertion:', badgeContainer);
-  console.log('EloWard DEBUG: Parent element structure after insertion:', usernameElement.parentNode.innerHTML);
 }
 
 function findMessageContainer(usernameElement) {
@@ -603,8 +401,6 @@ function showActivationNotification() {
     return;
   }
   
-  console.log('EloWard: Showing activation notification');
-  
   // Create notification element
   const notification = document.createElement('div');
   notification.className = 'eloward-activation-notification';
@@ -659,50 +455,19 @@ function showTooltip(event) {
   tooltipElement.style.left = `${rect.left + rect.width / 2}px`;
   tooltipElement.style.top = `${rect.bottom + 5}px`;
   
-  // Log the tooltip appearance for debugging
-  console.log(`EloWard: Showing tooltip: ${tooltipText}`);
-  
   // Make the tooltip visible
   tooltipElement.classList.add('visible');
 }
 
-function hideTooltip(event) {
+function hideTooltip() {
   // Hide the tooltip if it exists
   if (tooltipElement) {
     tooltipElement.classList.remove('visible');
-    console.log('EloWard: Hiding tooltip');
   }
-}
-
-// Helper function to get element path for debugging
-function getElementPath(element) {
-  const path = [];
-  let currentNode = element;
-  
-  while (currentNode) {
-    let selector = currentNode.nodeName.toLowerCase();
-    if (currentNode.id) {
-      selector += `#${currentNode.id}`;
-    } else if (currentNode.className) {
-      selector += `.${currentNode.className.replace(/\s+/g, '.')}`;
-    }
-    path.unshift(selector);
-    currentNode = currentNode.parentNode;
-    
-    // Stop at body to prevent overly long paths
-    if (currentNode === document.body) {
-      path.unshift('body');
-      break;
-    }
-  }
-  
-  return path.join(' > ');
 }
 
 // Add the CSS needed for badges
 function addExtensionStyles() {
-  console.log('EloWard: Adding extension styles');
-  
   const styleElement = document.createElement('style');
   styleElement.id = 'eloward-extension-styles';
   styleElement.textContent = `
@@ -774,5 +539,4 @@ function addExtensionStyles() {
   `;
   
   document.head.appendChild(styleElement);
-  console.log('EloWard: Extension styles added');
 } 

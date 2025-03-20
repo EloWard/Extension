@@ -109,7 +109,7 @@ export const EloWardConfig = {
   // Extension Configuration
   extension: {
     version: '1.0.0',
-    debug: true,
+    debug: false,
     features: {
       chatBadges: true,
       profileBadges: true,
