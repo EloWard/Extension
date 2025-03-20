@@ -120,48 +120,73 @@
     function sendMessageToExtension(message) {
       console.log("Sending message to extension:", message);
       
-      // First try direct chrome.runtime.sendMessage
+      // Use multiple messaging methods for redundancy
       try {
-        console.log("Attempting to use chrome.runtime.sendMessage");
-        chrome.runtime.sendMessage(message, function(response) {
-          if (chrome.runtime.lastError) {
-            console.error("Error:", chrome.runtime.lastError);
-            fallbackMessaging(message);
-          } else {
-            console.log("Message sent successfully:", response);
-            showSuccess(message.service || 'riot');
-          }
-        });
+        // Method 1: Chrome runtime messaging
+        if (chrome && chrome.runtime) {
+          chrome.runtime.sendMessage(message, function(response) {
+            if (chrome.runtime.lastError) {
+              console.error("Runtime messaging error:", chrome.runtime.lastError);
+              // Continue to fallback methods
+            } else {
+              console.log("Message sent successfully via chrome.runtime");
+              showSuccess(message.service || 'riot');
+              return; // Successfully sent
+            }
+          });
+        }
       } catch (e) {
         console.error("Failed to send message via chrome.runtime:", e);
-        fallbackMessaging(message);
       }
       
-      // Fallback messaging methods
-      function fallbackMessaging(message) {
-        try {
-          console.log("Trying fallback messaging methods");
-          
-          if (window.opener && window.opener.chrome && window.opener.chrome.runtime) {
-            console.log("Attempting to send via window.opener.chrome.runtime");
-            window.opener.chrome.runtime.sendMessage(message);
-            showSuccess(message.service || 'riot');
-          } else if (window.opener) {
-            console.log("Attempting to use window.postMessage to opener");
-            window.opener.postMessage({
-              source: 'eloward_auth',
-              ...message
-            }, '*');
-            showSuccess(message.service || 'riot');
-          } else {
-            console.log("No window.opener available");
-            showError("Unable to communicate with the extension. Please try again.");
-          }
-        } catch (e2) {
-          console.error("Failed to send message via window.opener:", e2);
-          showError("Communication error. Please close this window and try again.");
+      try {
+        // Method 2: Window opener runtime messaging
+        if (window.opener && window.opener.chrome && window.opener.chrome.runtime) {
+          window.opener.chrome.runtime.sendMessage(message);
+          console.log("Message sent via window.opener.chrome.runtime");
+          showSuccess(message.service || 'riot');
+          return; // Successfully sent
         }
+      } catch (e) {
+        console.error("Failed to send message via window.opener.chrome.runtime:", e);
       }
+      
+      try {
+        // Method 3: Window.postMessage
+        if (window.opener) {
+          window.opener.postMessage({
+            source: 'eloward_auth',
+            ...message
+          }, '*');
+          console.log("Message sent via window.postMessage");
+          showSuccess(message.service || 'riot');
+          return; // Successfully sent
+        }
+      } catch (e) {
+        console.error("Failed to send message via window.postMessage:", e);
+      }
+      
+      // Method 4: Save to localStorage as a fallback
+      try {
+        // Store with service-specific key
+        const storageKey = message.service === 'twitch' 
+          ? 'eloward_twitch_auth_callback_data' 
+          : 'eloward_auth_callback_data';
+        
+        localStorage.setItem(storageKey, JSON.stringify({
+          ...message,
+          timestamp: new Date().toISOString()
+        }));
+        
+        console.log(`Saved auth data to localStorage as fallback with key: ${storageKey}`);
+        showSuccess(message.service || 'riot');
+        return; // Message stored for later retrieval
+      } catch (e) {
+        console.error("Failed to store in localStorage:", e);
+      }
+      
+      // If all methods fail, show error
+      showError("Unable to communicate with the extension. Please try again or close this window and check the extension.");
     }
 
     // Function to show success message
@@ -233,34 +258,6 @@
           code: params.code,
           state: params.state
         });
-        
-        // Save to localStorage as fallback mechanism
-        try {
-          // Use a specific key for each service type
-          const storageKey = serviceType === 'twitch' ? 'eloward_twitch_auth_callback_data' : 'eloward_riot_auth_callback_data';
-          
-          localStorage.setItem(storageKey, JSON.stringify({
-            type: 'auth_callback',
-            service: serviceType,
-            code: params.code,
-            state: params.state,
-            timestamp: new Date().toISOString()
-          }));
-          
-          // Also set the original key for backward compatibility
-          localStorage.setItem('eloward_auth_callback_data', JSON.stringify({
-            type: 'auth_callback',
-            service: serviceType,
-            code: params.code,
-            state: params.state,
-            timestamp: new Date().toISOString()
-          }));
-          
-          console.log(`Saved ${serviceType} auth callback data to localStorage as fallback`);
-        } catch (e) {
-          console.warn("Could not save auth data to localStorage:", e);
-        }
-        
       } else if (params.error) {
         // We have an error
         console.error("Auth error:", params.error);
