@@ -38,7 +38,8 @@ const ACTIVE_STREAMERS = [
   'doublelift',
   'loltyler1',
   'humzh',
-  'PantsAreDragon'
+  'PantsAreDragon',
+  'Doublelift'
 ];
 
 // Define the standard redirect URI to use throughout the app
@@ -461,11 +462,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Handle rank fetch requests from content script
   if (message.action === 'fetch_rank_for_username') {
-    console.log(`Background: Received request to fetch rank for username ${message.username} in channel ${message.channel}`);
+    console.log(`Background DEBUG: Received request to fetch rank for username ${message.username} in channel ${message.channel}`);
     
     // Check if we have a cached response
     if (cachedRankResponses && cachedRankResponses[message.username]) {
-      console.log(`Background: Found cached rank data for ${message.username}:`, cachedRankResponses[message.username]);
+      console.log(`Background DEBUG: Found cached rank data for ${message.username}:`, cachedRankResponses[message.username]);
       sendResponse({
         success: true,
         rankData: cachedRankResponses[message.username],
@@ -476,8 +477,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Check if the streamer has a subscription
     checkStreamerSubscription(message.channel).then(isSubscribed => {
+      console.log(`Background DEBUG: Subscription check for channel ${message.channel}: ${isSubscribed ? 'Active' : 'Inactive'}`);
+      
       if (!isSubscribed) {
-        console.log(`Background: Channel ${message.channel} is not subscribed`);
+        console.log(`Background DEBUG: Channel ${message.channel} is not subscribed, sending error response`);
         sendResponse({ 
           success: false, 
           error: 'Channel not subscribed' 
@@ -488,20 +491,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Get the user's selected region from storage
       chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
         const selectedRegion = data.selectedRegion || 'na1';
-        console.log(`Background: Using region ${selectedRegion} for rank lookup`);
+        console.log(`Background DEBUG: Using region ${selectedRegion} for rank lookup for ${message.username}`);
         
         // Try to find a linked account for this username
         const linkedAccounts = data.linkedAccounts || {};
-        console.log('Background: Available linked accounts:', linkedAccounts);
+        console.log('Background DEBUG: Available linked accounts:', Object.keys(linkedAccounts));
         
         // Check if we have this Twitch username mapped to a Riot ID
         if (linkedAccounts[message.username]) {
           const linkedAccount = linkedAccounts[message.username];
-          console.log(`Background: Found linked account for ${message.username}:`, linkedAccount);
+          console.log(`Background DEBUG: Found linked account for ${message.username}:`, linkedAccount);
           
           // Get rank for the linked account
           fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-            console.log(`Background: Fetched rank data for ${message.username}:`, rankData);
+            console.log(`Background DEBUG: Fetched rank data for ${message.username}:`, rankData);
             
             // Cache the response
             if (!cachedRankResponses) cachedRankResponses = {};
@@ -513,18 +516,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               source: 'linked_account'
             });
           }).catch(error => {
-            console.error(`Background: Error fetching rank for ${message.username}:`, error);
+            console.error(`Background DEBUG: Error fetching rank for ${message.username}:`, error);
             sendResponse({
               success: false,
               error: error.message
             });
           });
         } else {
-          console.log(`Background: No linked account found for ${message.username}, using username as summoner name`);
+          console.log(`Background DEBUG: No linked account found for ${message.username}, using username as summoner name`);
           
           // Try using the Twitch username as the summoner name as a fallback
           fetchRankFromBackend(message.username, selectedRegion).then(rankData => {
-            console.log(`Background: Fetched rank data for ${message.username}:`, rankData);
+            console.log(`Background DEBUG: Fetched rank data for ${message.username}:`, rankData);
             
             // Cache the response if we found something
             if (rankData && rankData.tier) {
@@ -538,12 +541,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               source: 'username_match'
             });
           }).catch(error => {
-            console.error(`Background: Error fetching rank for ${message.username}:`, error);
+            console.error(`Background DEBUG: Error fetching rank for ${message.username}:`, error);
             
             // Generate mock data for testing if enabled
             if (EloWardConfig.extension.debug) {
               const mockRank = generateMockRankData(message.username, selectedRegion);
-              console.log(`Background: Generated mock rank data for ${message.username}:`, mockRank);
+              console.log(`Background DEBUG: Generated mock rank data for ${message.username}:`, mockRank);
               
               sendResponse({
                 success: true,
@@ -561,10 +564,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
     }).catch(error => {
-      console.error(`Background: Error checking subscription for ${message.channel}:`, error);
+      console.error(`Background DEBUG: Error checking subscription for ${message.channel}:`, error);
       sendResponse({
         success: false,
-        error: 'Subscription check failed'
+        error: 'Subscription check failed',
+        details: error.message
       });
     });
     
