@@ -87,6 +87,35 @@
       return params;
     }
     
+    // Determine the authentication service based on URL path and parameters
+    function determineService() {
+      const params = getUrlParameters();
+      let service = params.service || 'riot'; // Default to riot for backward compatibility
+      
+      // Check URL path to determine service if not in params
+      const path = window.location.pathname;
+      if (!params.service) {
+        if (path.includes('/twitch/auth')) {
+          service = 'twitch';
+        } else if (path.includes('/riot/auth')) {
+          service = 'riot';
+        }
+      }
+      
+      console.log(`Detected service type: ${service} from path: ${path}`);
+      return service;
+    }
+    
+    // Show service badge based on detected service
+    function showServiceBadge(service) {
+      const serviceBadgeElement = document.getElementById('service-badge');
+      if (service === 'twitch') {
+        serviceBadgeElement.innerHTML = '<span class="badge twitch">Twitch Authentication</span>';
+      } else {
+        serviceBadgeElement.innerHTML = '<span class="badge riot">Riot Authentication</span>';
+      }
+    }
+    
     // Send message to extension
     function sendMessageToExtension(message) {
       console.log("Sending message to extension:", message);
@@ -137,14 +166,6 @@
 
     // Function to show success message
     function showSuccess(serviceType) {
-      // Set the service badge
-      const serviceBadgeElement = document.getElementById('service-badge');
-      if (serviceType === 'twitch') {
-        serviceBadgeElement.innerHTML = '<span class="badge twitch">Twitch Authentication</span>';
-      } else {
-        serviceBadgeElement.innerHTML = '<span class="badge riot">Riot Authentication</span>';
-      }
-      
       document.getElementById('message').innerHTML = `
         <p class="success">Authentication successful!</p>
         <p>You have successfully authenticated with ${serviceType === 'twitch' ? 'Twitch' : 'Riot Games'}.</p>
@@ -189,36 +210,17 @@
     // Main initialization function
     function init() {
       const params = getUrlParameters();
+      const serviceType = determineService();
       
       console.log("URL parameters:", { 
         hasCode: !!params.code,
         hasState: !!params.state,
         hasError: !!params.error,
-        service: params.service || 'riot' // Default to riot for backward compatibility
+        service: serviceType
       });
       
-      // Determine the service type based on URL path or parameter
-      let serviceType = params.service || 'riot';
-      
-      // Check URL path to determine service if not in params
-      const path = window.location.pathname;
-      if (!params.service) {
-        if (path.includes('/twitch/auth')) {
-          serviceType = 'twitch';
-        } else if (path.includes('/riot/auth')) {
-          serviceType = 'riot';
-        }
-      }
-
-      console.log(`Detected service type: ${serviceType} from path: ${path}`);
-      
-      // Set service badge early
-      const serviceBadgeElement = document.getElementById('service-badge');
-      if (serviceType === 'twitch') {
-        serviceBadgeElement.innerHTML = '<span class="badge twitch">Twitch Authentication</span>';
-      } else {
-        serviceBadgeElement.innerHTML = '<span class="badge riot">Riot Authentication</span>';
-      }
+      // Show the appropriate service badge
+      showServiceBadge(serviceType);
       
       if (params.code && params.state) {
         // We have a successful auth code
@@ -227,7 +229,7 @@
         // Send auth code to extension
         sendMessageToExtension({
           type: 'auth_callback',
-          service: serviceType, // Include the service type
+          service: serviceType,
           code: params.code,
           state: params.state
         });
