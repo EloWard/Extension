@@ -835,5 +835,4 @@ export const TwitchAuth = {
 // Initialize with default config
 TwitchAuth.init();
 
-// Expose TwitchAuth globally for debugging
 window.TwitchAuth = TwitchAuth;

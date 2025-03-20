@@ -1640,9 +1640,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     console.log('Detected Twitch auth redirect URL for EXTENSION:', changeInfo.url);
     
     try {
-      // IMMEDIATELY prevent further navigation by updating to a loading state
+      // IMMEDIATELY prevent further navigation by updating to the callback page
       chrome.tabs.update(tabId, {
-        url: chrome.runtime.getURL('loading.html')
+        url: chrome.runtime.getURL('callback.html?service=twitch')
       });
       
       // Extract parameters from the URL
@@ -1663,9 +1663,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           errorDescription
         });
         
-        // Show the error page
+        // Update the callback page with error parameters
         chrome.tabs.update(tabId, {
-          url: chrome.runtime.getURL('twitch-error.html' + (errorDescription ? `?error=${error}&error_description=${encodeURIComponent(errorDescription)}` : ''))
+          url: chrome.runtime.getURL('callback.html?service=twitch&error=' + error + (errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''))
         });
         
         return;
@@ -1709,26 +1709,25 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             params: authData
           });
           
-          // Show success page
+          // Show success on the callback page
           chrome.tabs.update(tabId, {
-            url: chrome.runtime.getURL('twitch-success.html')
+            url: chrome.runtime.getURL('callback.html?service=twitch&code=' + code + '&state=' + state)
           });
           
-          // Let the success page handle its own closing with countdown
-          // DO NOT force close the tab here
+          // Let the callback page handle its own closing with countdown
         });
       } else {
         console.warn('Missing code or state in Twitch redirect URL');
-        // Show error page for missing parameters
+        // Show error on callback page
         chrome.tabs.update(tabId, {
-          url: chrome.runtime.getURL('twitch-error.html?error=missing_parameters&error_description=Auth code or state parameter missing in redirect')
+          url: chrome.runtime.getURL('callback.html?service=twitch&error=missing_parameters&error_description=Auth code or state parameter missing in redirect')
         });
       }
     } catch (error) {
       console.error('Error processing Twitch redirect URL:', error);
-      // Show generic error page
+      // Show generic error on callback page
       chrome.tabs.update(tabId, {
-        url: chrome.runtime.getURL('twitch-error.html?error=processing_error&error_description=' + encodeURIComponent(error.message))
+        url: chrome.runtime.getURL('callback.html?service=twitch&error=processing_error&error_description=' + encodeURIComponent(error.message))
       });
     }
   }
