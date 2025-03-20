@@ -7,7 +7,6 @@ import { PersistentStorage } from './js/persistentStorage.js';
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
-const RIOT_RSO_CLIENT_ID = '38a4b902-7186-44ac-8183-89ba1ac56cf3'; // From wrangler.toml - matches the Cloudflare Worker config
 const TWITCH_REDIRECT_URL = 'https://www.eloward.xyz/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 
 // Platform routing values for Riot API
@@ -41,9 +40,6 @@ const ACTIVE_STREAMERS = [
   'PantsAreDragon',
   'Doublelift'
 ];
-
-// Define the standard redirect URI to use throughout the app
-const STANDARD_REDIRECT_URI = "https://www.eloward.xyz/riot/auth/redirect";
 
 /* Track any open auth windows */
 let authWindows = {};
