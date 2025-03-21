@@ -4,6 +4,9 @@ console.log("🔍 EloWard Extension Loading - Direct Console Test");
 // Inject a visible indicator to show the extension is running
 injectVisibleDebugIndicator();
 
+// For testing purposes, force enable all channels
+const TESTING_MODE = true; // Set to false for production
+
 // Set up a failsafe to ensure something happens even if normal init fails
 setTimeout(() => {
   console.log("🚨 EloWard failsafe triggered after 10 seconds");
@@ -25,7 +28,7 @@ setTimeout(() => {
 // This script runs on Twitch pages and adds rank badges to chat messages
 
 // Global state
-let isChannelSubscribed = false;
+let isChannelSubscribed = TESTING_MODE; // Default to true in testing mode
 let channelName = '';
 let processedMessages = new Set();
 let observerInitialized = false;
@@ -84,7 +87,34 @@ function initializeExtension() {
     debugLog("Added extension styles");
   }
   
-  // Check if this streamer has a subscription
+  // In testing mode, treat all channels as subscribed
+  if (TESTING_MODE) {
+    debugLog(`TESTING MODE: Treating channel ${channelName} as subscribed`);
+    isChannelSubscribed = true;
+    
+    // Initialize the observer for chat messages
+    debugLog("Initializing chat observer");
+    initializeObserver();
+    
+    // Show a subtle notification that EloWard is active
+    showActivationNotification();
+    
+    // Add test data to cache
+    if (Object.keys(cachedUserMap).length === 0) {
+      debugLog("Adding test entries to user cache");
+      // Add the user's actual Twitch username
+      cachedUserMap['yomata1'] = {
+        tier: 'DIAMOND',
+        division: 'IV',
+        leaguePoints: 75,
+        summonerName: 'TestSummoner'
+      };
+    }
+    
+    return;
+  }
+  
+  // Normal subscription check path for production
   debugLog(`Checking if ${channelName} has a subscription`);
   
   try {
@@ -93,6 +123,11 @@ function initializeExtension() {
       (response) => {
         if (chrome.runtime.lastError) {
           console.error("Chrome runtime error:", chrome.runtime.lastError);
+          if (TESTING_MODE) {
+            // Fall back to enabled if in testing mode
+            isChannelSubscribed = true;
+            initializeObserver();
+          }
           return;
         }
         
@@ -122,13 +157,27 @@ function initializeExtension() {
             console.error("Error refreshing linked accounts:", error);
           }
         } else {
-          isChannelSubscribed = false;
-          debugLog(`Channel ${channelName} is NOT subscribed`);
+          // Even if not subscribed, still initialize in testing mode
+          if (TESTING_MODE) {
+            isChannelSubscribed = true;
+            debugLog(`TESTING MODE: Overriding subscription check for ${channelName}`);
+            initializeObserver();
+            showActivationNotification();
+          } else {
+            isChannelSubscribed = false;
+            debugLog(`Channel ${channelName} is NOT subscribed`);
+          }
         }
       }
     );
   } catch (error) {
     console.error("Error sending message to background script:", error);
+    if (TESTING_MODE) {
+      // Fall back to enabled if in testing mode
+      isChannelSubscribed = true;
+      initializeObserver();
+      showActivationNotification();
+    }
   }
   
   // Listen for URL changes (when user navigates to a different channel)
@@ -143,15 +192,35 @@ function initializeExtension() {
         lastUrl = window.location.href;
         
         // Reset state
-        isChannelSubscribed = false;
+        isChannelSubscribed = TESTING_MODE; // Default to true in testing mode
         channelName = window.location.pathname.split('/')[1];
         processedMessages.clear();
         cachedUserMap = {}; // Clear the cache when changing channels
+        
+        // Add test entry again after cache clear
+        if (TESTING_MODE) {
+          cachedUserMap['yomata1'] = {
+            tier: 'DIAMOND',
+            division: 'IV',
+            leaguePoints: 75,
+            summonerName: 'TestSummoner'
+          };
+        }
         
         debugLog(`Reset state for channel: ${channelName}`);
         
         // Remove any existing notification
         removeActivationNotification();
+        
+        // In testing mode, skip subscription check
+        if (TESTING_MODE) {
+          isChannelSubscribed = true;
+          debugLog(`TESTING MODE: Treating new channel ${channelName} as subscribed`);
+          observerInitialized = false;
+          initializeObserver();
+          showActivationNotification();
+          return;
+        }
         
         // Check if the new channel is subscribed
         if (channelName) {
@@ -176,7 +245,16 @@ function initializeExtension() {
                 // Show a subtle notification that EloWard is active
                 showActivationNotification();
               } else {
-                debugLog(`New channel ${channelName} is NOT subscribed`);
+                if (TESTING_MODE) {
+                  isChannelSubscribed = true;
+                  debugLog(`TESTING MODE: Overriding subscription check for new channel ${channelName}`);
+                  observerInitialized = false;
+                  initializeObserver();
+                  showActivationNotification();
+                } else {
+                  isChannelSubscribed = false;
+                  debugLog(`New channel ${channelName} is NOT subscribed`);
+                }
               }
             }
           );
@@ -291,7 +369,8 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
   
   // Create a MutationObserver to watch for new chat messages
   const chatObserver = new MutationObserver((mutations) => {
-    if (!isChannelSubscribed) {
+    // Process messages even if channel isn't subscribed when in testing mode
+    if (!isChannelSubscribed && !TESTING_MODE) {
       debugLog("Channel not subscribed, ignoring chat messages");
       return;
     }
@@ -412,28 +491,43 @@ function processNewMessage(messageNode) {
     }
   }
   
+  // For testing mode, directly check against our hard-coded test usernames
+  if (TESTING_MODE) {
+    // We already checked the cache above, so this message isn't from a test user
+    return;
+  }
+  
   // If we don't have the rank data, fetch it from the background script
   debugLog(`Fetching rank for ${username}`);
-  chrome.runtime.sendMessage(
-    { 
-      action: 'fetch_rank_for_username',
-      username: username,
-      channel: channelName
-    },
-    response => {
-      debugLog(`Rank lookup response for ${username}:`, response);
-      if (response && response.success && response.rankData) {
-        debugLog(`Received rank data for ${username}:`, response.rankData);
-        // Cache the response
-        cachedUserMap[username] = response.rankData;
+  try {
+    chrome.runtime.sendMessage(
+      { 
+        action: 'fetch_rank_for_username',
+        username: username,
+        channel: channelName
+      },
+      response => {
+        if (chrome.runtime.lastError) {
+          console.error("Error fetching rank:", chrome.runtime.lastError);
+          return;
+        }
         
-        // Add the badge to the message
-        addBadgeToMessage(usernameElement, response.rankData);
-      } else {
-        debugLog(`No rank data found for ${username}`);
+        debugLog(`Rank lookup response for ${username}:`, response);
+        if (response && response.success && response.rankData) {
+          debugLog(`Received rank data for ${username}:`, response.rankData);
+          // Cache the response
+          cachedUserMap[username] = response.rankData;
+          
+          // Add the badge to the message
+          addBadgeToMessage(usernameElement, response.rankData);
+        } else {
+          debugLog(`No rank data found for ${username}`);
+        }
       }
-    }
-  );
+    );
+  } catch (error) {
+    console.error("Error sending rank lookup message:", error);
+  }
 }
 
 function addBadgeToMessage(usernameElement, rankData) {
