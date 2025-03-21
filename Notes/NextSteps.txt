@@ -1,6 +1,7 @@
-- Fix league rank + username disappearing after a while
-- Tiwtch name vs league name
-
+- Remove league auth check on popup open
+- Remove mock rank data
+- remove hardcoded usernames
+- rank badge accumulating
 
 - Change Vercel deployment to Cloudflare Pages
 
