@@ -1,5 +1,4 @@
 // EloWard Background Service Worker
-import './js/config.js';
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
@@ -539,23 +538,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }).catch(error => {
             console.error(`Background DEBUG: Error fetching rank for ${message.username}:`, error);
             
-            // Generate mock data for testing if enabled
-            if (EloWardConfig.extension.debug) {
-              const mockRank = generateMockRankData(message.username, selectedRegion);
-              console.log(`Background DEBUG: Generated mock rank data for ${message.username}:`, mockRank);
-              
-              sendResponse({
-                success: true,
-                rankData: mockRank,
-                source: 'mock_data',
-                note: 'Using mock data because real lookup failed'
-              });
-            } else {
-              sendResponse({
-                success: false,
-                error: error.message
-              });
-            }
+            // Skip mock data generation since we don't need debug functionality
+            sendResponse({
+              success: false,
+              error: error.message
+            });
           });
         }
       });
@@ -843,14 +830,7 @@ function checkStreamerSubscription(streamerName) {
   console.log(`Background: Checking if streamer ${streamerName} has a subscription`);
   
   return new Promise((resolve, reject) => {
-    // In debug mode, always return true for testing
-    if (EloWardConfig.extension.debug) {
-      console.log(`Background: Debug mode ON - treating ${streamerName} as subscribed for testing`);
-      resolve(true);
-      return;
-    }
-    
-    // For MVP, check against mock list
+    // Check against mock list
     // In production, this would call the backend API
     if (ACTIVE_STREAMERS.includes(streamerName.toLowerCase())) {
       console.log(`Background: ${streamerName} found in active streamers list`);
