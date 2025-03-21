@@ -10,33 +10,30 @@ import { PersistentStorage } from './persistentStorage.js';
  * Note: This implementation uses the public client flow which only requires a client ID.
  */
 
-// Safe localStorage wrapper to handle cases where localStorage is not available (service workers)
+// Safe storage utilities for Chrome extension
 const safeStorage = {
   getItem: (key) => {
-    try {
-      return localStorage.getItem(key);
-    } catch (error) {
-      console.warn('localStorage not available, falling back to chrome.storage');
-      return null;
-    }
+    return new Promise((resolve) => {
+      chrome.storage.local.get([key], (result) => {
+        resolve(result[key] || null);
+      });
+    });
   },
   setItem: (key, value) => {
-    try {
-      localStorage.setItem(key, value);
-      return true;
-    } catch (error) {
-      console.warn('localStorage not available, falling back to chrome.storage');
-      return false;
-    }
+    return new Promise((resolve) => {
+      const data = {};
+      data[key] = value;
+      chrome.storage.local.set(data, () => {
+        resolve(true);
+      });
+    });
   },
   removeItem: (key) => {
-    try {
-      localStorage.removeItem(key);
-      return true;
-    } catch (error) {
-      console.warn('localStorage not available');
-      return false;
-    }
+    return new Promise((resolve) => {
+      chrome.storage.local.remove([key], () => {
+        resolve(true);
+      });
+    });
   }
 };
 
@@ -128,7 +125,6 @@ export const RiotAuth = {
       // Clear any previous auth states
       console.log('Clearing any previous auth states');
       await chrome.storage.local.remove([this.config.storageKeys.authState]);
-      localStorage.removeItem(this.config.storageKeys.authState);
       
       // Generate a unique state
       const state = this._generateRandomState();
@@ -146,7 +142,6 @@ export const RiotAuth = {
         await new Promise(resolve => {
           chrome.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback'], resolve);
         });
-        localStorage.removeItem('eloward_auth_callback');
         console.log('Auth callback data cleared from storage');
       } catch (e) {
         console.warn('Error clearing auth callbacks:', e);
@@ -221,21 +216,12 @@ export const RiotAuth = {
    * @private
    */
   async _storeAuthState(state) {
-    // Store in chrome.storage.local
     await new Promise(resolve => {
       chrome.storage.local.set({
         [this.config.storageKeys.authState]: state
       }, resolve);
     });
     console.log(`Stored auth state in chrome.storage: ${state}`);
-    
-    // Also store in localStorage as backup
-    try {
-      localStorage.setItem(this.config.storageKeys.authState, state);
-      console.log(`Stored auth state in localStorage: ${state}`);
-    } catch (e) {
-      console.error('Failed to store auth state in localStorage:', e);
-    }
   },
   
   /**
@@ -244,7 +230,7 @@ export const RiotAuth = {
    * @private
    */
   async _getStoredAuthState() {
-    // Try chrome.storage.local first
+    // Get from chrome.storage.local
     const chromeData = await new Promise(resolve => {
       chrome.storage.local.get([this.config.storageKeys.authState], resolve);
     });
@@ -252,16 +238,6 @@ export const RiotAuth = {
     const chromeState = chromeData[this.config.storageKeys.authState];
     if (chromeState) {
       return chromeState;
-    }
-    
-    // Try localStorage as fallback
-    try {
-      const localState = localStorage.getItem(this.config.storageKeys.authState);
-      if (localState) {
-        return localState;
-      }
-    } catch (e) {
-      console.error('Error retrieving state from localStorage:', e);
     }
     
     return null;
@@ -379,31 +355,6 @@ export const RiotAuth = {
           
           resolve(callback);
           return true;
-        }
-        
-        // Check localStorage as fallback
-        try {
-          const localStorageData = localStorage.getItem('eloward_auth_callback');
-          if (localStorageData) {
-            try {
-              const parsedData = JSON.parse(localStorageData);
-              // Verify this is a Riot callback
-              if (parsedData && parsedData.code && parsedData.service === 'riot') {
-                console.log('Riot auth callback found in localStorage');
-                clearInterval(intervalId);
-                
-                // Clear the callback data
-                localStorage.removeItem('eloward_auth_callback');
-                
-                resolve(parsedData);
-                return true;
-              }
-            } catch (e) {
-              console.warn('Error parsing auth callback from localStorage:', e);
-            }
-          }
-        } catch (e) {
-          console.warn('Error accessing localStorage for auth callback:', e);
         }
         
         // Check if auth window was closed by user
@@ -641,30 +592,6 @@ export const RiotAuth = {
         chrome.storage.local.set(storageData, resolve);
       });
       console.log('Tokens stored in chrome.storage successfully');
-      
-      // Also store in localStorage as backup
-      try {
-        // Store each item individually - more resilient than storing everything at once
-        localStorage.setItem(this.config.storageKeys.accessToken, tokenData.access_token);
-        localStorage.setItem(this.config.storageKeys.tokenExpiry, tokenExpiry.toString());
-        
-        if (tokenData.refresh_token) {
-          localStorage.setItem(this.config.storageKeys.refreshToken, tokenData.refresh_token);
-        }
-        
-        localStorage.setItem(this.config.storageKeys.tokens, JSON.stringify({
-          access_token: tokenData.access_token,
-          refresh_token: tokenData.refresh_token,
-          expires_in: expiresIn,
-          token_type: tokenData.token_type,
-          stored_at: Date.now()
-        }));
-        
-        console.log('Token data also stored in localStorage for redundancy');
-      } catch (e) {
-        console.error('Failed to store token data in localStorage:', e);
-        // Non-fatal error, we still have the data in chrome.storage
-      }
     } catch (error) {
       console.error('Error storing tokens:', error);
       throw error;
@@ -1036,7 +963,7 @@ export const RiotAuth = {
    * @param {boolean} forceReload - Whether to reload the extension after logout
    * @returns {Promise<boolean>} - Whether logout was successful
    */
-  async logout(forceReload = false) {
+  async logout(forceReload = true) {
     try {
       console.log('Logging out of Riot account');
       
@@ -1289,16 +1216,13 @@ export const RiotAuth = {
    * @private
    */
   async _storeAccountInfo(accountInfo) {
-    await new Promise(resolve => {
-      chrome.storage.local.set({
-        [this.config.storageKeys.accountInfo]: accountInfo
-      }, resolve);
-    });
-    
     try {
-      localStorage.setItem(this.config.storageKeys.accountInfo, JSON.stringify(accountInfo));
+      await chrome.storage.local.set({
+        [this.config.storageKeys.accountInfo]: accountInfo
+      });
+      console.log('Account info stored in chrome.storage.local');
     } catch (e) {
-      console.error('Failed to store account info in localStorage:', e);
+      console.error('Failed to store account info:', e);
     }
   },
   
@@ -1448,16 +1372,13 @@ export const RiotAuth = {
    * @private
    */
   async _storeSummonerInfo(summonerInfo) {
-    await new Promise(resolve => {
-      chrome.storage.local.set({
-        [this.config.storageKeys.summonerInfo]: summonerInfo
-      }, resolve);
-    });
-    
     try {
-      localStorage.setItem(this.config.storageKeys.summonerInfo, JSON.stringify(summonerInfo));
+      await chrome.storage.local.set({
+        [this.config.storageKeys.summonerInfo]: summonerInfo
+      });
+      console.log('Summoner info stored in chrome.storage.local');
     } catch (e) {
-      console.error('Failed to store summoner info in localStorage:', e);
+      console.error('Failed to store summoner info:', e);
     }
   },
   
@@ -1564,16 +1485,13 @@ export const RiotAuth = {
    * @private
    */
   async _storeRankInfo(rankInfo) {
-    await new Promise(resolve => {
-      chrome.storage.local.set({
-        [this.config.storageKeys.rankInfo]: rankInfo
-      }, resolve);
-    });
-    
     try {
-      localStorage.setItem(this.config.storageKeys.rankInfo, JSON.stringify(rankInfo));
+      await chrome.storage.local.set({
+        [this.config.storageKeys.rankInfo]: rankInfo
+      });
+      console.log('Rank info stored in chrome.storage.local');
     } catch (e) {
-      console.error('Failed to store rank info in localStorage:', e);
+      console.error('Failed to store rank info:', e);
     }
   },
   
@@ -1848,5 +1766,31 @@ export const RiotAuth = {
       console.error('Error getting user data from storage:', error);
       return null;
     }
+  },
+  
+  /**
+   * Check for auth callback data in various storage mechanisms
+   * @returns {Promise<Object|null>} - The auth callback data or null if not found
+   * @private
+   */
+  async _checkForAuthCallback() {
+    // Check chrome.storage.local
+    const chromeData = await new Promise(resolve => {
+      chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], resolve);
+    });
+    
+    if (chromeData.auth_callback || chromeData.eloward_auth_callback) {
+      const callback = chromeData.auth_callback || chromeData.eloward_auth_callback;
+      console.log('Riot auth callback found in chrome.storage', callback);
+      
+      // Clean up the storage
+      await new Promise(resolve => {
+        chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], resolve);
+      });
+      
+      return callback;
+    }
+    
+    return null;
   }
 };

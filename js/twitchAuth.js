@@ -96,7 +96,6 @@ export const TwitchAuth = {
       // Clear any previous auth states
       console.log('Clearing any previous auth states');
       await chrome.storage.local.remove([this.config.storageKeys.authState]);
-      localStorage.removeItem(this.config.storageKeys.authState);
       
       // Generate a unique state value for CSRF protection
       const state = this._generateRandomState();
@@ -114,7 +113,6 @@ export const TwitchAuth = {
         await new Promise(resolve => {
           chrome.storage.local.remove(['auth_callback', 'twitch_auth_callback'], resolve);
         });
-        localStorage.removeItem('eloward_auth_callback');
         console.log('Auth callback data cleared from storage');
       } catch (e) {
         console.warn('Error clearing auth callbacks:', e);
@@ -171,19 +169,10 @@ export const TwitchAuth = {
    * @private
    */
   async _storeAuthState(state) {
-    // Store in chrome.storage.local
     await new Promise(resolve => {
       chrome.storage.local.set({ [this.config.storageKeys.authState]: state }, resolve);
     });
     console.log(`Stored Twitch auth state in chrome.storage: ${state}`);
-    
-    // Also try to store in localStorage for redundancy
-    try {
-      localStorage.setItem(this.config.storageKeys.authState, state);
-      console.log(`Stored Twitch auth state in localStorage: ${state}`);
-    } catch (e) {
-      console.error('Failed to store auth state in localStorage:', e);
-    }
   },
   
   /**
@@ -192,7 +181,7 @@ export const TwitchAuth = {
    * @private
    */
   async _getStoredAuthState() {
-    // Try to get from chrome.storage.local first
+    // Get from chrome.storage.local
     const chromeData = await new Promise(resolve => {
       chrome.storage.local.get([this.config.storageKeys.authState], resolve);
     });
@@ -200,16 +189,6 @@ export const TwitchAuth = {
     const chromeState = chromeData[this.config.storageKeys.authState];
     if (chromeState) {
       return chromeState;
-    }
-    
-    // Fall back to localStorage
-    try {
-      const localState = localStorage.getItem(this.config.storageKeys.authState);
-      if (localState) {
-        return localState;
-      }
-    } catch (e) {
-      console.error('Error retrieving state from localStorage:', e);
     }
     
     return null;
@@ -354,31 +333,6 @@ export const TwitchAuth = {
           
           resolve(callback);
           return true;
-        }
-        
-        // Check localStorage as fallback
-        try {
-          const localStorageData = localStorage.getItem('eloward_auth_callback');
-          if (localStorageData) {
-            try {
-              const parsedData = JSON.parse(localStorageData);
-              // Verify this is a Twitch callback
-              if (parsedData && parsedData.code && parsedData.service === 'twitch') {
-                console.log('Twitch auth callback found in localStorage');
-                clearInterval(intervalId);
-                
-                // Clear the callback data
-                localStorage.removeItem('eloward_auth_callback');
-                
-                resolve(parsedData);
-                return true;
-              }
-            } catch (e) {
-              console.warn('Error parsing auth callback from localStorage:', e);
-            }
-          }
-        } catch (e) {
-          console.warn('Error accessing localStorage for auth callback:', e);
         }
         
         // Check if auth window was closed by user
@@ -636,32 +590,20 @@ export const TwitchAuth = {
    * @returns {Promise<boolean>} - Whether logout was successful
    */
   async logout() {
-    try {
-      console.log('Logging out from Twitch');
-      
-      // Clear the persistent storage first to ensure user appears logged out
-      await PersistentStorage.clearServiceData('twitch');
-      console.log('Cleared persistent Twitch user data');
-      
-      // Clear tokens and related data from chrome.storage
-      const keysToRemove = [
+    console.log('Logging out of Twitch');
+    
+    // Clear auth data from chrome.storage
+    await new Promise(resolve => {
+      chrome.storage.local.remove([
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
         this.config.storageKeys.tokenExpiry,
-        this.config.storageKeys.tokens,
-        this.config.storageKeys.userInfo,
-        this.config.storageKeys.authState
-      ];
-      
-      await chrome.storage.local.remove(keysToRemove);
-      console.log('Cleared Twitch tokens from chrome.storage');
-      
-      console.log('Twitch logout completed successfully');
-      return true;
-    } catch (error) {
-      console.error('Error during Twitch logout:', error);
-      return false;
-    }
+        this.config.storageKeys.authState,
+        'eloward_auth_callback'
+      ], resolve);
+    });
+    
+    return true;
   },
   
   /**
