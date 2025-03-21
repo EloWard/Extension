@@ -324,6 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const displayName = userData?.display_name || userData?.login || 'Connected';
           twitchConnectionStatus.textContent = displayName;
           twitchConnectionStatus.classList.add('connected');
+          twitchConnectionStatus.classList.remove('connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Disconnect';
           
           // Update persistent storage with latest data if available
@@ -337,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (!persistentConnectedState.twitch) {
           // Only update UI if we haven't already displayed data from persistent storage
           twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('connected');
+          twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Connect';
         }
       } catch (twitchError) {
@@ -345,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!persistentConnectedState.twitch) {
           // Only update UI if we haven't already displayed data from persistent storage
           twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('connected');
+          twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Connect';
         }
       }
@@ -358,10 +359,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Helper function to show the not connected UI state
   function showNotConnectedUI() {
+    // Reset Riot connection UI
     riotConnectionStatus.textContent = 'Not Connected';
-    riotConnectionStatus.classList.remove('connected');
+    riotConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
     connectRiotBtn.textContent = 'Connect';
     connectRiotBtn.disabled = false;
+    
+    // Reset Twitch connection UI
+    twitchConnectionStatus.textContent = 'Not Connected';
+    twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+    connectTwitchBtn.textContent = 'Connect';
+    connectTwitchBtn.disabled = false;
     
     // Reset rank display and show unranked graphic
     currentRank.textContent = 'Unranked';
@@ -594,6 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isAuthenticated) {
         // Disconnect flow
         twitchConnectionStatus.textContent = 'Disconnecting...';
+        twitchConnectionStatus.classList.add('disconnecting');
+        twitchConnectionStatus.classList.remove('connected', 'connecting', 'error');
         connectTwitchBtn.textContent = 'Disconnecting...';
         connectTwitchBtn.disabled = true;
         
@@ -606,10 +616,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update UI after logout
         twitchConnectionStatus.textContent = 'Not Connected';
         connectTwitchBtn.textContent = 'Connect';
-        twitchConnectionStatus.classList.remove('connected');
+        twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting');
       } else {
         // Connect flow
         twitchConnectionStatus.textContent = 'Connecting...';
+        twitchConnectionStatus.classList.add('connecting');
+        twitchConnectionStatus.classList.remove('connected', 'disconnecting', 'error');
         connectTwitchBtn.textContent = 'Connecting...';
         connectTwitchBtn.disabled = true;
         
@@ -625,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (userData && (userData.display_name || userData.login)) {
             twitchConnectionStatus.textContent = userData.display_name || userData.login;
             twitchConnectionStatus.classList.add('connected');
+            twitchConnectionStatus.classList.remove('connecting');
             connectTwitchBtn.textContent = 'Disconnect';
           } else {
             throw new Error('Invalid user data received');
@@ -633,6 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
           console.error('Twitch authentication error:', authError);
           twitchConnectionStatus.textContent = authError.message || 'Authentication Failed';
           twitchConnectionStatus.classList.add('error');
+          twitchConnectionStatus.classList.remove('connecting');
           connectTwitchBtn.textContent = 'Connect';
           
           // Reset error after 5 seconds
@@ -648,6 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error in connectTwitchAccount:', error);
       twitchConnectionStatus.textContent = error.message || 'Error';
       twitchConnectionStatus.classList.add('error');
+      twitchConnectionStatus.classList.remove('connecting', 'disconnecting');
     } finally {
       connectTwitchBtn.disabled = false;
     }
