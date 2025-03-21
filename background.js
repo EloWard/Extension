@@ -703,8 +703,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received message:', message);
   
   if (message.action === 'clear_local_storage') {
-    // This message is meant for extension pages with localStorage access
-    // Background service worker doesn't have localStorage
+    // Deprecated: This message is no longer needed as we only use chrome.storage.local
+    console.log('Received deprecated clear_local_storage message');
     return;
   }
   
@@ -1683,39 +1683,34 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           timestamp: new Date().toISOString()
         };
         
-        // Store in storage for the TwitchAuth module to find
-        // Use multiple storage keys for better compatibility
-        chrome.storage.local.set({
-          'twitch_auth_callback': authData,
-          'auth_callback': authData,
-          'eloward_twitch_auth_callback_data': authData,
-          // Also store individual values
-          'twitch_auth_code': code,
-          'twitch_auth_state': state
-        }, () => {
-          console.log('Stored Twitch auth callback data from ext redirect in multiple storage keys');
-          
-          // Send a message to notify any listeners
-          chrome.runtime.sendMessage({
-            type: 'twitch_auth_complete',
-            success: true,
-            data: authData
-          });
-          
-          // Also try with the other message format
-          chrome.runtime.sendMessage({
-            type: 'auth_callback',
-            service: 'twitch',
-            params: authData
-          });
-          
-          // Show success on the callback page
-          chrome.tabs.update(tabId, {
-            url: `https://www.eloward.xyz/ext/twitch/auth/redirect?code=${code}&state=${state}`
-          });
-          
-          // Let the callback page handle its own closing with countdown
+        // Store in localStorage for redundancy
+        try {
+          localStorage.setItem('eloward_auth_callback', JSON.stringify(authData));
+          console.log('Stored Twitch auth data in localStorage');
+        } catch (e) {
+          console.error('Failed to store Twitch auth data in localStorage:', e);
+        }
+        
+        // Send a message to notify any listeners
+        chrome.runtime.sendMessage({
+          type: 'twitch_auth_complete',
+          success: true,
+          data: authData
         });
+        
+        // Also try with the other message format
+        chrome.runtime.sendMessage({
+          type: 'auth_callback',
+          service: 'twitch',
+          params: authData
+        });
+        
+        // Show success on the callback page
+        chrome.tabs.update(tabId, {
+          url: `https://www.eloward.xyz/ext/twitch/auth/redirect?code=${code}&state=${state}`
+        });
+        
+        // Let the callback page handle its own closing with countdown
       } else {
         console.warn('Missing code or state in Twitch redirect URL');
         // Show error on callback page

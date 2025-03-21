@@ -62,7 +62,7 @@ const defaultConfig = {
     summonerInfo: 'eloward_riot_summoner_info',
     rankInfo: 'eloward_riot_rank_info',
     authState: 'eloward_auth_state',
-    authCallback: 'authCallback',
+    authCallback: 'eloward_auth_callback',
     idToken: 'eloward_riot_id_token'
   }
 };
@@ -144,9 +144,9 @@ export const RiotAuth = {
       console.log('Clearing any existing auth callbacks');
       try {
         await new Promise(resolve => {
-          chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], resolve);
+          chrome.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback'], resolve);
         });
-        localStorage.removeItem('eloward_auth_callback_data');
+        localStorage.removeItem('eloward_auth_callback');
         console.log('Auth callback data cleared from storage');
       } catch (e) {
         console.warn('Error clearing auth callbacks:', e);
@@ -383,16 +383,17 @@ export const RiotAuth = {
         
         // Check localStorage as fallback
         try {
-          const localStorageData = localStorage.getItem('eloward_auth_callback_data');
+          const localStorageData = localStorage.getItem('eloward_auth_callback');
           if (localStorageData) {
             try {
               const parsedData = JSON.parse(localStorageData);
-              if (parsedData && parsedData.code) {
-                console.log('Auth callback found in localStorage');
+              // Verify this is a Riot callback
+              if (parsedData && parsedData.code && parsedData.service === 'riot') {
+                console.log('Riot auth callback found in localStorage');
                 clearInterval(intervalId);
                 
                 // Clear the callback data
-                localStorage.removeItem('eloward_auth_callback_data');
+                localStorage.removeItem('eloward_auth_callback');
                 
                 resolve(parsedData);
                 return true;
@@ -914,53 +915,30 @@ export const RiotAuth = {
   },
   
   /**
-   * Get a value from storage, trying both chrome.storage and localStorage
-   * @param {string} key - The key to get
-   * @returns {Promise<string|null>} - The stored value or null
+   * Get value from chrome.storage.local
+   * @param {string} key - The key to retrieve
+   * @returns {Promise<any>} The stored value
    * @private
    */
   async _getStoredValue(key) {
     try {
-      console.log(`Retrieving stored value for key: ${key}`);
+      if (!key) throw new Error('No storage key provided');
       
-      // Try chrome.storage first
-      const chromeData = await new Promise(resolve => {
-        chrome.storage.local.get([key], resolve);
-      });
+      console.log(`Getting stored value for key: ${key}`);
       
-      if (chromeData[key] !== undefined) {
-        console.log(`Found value in chrome.storage for key: ${key}`, 
-                   typeof chromeData[key] === 'object' ? 'Type: object' : 
-                   `Type: ${typeof chromeData[key]}`);
-        return chromeData[key];
-      }
-      
-      // Try localStorage as fallback
-      try {
-        const localValue = localStorage.getItem(key);
-        if (localValue !== null) {
-          console.log(`Found value in localStorage for key: ${key}`);
-          
-          // For objects stored in localStorage, we need to parse the JSON
-          if (localValue.startsWith('{') || localValue.startsWith('[')) {
-            try {
-              const parsedValue = JSON.parse(localValue);
-              console.log(`Parsed JSON for key: ${key}`);
-              return parsedValue;
-            } catch (parseError) {
-              console.warn(`Failed to parse JSON for key: ${key}, using raw value`);
-              return localValue;
-            }
+      // Get only from chrome.storage.local for consistency
+      return new Promise((resolve) => {
+        chrome.storage.local.get([key], (result) => {
+          const error = chrome.runtime.lastError;
+          if (error) {
+            console.error(`Error retrieving value for key ${key}:`, error);
+            resolve(null);
+          } else {
+            console.log(`Successfully retrieved value for key: ${key}, exists: ${!!result[key]}`);
+            resolve(result[key]);
           }
-          
-          return localValue;
-        }
-      } catch (e) {
-        console.error(`Error accessing localStorage for key: ${key}`, e);
-      }
-      
-      console.log(`No stored value found for key: ${key}`);
-      return null;
+        });
+      });
     } catch (error) {
       console.error(`Error in _getStoredValue for key: ${key}`, error);
       return null;
@@ -1054,51 +1032,47 @@ export const RiotAuth = {
   },
   
   /**
-   * Logout the user
-   * @param {boolean} [forceReload=false] - Whether to force a page reload after logout
-   * @returns {Promise<void>}
+   * Logout from Riot - clear tokens and user data
+   * @param {boolean} forceReload - Whether to reload the extension after logout
+   * @returns {Promise<boolean>} - Whether logout was successful
    */
   async logout(forceReload = false) {
     try {
-      console.log('Logging out from Riot RSO');
+      console.log('Logging out of Riot account');
       
-      // FIRST clear the persistent storage to ensure user appears logged out
-      // even if token removal fails
+      // The most important part - clear the persistent user data first
+      // This ensures the user appears logged out even if token clearing fails
       await PersistentStorage.clearServiceData('riot');
-      console.log('Cleared persistent Riot data');
+      console.log('Cleared persistent Riot user data');
       
-      // Remove tokens from storage
-      console.log('Removing stored tokens');
-      await chrome.storage.local.remove([
+      // Now clear all the tokens and related data
+      let keysToRemove = [
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
         this.config.storageKeys.tokenExpiry,
         this.config.storageKeys.tokens,
-        this.config.storageKeys.idToken
-      ]);
-      
-      // Clean up localStorage for tokens
-      localStorage.removeItem(this.config.storageKeys.accessToken);
-      localStorage.removeItem(this.config.storageKeys.refreshToken);
-      localStorage.removeItem(this.config.storageKeys.tokenExpiry);
-      localStorage.removeItem(this.config.storageKeys.tokens);
-      localStorage.removeItem(this.config.storageKeys.idToken);
-      
-      // Remove additional user data
-      await chrome.storage.local.remove([
+        this.config.storageKeys.idToken,
         this.config.storageKeys.accountInfo,
         this.config.storageKeys.summonerInfo,
-        this.config.storageKeys.rankInfo
-      ]);
+        this.config.storageKeys.rankInfo,
+        this.config.storageKeys.authState
+      ];
+      
+      // Clear from chrome.storage
+      await chrome.storage.local.remove(keysToRemove);
+      console.log('Cleared Riot tokens from chrome.storage');
       
       if (forceReload) {
-        window.location.reload();
+        console.log('Reloading extension after Riot logout');
+        setTimeout(() => {
+          chrome.runtime.reload();
+        }, 500);
       }
       
-      console.log('Logout complete');
+      console.log('Riot logout completed successfully');
       return true;
     } catch (error) {
-      console.error('Error during logout:', error);
+      console.error('Error during Riot logout:', error);
       return false;
     }
   },

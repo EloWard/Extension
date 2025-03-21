@@ -111,21 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
       sendResponse({ success: true });
     }
     
-    // Handle clear_local_storage message
+    // Handle clear_local_storage message (kept for backward compatibility)
     if (message.action === 'clear_local_storage') {
-      console.log('Clearing localStorage in popup context');
-      
-      // Clear Riot auth data from localStorage
-      localStorage.removeItem('eloward_riot_access_token');
-      localStorage.removeItem('eloward_riot_refresh_token');
-      localStorage.removeItem('eloward_riot_token_expiry');
-      localStorage.removeItem('eloward_riot_account_info');
-      localStorage.removeItem('eloward_riot_summoner_info');
-      localStorage.removeItem('eloward_riot_rank_info');
-      localStorage.removeItem('eloward_auth_state');
-      localStorage.removeItem('eloward_user_data');
-      
-      console.log('Cleared Riot auth data from localStorage');
+      console.log('Received clear_local_storage message (deprecated)');
+      // No action needed as we only use chrome.storage.local now
       sendResponse({ success: true });
     }
     

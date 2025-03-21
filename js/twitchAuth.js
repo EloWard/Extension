@@ -33,7 +33,7 @@ const defaultConfig = {
     tokens: 'eloward_twitch_tokens',
     userInfo: 'eloward_twitch_user_info',
     authState: 'eloward_twitch_auth_state',
-    authCallback: 'twitch_auth_callback'
+    authCallback: 'eloward_auth_callback'
   }
 };
 
@@ -114,7 +114,7 @@ export const TwitchAuth = {
         await new Promise(resolve => {
           chrome.storage.local.remove(['auth_callback', 'twitch_auth_callback'], resolve);
         });
-        localStorage.removeItem('eloward_twitch_auth_callback_data');
+        localStorage.removeItem('eloward_auth_callback');
         console.log('Auth callback data cleared from storage');
       } catch (e) {
         console.warn('Error clearing auth callbacks:', e);
@@ -358,16 +358,17 @@ export const TwitchAuth = {
         
         // Check localStorage as fallback
         try {
-          const localStorageData = localStorage.getItem('eloward_twitch_auth_callback_data');
+          const localStorageData = localStorage.getItem('eloward_auth_callback');
           if (localStorageData) {
             try {
               const parsedData = JSON.parse(localStorageData);
-              if (parsedData && parsedData.code) {
-                console.log('Auth callback found in localStorage');
+              // Verify this is a Twitch callback
+              if (parsedData && parsedData.code && parsedData.service === 'twitch') {
+                console.log('Twitch auth callback found in localStorage');
                 clearInterval(intervalId);
                 
                 // Clear the callback data
-                localStorage.removeItem('eloward_twitch_auth_callback_data');
+                localStorage.removeItem('eloward_auth_callback');
                 
                 resolve(parsedData);
                 return true;
@@ -632,36 +633,30 @@ export const TwitchAuth = {
   
   /**
    * Logout from Twitch
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} - Whether logout was successful
    */
   async logout() {
     try {
       console.log('Logging out from Twitch');
       
-      // FIRST clear the persistent storage to ensure user appears logged out
-      // even if token removal fails
+      // Clear the persistent storage first to ensure user appears logged out
       await PersistentStorage.clearServiceData('twitch');
-      console.log('Cleared persistent Twitch data');
+      console.log('Cleared persistent Twitch user data');
       
-      // Clear tokens and related data from storage
-      await chrome.storage.local.remove([
+      // Clear tokens and related data from chrome.storage
+      const keysToRemove = [
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
         this.config.storageKeys.tokenExpiry,
         this.config.storageKeys.tokens,
         this.config.storageKeys.userInfo,
         this.config.storageKeys.authState
-      ]);
+      ];
       
-      // Clear data from localStorage as well for redundancy
-      localStorage.removeItem(this.config.storageKeys.accessToken);
-      localStorage.removeItem(this.config.storageKeys.refreshToken);
-      localStorage.removeItem(this.config.storageKeys.tokenExpiry);
-      localStorage.removeItem(this.config.storageKeys.tokens);
-      localStorage.removeItem(this.config.storageKeys.userInfo);
-      localStorage.removeItem(this.config.storageKeys.authState);
+      await chrome.storage.local.remove(keysToRemove);
+      console.log('Cleared Twitch tokens from chrome.storage');
       
-      console.log('Twitch logout complete');
+      console.log('Twitch logout completed successfully');
       return true;
     } catch (error) {
       console.error('Error during Twitch logout:', error);
@@ -764,44 +759,34 @@ export const TwitchAuth = {
    * @private
    */
   async _storeValue(key, value) {
-    // Store in chrome.storage.local
-    await new Promise(resolve => {
-      chrome.storage.local.set({ [key]: value }, resolve);
+    // Store only in chrome.storage.local for consistency
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [key]: value }, () => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          console.error(`Error storing value for key ${key}:`, error);
+          reject(error);
+        } else {
+          console.log(`Successfully stored value for key: ${key}`);
+          resolve();
+        }
+      });
     });
-    
-    // Also try to store in localStorage for redundancy
-    try {
-      localStorage.setItem(key, value);
-    } catch (e) {
-      console.error('Failed to store value in localStorage:', e);
-    }
   },
   
   /**
-   * Get a stored value, checking both storage locations
+   * Get a stored value from chrome.storage.local
    * @param {string} key - The key to retrieve
    * @returns {Promise<string|null>} The stored value or null if not found
    * @private
    */
   async _getStoredValue(key) {
-    // Try to get from chrome.storage.local first
-    const chromeStorage = await new Promise(resolve => {
+    // Get only from chrome.storage.local for consistency
+    return new Promise(resolve => {
       chrome.storage.local.get([key], result => {
-        resolve(result[key]);
+        resolve(result[key] || null);
       });
     });
-    
-    if (chromeStorage) {
-      return chromeStorage;
-    }
-    
-    // Fall back to localStorage
-    try {
-      return localStorage.getItem(key);
-    } catch (e) {
-      console.error('Error retrieving value from localStorage:', e);
-      return null;
-    }
   },
   
   /**
