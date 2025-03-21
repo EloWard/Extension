@@ -36,8 +36,10 @@ const ACTIVE_STREAMERS = [
   'doublelift',
   'loltyler1',
   'humzh',
-  'PantsAreDragon',
-  'Doublelift'
+  'pantsaredragon',
+  'thebausffs',
+  'gosu',
+  'nickich'
 ];
 
 /* Track any open auth windows */
@@ -459,12 +461,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'fetch_rank_for_username') {
     console.log(`Background DEBUG: Received request to fetch rank for username ${message.username} in channel ${message.channel}`);
     
+    // Ensure username is always lowercase for consistency
+    const normalizedUsername = message.username.toLowerCase();
+    
     // Check if we have a cached response
-    if (cachedRankResponses && cachedRankResponses[message.username]) {
-      console.log(`Background DEBUG: Found cached rank data for ${message.username}:`, cachedRankResponses[message.username]);
+    if (cachedRankResponses && cachedRankResponses[normalizedUsername]) {
+      console.log(`Background DEBUG: Found cached rank data for ${normalizedUsername}:`, cachedRankResponses[normalizedUsername]);
       sendResponse({
         success: true,
-        rankData: cachedRankResponses[message.username],
+        rankData: cachedRankResponses[normalizedUsername],
         source: 'cache'
       });
       return true; // Keep the message channel open for async response
@@ -486,24 +491,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Get the user's selected region from storage
       chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
         const selectedRegion = data.selectedRegion || 'na1';
-        console.log(`Background DEBUG: Using region ${selectedRegion} for rank lookup for ${message.username}`);
+        console.log(`Background DEBUG: Using region ${selectedRegion} for rank lookup for ${normalizedUsername}`);
         
         // Try to find a linked account for this username
         const linkedAccounts = data.linkedAccounts || {};
         console.log('Background DEBUG: Available linked accounts:', Object.keys(linkedAccounts));
         
         // Check if we have this Twitch username mapped to a Riot ID
-        if (linkedAccounts[message.username]) {
-          const linkedAccount = linkedAccounts[message.username];
-          console.log(`Background DEBUG: Found linked account for ${message.username}:`, linkedAccount);
+        if (linkedAccounts[normalizedUsername]) {
+          const linkedAccount = linkedAccounts[normalizedUsername];
+          console.log(`Background DEBUG: Found linked account for ${normalizedUsername}:`, linkedAccount);
           
           // Get rank for the linked account
           fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-            console.log(`Background DEBUG: Fetched rank data for ${message.username}:`, rankData);
+            console.log(`Background DEBUG: Fetched rank data for ${normalizedUsername}:`, rankData);
             
             // Cache the response
             if (!cachedRankResponses) cachedRankResponses = {};
-            cachedRankResponses[message.username] = rankData;
+            cachedRankResponses[normalizedUsername] = rankData;
             
             sendResponse({
               success: true,
@@ -511,23 +516,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               source: 'linked_account'
             });
           }).catch(error => {
-            console.error(`Background DEBUG: Error fetching rank for ${message.username}:`, error);
+            console.error(`Background DEBUG: Error fetching rank for ${normalizedUsername}:`, error);
             sendResponse({
               success: false,
               error: error.message
             });
           });
         } else {
-          console.log(`Background DEBUG: No linked account found for ${message.username}, using username as summoner name`);
+          console.log(`Background DEBUG: No linked account found for ${normalizedUsername}, using username as summoner name`);
           
           // Try using the Twitch username as the summoner name as a fallback
-          fetchRankFromBackend(message.username, selectedRegion).then(rankData => {
-            console.log(`Background DEBUG: Fetched rank data for ${message.username}:`, rankData);
+          fetchRankFromBackend(normalizedUsername, selectedRegion).then(rankData => {
+            console.log(`Background DEBUG: Fetched rank data for ${normalizedUsername}:`, rankData);
             
             // Cache the response if we found something
             if (rankData && rankData.tier) {
               if (!cachedRankResponses) cachedRankResponses = {};
-              cachedRankResponses[message.username] = rankData;
+              cachedRankResponses[normalizedUsername] = rankData;
             }
             
             sendResponse({
@@ -536,7 +541,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               source: 'username_match'
             });
           }).catch(error => {
-            console.error(`Background DEBUG: Error fetching rank for ${message.username}:`, error);
+            console.error(`Background DEBUG: Error fetching rank for ${normalizedUsername}:`, error);
             
             // Skip mock data generation since we don't need debug functionality
             sendResponse({
@@ -1520,33 +1525,32 @@ function loadConfiguration() {
 }
 
 /**
- * Add a linked account to the storage
+ * Add or update a linked account in storage
  * @param {string} twitchUsername - The Twitch username
  * @param {Object} riotAccountInfo - The Riot account info
  */
 function addLinkedAccount(twitchUsername, riotAccountInfo) {
   if (!twitchUsername || !riotAccountInfo) {
-    console.error('Cannot add linked account: Missing required data');
+    console.log('EloWard: Invalid params for adding linked account');
     return;
   }
   
   const normalizedTwitchUsername = twitchUsername.toLowerCase();
   
-  chrome.storage.local.get('linkedAccounts', (data) => {
+  chrome.storage.local.get('linkedAccounts', data => {
     const linkedAccounts = data.linkedAccounts || {};
     
-    // Add or update the linked account with Twitch username as the key
+    // Always store using the normalized (lowercase) username as the key
     linkedAccounts[normalizedTwitchUsername] = {
       ...riotAccountInfo,
-      twitchUsername: twitchUsername, // Preserve original case for display
-      normalizedTwitchUsername: normalizedTwitchUsername, // For easier lookup
+      twitchUsername, // Store the original username for display purposes
+      normalizedTwitchUsername, // Store the normalized version for lookups
       linkedAt: Date.now(),
       lastUpdated: Date.now()
     };
     
-    // Store the updated linked accounts
     chrome.storage.local.set({ linkedAccounts }, () => {
-      console.log(`Linked Twitch user ${twitchUsername} to Riot account`);
+      console.log(`EloWard: Added/updated linked account for ${twitchUsername} (normalized: ${normalizedTwitchUsername})`);
     });
   });
 }

@@ -249,6 +249,7 @@ function processNewMessage(messageNode) {
     return;
   }
   
+  // Always use lowercase for username lookups to handle display name case sensitivity
   const username = usernameElement.textContent.trim().toLowerCase();
   
   // Check if this user has a cached rank
