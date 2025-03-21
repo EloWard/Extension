@@ -1119,21 +1119,13 @@ async function initiateRiotAuth(region) {
 // Handle the authorization callback (called from callback.html)
 async function handleAuthCallbackFromRedirect(code, state) {
   try {
-    // Verify state matches what we stored (checking both storage mechanisms)
-    const storedData = await chrome.storage.local.get(['authState']);
+    // Verify state parameter to prevent CSRF attacks
+    let stateValid = authState && authState === state;
     
-    // Check chrome.storage first
-    let stateValid = storedData.authState && storedData.authState === state;
-    
-    // If not valid, try localStorage as fallback
-    if (!stateValid) {
-      try {
-        const localStorageState = localStorage.getItem('authState');
-        stateValid = localStorageState && localStorageState === state;
-      } catch (e) {
-        console.warn('Could not access localStorage for state verification fallback');
-      }
-    }
+    // Log state verification status
+    console.log('State verification result:', stateValid ? 'valid' : 'invalid');
+    console.log('Expected state:', authState);
+    console.log('Received state:', state);
     
     if (!stateValid) {
       throw new Error('Security verification failed: state parameter mismatch');
@@ -1217,14 +1209,14 @@ async function signOutUser() {
       'eloward_riot_rank_info'
     ]);
     
-    // Also try to clear from localStorage if available
-    try {
-      localStorage.removeItem('authState');
-      localStorage.removeItem('eloward_riot_access_token');
-      localStorage.removeItem('eloward_riot_refresh_token');
-    } catch (e) {
-      console.warn('Could not clear localStorage items');
-    }
+    // Clear tokens from storage
+    chrome.storage.local.remove([
+      'authState',
+      'eloward_riot_access_token',
+      'eloward_riot_refresh_token'
+    ], function() {
+      console.log('Cleared Riot auth tokens from chrome.storage');
+    });
     
     return { success: true };
   } catch (error) {
@@ -1683,13 +1675,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           timestamp: new Date().toISOString()
         };
         
-        // Store in localStorage for redundancy
-        try {
-          localStorage.setItem('eloward_auth_callback', JSON.stringify(authData));
-          console.log('Stored Twitch auth data in localStorage');
-        } catch (e) {
-          console.error('Failed to store Twitch auth data in localStorage:', e);
-        }
+        // Store in chrome.storage.local
+        chrome.storage.local.set({ 'eloward_auth_callback': authData }, () => {
+          console.log('Stored Twitch auth data in chrome.storage.local');
+        });
         
         // Send a message to notify any listeners
         chrome.runtime.sendMessage({
