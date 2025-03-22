@@ -1,5 +1,5 @@
 // DIRECT TEST LOG - This should always appear
-console.log("🔍 EloWard Extension Loading - Direct Console Test");
+console.log("🛡️ EloWard Extension Active");
 
 // Inject a visible indicator to show the extension is running
 injectVisibleDebugIndicator();
@@ -9,7 +9,6 @@ const TESTING_MODE = true; // Set to false for production
 
 // Set up a failsafe to ensure something happens even if normal init fails
 setTimeout(() => {
-  console.log("🚨 EloWard failsafe triggered after 10 seconds");
   directBadgeInsertionTest();
   
   // Also add a click handler to the debug indicator for manual testing
@@ -18,7 +17,6 @@ setTimeout(() => {
     indicator.innerHTML = 'EloWard Active (Click to Test)';
     indicator.style.cursor = 'pointer';
     indicator.onclick = () => {
-      console.log("Manual test triggered by clicking debug indicator");
       directBadgeInsertionTest();
     };
   }
@@ -36,18 +34,12 @@ let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 
 // Enable debug logging
-const DEBUG = true;
+const DEBUG = false;
 function debugLog(...args) {
   if (DEBUG) {
     console.log("EloWard:", ...args);
   }
 }
-
-// Always show this log to confirm the extension is running
-console.log("🛡️ EloWard Extension Activated 🛡️ - Version 1.0.5");
-
-// Log extension initialization
-debugLog("Content script loaded on", window.location.href);
 
 // Initialize when the page is loaded
 initializeExtension();
@@ -56,19 +48,12 @@ setTimeout(initializeExtension, 3000);
 
 // Add a window.onload handler as an additional initialization method
 window.addEventListener('load', function() {
-  console.log("🌐 EloWard: Window fully loaded event triggered");
   initializeExtension();
   
   // Add a direct test after 5 seconds to bypass all normal extension mechanisms
   setTimeout(() => {
-    console.log("🧪 Running direct badge insertion test");
     directBadgeInsertionTest();
   }, 5000);
-});
-
-// Add keyboard shortcut for debug overlay (Ctrl+Shift+E)
-document.addEventListener('keydown', function(event) {
-  // Removed debug shortcut functionality
 });
 
 function initializeExtension() {
@@ -829,14 +814,11 @@ function addExtensionStyles() {
 
 // Direct test function that bypasses all normal extension mechanisms
 function directBadgeInsertionTest() {
-  console.log("Starting direct badge insertion test");
-  
   // Target username - your Twitch username
   const targetUsername = "yomata1";
   
   // Try to find messages in the chat
   const usernameElements = document.querySelectorAll('.chat-author__display-name, [data-a-target="chat-message-username"]');
-  console.log(`Found ${usernameElements.length} username elements in chat`);
   
   let badgesAdded = 0;
   usernameElements.forEach(usernameEl => {
@@ -844,19 +826,15 @@ function directBadgeInsertionTest() {
     const username = usernameEl.textContent.trim().toLowerCase();
     
     if (username === targetUsername) {
-      console.log(`Found message from target user: ${username}`);
-      
       // Check if this username element already has a badge next to it
       // First check the element itself
       if (usernameEl.querySelector('img[class*="badge"]')) {
-        console.log("Element already has a badge, skipping");
         return;
       }
       
       // Then check the parent containers
       const parentContainer = usernameEl.closest('.chat-line__username-container');
       if (parentContainer && parentContainer.querySelector('img[class*="badge"]')) {
-        console.log("Username container already has a badge, skipping");
         return;
       }
       
@@ -868,7 +846,6 @@ function directBadgeInsertionTest() {
       // Try to use chrome.runtime.getURL with error handling
       try {
         const imageURL = chrome.runtime.getURL("images/ranks/diamond18.png");
-        console.log("Image URL generated:", imageURL);
         badge.src = imageURL;
       } catch (error) {
         console.error("Error accessing chrome.runtime.getURL:", error);
@@ -884,23 +861,18 @@ function directBadgeInsertionTest() {
       const usernameContainer = usernameEl.closest('.chat-line__username-container');
       
       if (usernameContainer) {
-        console.log("Found username container, inserting badge");
         usernameContainer.insertBefore(badge, usernameContainer.firstChild);
         badgesAdded++;
       } else {
-        console.log("No username container found, trying parent node");
         usernameEl.parentNode.insertBefore(badge, usernameEl);
         badgesAdded++;
       }
     }
   });
-  
-  console.log(`Direct test complete. Added ${badgesAdded} badges.`);
 }
 
 // Function to inject a visible indicator on the page
 function injectVisibleDebugIndicator() {
-  console.log("Injecting visible debug indicator");
   const indicator = document.createElement('div');
   indicator.id = 'eloward-debug-indicator';
   indicator.innerHTML = 'EloWard Active';
@@ -918,14 +890,11 @@ function injectVisibleDebugIndicator() {
   // Add it to the document body if it exists, otherwise wait for it
   if (document.body) {
     document.body.appendChild(indicator);
-    console.log("Debug indicator added to page");
   } else {
     // Body not available yet, wait for it
-    console.log("Body not available, setting up MutationObserver");
     const observer = new MutationObserver(function(mutations) {
       if (document.body) {
         document.body.appendChild(indicator);
-        console.log("Debug indicator added to page (delayed)");
         observer.disconnect();
       }
     });
