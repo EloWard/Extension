@@ -537,6 +537,19 @@ function addBadgeToMessage(usernameElement, rankData) {
     return;
   }
   
+  // Check if this username element already has a badge
+  // Look in parent elements up to 3 levels to find any existing badges
+  let currentNode = usernameElement;
+  let depth = 0;
+  while (currentNode && depth < 3) {
+    if (currentNode.querySelector('.eloward-rank-badge, [class*="rank-badge"], img[src*="rank"]')) {
+      debugLog("Badge already exists for this username element, skipping");
+      return;
+    }
+    currentNode = currentNode.parentElement;
+    depth++;
+  }
+  
   debugLog(`Adding badge for ${rankData.tier} to element:`, usernameElement);
   
   // Get the parent container that holds the username
@@ -832,6 +845,20 @@ function directBadgeInsertionTest() {
     
     if (username === targetUsername) {
       console.log(`Found message from target user: ${username}`);
+      
+      // Check if this username element already has a badge next to it
+      // First check the element itself
+      if (usernameEl.querySelector('img[class*="badge"]')) {
+        console.log("Element already has a badge, skipping");
+        return;
+      }
+      
+      // Then check the parent containers
+      const parentContainer = usernameEl.closest('.chat-line__username-container');
+      if (parentContainer && parentContainer.querySelector('img[class*="badge"]')) {
+        console.log("Username container already has a badge, skipping");
+        return;
+      }
       
       // Create a badge
       const badge = document.createElement('img');
