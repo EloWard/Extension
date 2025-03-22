@@ -1,6 +1,27 @@
 // DIRECT TEST LOG - This should always appear
 console.log("🛡️ EloWard Extension Active");
 
+// Debug storage access immediately
+chrome.storage.local.get(null, (allData) => {
+  console.log("🔎 STORAGE DEBUG - All stored data:", allData);
+  
+  // Specifically check for Twitch username in all possible formats
+  const possibleTwitchKeys = [
+    'twitchUsername', 
+    'twitch_username',
+    'eloward_persistent_twitch_user_data',
+    'eloward_twitch_user_info'
+  ];
+  
+  console.log("🔎 STORAGE DEBUG - Checking for Twitch username in all possible formats:");
+  possibleTwitchKeys.forEach(key => {
+    console.log(`  - Key "${key}": ${allData[key] ? JSON.stringify(allData[key]) : 'not found'}`);
+  });
+  
+  // Check linked accounts
+  console.log("🔎 STORAGE DEBUG - Linked accounts:", allData.linkedAccounts || 'not found');
+});
+
 // Inject a visible indicator to show the extension is running
 injectVisibleDebugIndicator();
 
@@ -32,9 +53,10 @@ let processedMessages = new Set();
 let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
+let currentUser = null; // Current user's Twitch username
 
-// Enable debug logging
-const DEBUG = false;
+// Enable debug logging for username matching issues
+const DEBUG = true;
 function debugLog(...args) {
   if (DEBUG) {
     console.log("EloWard:", ...args);
@@ -56,6 +78,104 @@ window.addEventListener('load', function() {
   }, 5000);
 });
 
+// Load user data from storage
+async function loadUserDataFromStorage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(null, (allData) => {
+      console.log("🔎 STORAGE DEBUG - Full storage contents:", allData);
+      
+      // Try to find Twitch username in all storage formats
+      let foundTwitchData = null;
+      
+      // First check the PersistentStorage format (production)
+      if (allData.eloward_persistent_twitch_user_data) {
+        const twitchData = allData.eloward_persistent_twitch_user_data;
+        if (twitchData.login) {
+          currentUser = twitchData.login.toLowerCase();
+          console.log(`🔎 Found current user from persistent storage: ${currentUser} (display name: ${twitchData.display_name})`);
+          foundTwitchData = true;
+        }
+      } 
+      // Then check the direct twitchUsername key (might be used in older versions)
+      else if (allData.twitchUsername) {
+        currentUser = allData.twitchUsername.toLowerCase();
+        console.log(`🔎 Found current user from direct 'twitchUsername' key: ${currentUser}`);
+        foundTwitchData = true;
+      }
+      // Then check the Twitch API user info format
+      else if (allData.eloward_twitch_user_info) {
+        const twitchInfo = allData.eloward_twitch_user_info;
+        if (twitchInfo.login) {
+          currentUser = twitchInfo.login.toLowerCase();
+          console.log(`🔎 Found current user from Twitch API info: ${currentUser} (display name: ${twitchInfo.display_name})`);
+          foundTwitchData = true;
+        }
+      }
+      
+      // If not found yet, search through all keys for possible Twitch data
+      if (!foundTwitchData) {
+        for (const key in allData) {
+          if (key.toLowerCase().includes('twitch')) {
+            console.log(`🔎 Found potential Twitch data in key "${key}":`, allData[key]);
+            
+            // Try to extract username from this data
+            const data = allData[key];
+            if (data && typeof data === 'object') {
+              if (data.login || data.display_name) {
+                currentUser = (data.login || data.display_name).toLowerCase();
+                console.log(`🔎 Extracted username from "${key}": ${currentUser}`);
+                foundTwitchData = true;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (!foundTwitchData) {
+          console.log('🔎 No Twitch user data found in any storage format');
+        }
+      }
+      
+      if (allData.linkedAccounts) {
+        // Convert linkedAccounts to our cached user map format
+        Object.keys(allData.linkedAccounts).forEach(username => {
+          const account = allData.linkedAccounts[username];
+          if (account && account.rankData) {
+            const lowerUsername = username.toLowerCase();
+            cachedUserMap[lowerUsername] = account.rankData;
+            console.log(`Loaded rank data for ${lowerUsername} from storage (original: ${username})`);
+          }
+        });
+        
+        // Also add entry for current user if not present
+        if (currentUser && !cachedUserMap[currentUser]) {
+          console.log(`Current user ${currentUser} not found in linkedAccounts, creating default entry`);
+          
+          // Try to find the current user in any case variation
+          const foundKey = Object.keys(allData.linkedAccounts).find(
+            key => key.toLowerCase() === currentUser.toLowerCase()
+          );
+          
+          if (foundKey) {
+            console.log(`Found current user with different case: ${foundKey}`);
+            cachedUserMap[currentUser] = allData.linkedAccounts[foundKey].rankData;
+          }
+        }
+        
+        // Debug output for cached usernames
+        console.log("Available usernames in cache:", Object.keys(cachedUserMap));
+      } else {
+        console.log('No linked accounts found in storage');
+      }
+      
+      resolve({
+        currentUser,
+        linkedAccounts: allData.linkedAccounts || {}
+      });
+    });
+  });
+}
+
 function initializeExtension() {
   // Extract channel name from URL
   channelName = window.location.pathname.split('/')[1];
@@ -72,98 +192,112 @@ function initializeExtension() {
     debugLog("Added extension styles");
   }
   
-  // In testing mode, treat all channels as subscribed
-  if (TESTING_MODE) {
-    debugLog(`TESTING MODE: Treating channel ${channelName} as subscribed`);
-    isChannelSubscribed = true;
-    
-    // Initialize the observer for chat messages
-    debugLog("Initializing chat observer");
-    initializeObserver();
-    
-    // Show a subtle notification that EloWard is active
-    showActivationNotification();
-    
-    // Add test data to cache
-    if (Object.keys(cachedUserMap).length === 0) {
-      debugLog("Adding test entries to user cache");
-      // Add the user's actual Twitch username
-      cachedUserMap['yomata1'] = {
-        tier: 'DIAMOND',
-        division: 'IV',
-        leaguePoints: 75,
-        summonerName: 'TestSummoner'
-      };
-    }
-    
-    return;
-  }
-  
-  // Normal subscription check path for production
-  debugLog(`Checking if ${channelName} has a subscription`);
-  
-  try {
-    chrome.runtime.sendMessage(
-      { action: 'check_streamer_subscription', streamer: channelName },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          console.error("Chrome runtime error:", chrome.runtime.lastError);
-          if (TESTING_MODE) {
-            // Fall back to enabled if in testing mode
-            isChannelSubscribed = true;
-            initializeObserver();
-          }
-          return;
-        }
-        
-        debugLog(`Subscription check response for ${channelName}:`, response);
-        if (response && response.subscribed) {
-          isChannelSubscribed = true;
-          debugLog(`Channel ${channelName} is subscribed`);
-          
-          // Inject the style needed for badges if it doesn't exist
-          if (!document.querySelector('#eloward-extension-styles')) {
-            addExtensionStyles();
-            debugLog("Added extension styles");
-          }
-          
-          // Initialize the observer for chat messages
-          debugLog("Initializing chat observer");
-          initializeObserver();
-          
-          // Show a subtle notification that EloWard is active
-          showActivationNotification();
-          
-          // Force refresh linked accounts from the background script
-          debugLog("Refreshing linked accounts");
-          try {
-            chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
-          } catch (error) {
-            console.error("Error refreshing linked accounts:", error);
-          }
-        } else {
-          // Even if not subscribed, still initialize in testing mode
-          if (TESTING_MODE) {
-            isChannelSubscribed = true;
-            debugLog(`TESTING MODE: Overriding subscription check for ${channelName}`);
-            initializeObserver();
-            showActivationNotification();
-          } else {
-            isChannelSubscribed = false;
-            debugLog(`Channel ${channelName} is NOT subscribed`);
-          }
+  // Load user data from storage
+  loadUserDataFromStorage().then(userData => {
+    // In testing mode, treat all channels as subscribed
+    if (TESTING_MODE) {
+      debugLog(`TESTING MODE: Treating channel ${channelName} as subscribed`);
+      isChannelSubscribed = true;
+      
+      // Initialize the observer for chat messages
+      debugLog("Initializing chat observer");
+      initializeObserver();
+      
+      // Show a subtle notification that EloWard is active
+      showActivationNotification();
+      
+      // If no cached data loaded, ask the background page for user's current rank
+      if (currentUser && Object.keys(cachedUserMap).length === 0) {
+        debugLog(`Asking background script for rank data for current user ${currentUser}`);
+        try {
+          chrome.runtime.sendMessage(
+            { action: 'fetch_rank_for_username', username: currentUser },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                console.error("Error fetching user rank:", chrome.runtime.lastError);
+                return;
+              }
+              
+              if (response && response.rankData) {
+                cachedUserMap[currentUser] = response.rankData;
+                debugLog(`Received rank data for current user: ${currentUser}`, response.rankData);
+              }
+            }
+          );
+        } catch (error) {
+          console.error("Error sending message to background script:", error);
         }
       }
-    );
-  } catch (error) {
-    console.error("Error sending message to background script:", error);
-    if (TESTING_MODE) {
-      // Fall back to enabled if in testing mode
-      isChannelSubscribed = true;
-      initializeObserver();
-      showActivationNotification();
+      
+      return;
     }
-  }
+    
+    // Normal subscription check path for production
+    debugLog(`Checking if ${channelName} has a subscription`);
+    
+    try {
+      chrome.runtime.sendMessage(
+        { action: 'check_streamer_subscription', streamer: channelName },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("Chrome runtime error:", chrome.runtime.lastError);
+            if (TESTING_MODE) {
+              // Fall back to enabled if in testing mode
+              isChannelSubscribed = true;
+              initializeObserver();
+            }
+            return;
+          }
+          
+          debugLog(`Subscription check response for ${channelName}:`, response);
+          if (response && response.subscribed) {
+            isChannelSubscribed = true;
+            debugLog(`Channel ${channelName} is subscribed`);
+            
+            // Inject the style needed for badges if it doesn't exist
+            if (!document.querySelector('#eloward-extension-styles')) {
+              addExtensionStyles();
+              debugLog("Added extension styles");
+            }
+            
+            // Initialize the observer for chat messages
+            debugLog("Initializing chat observer");
+            initializeObserver();
+            
+            // Show a subtle notification that EloWard is active
+            showActivationNotification();
+            
+            // Force refresh linked accounts from the background script
+            debugLog("Refreshing linked accounts");
+            try {
+              chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
+            } catch (error) {
+              console.error("Error refreshing linked accounts:", error);
+            }
+          } else {
+            // Even if not subscribed, still initialize in testing mode
+            if (TESTING_MODE) {
+              isChannelSubscribed = true;
+              debugLog(`TESTING MODE: Overriding subscription check for ${channelName}`);
+              initializeObserver();
+              showActivationNotification();
+            } else {
+              isChannelSubscribed = false;
+              debugLog(`Channel ${channelName} is NOT subscribed`);
+            }
+          }
+        }
+      );
+    } catch (error) {
+      console.error("Error sending message to background script:", error);
+      if (TESTING_MODE) {
+        // Fall back to enabled if in testing mode
+        isChannelSubscribed = true;
+        initializeObserver();
+        showActivationNotification();
+      }
+    }
+  });
   
   // Listen for URL changes (when user navigates to a different channel)
   if (!window.elowardUrlChangeObserver) {
@@ -180,17 +314,10 @@ function initializeExtension() {
         isChannelSubscribed = TESTING_MODE; // Default to true in testing mode
         channelName = window.location.pathname.split('/')[1];
         processedMessages.clear();
-        cachedUserMap = {}; // Clear the cache when changing channels
         
-        // Add test entry again after cache clear
-        if (TESTING_MODE) {
-          cachedUserMap['yomata1'] = {
-            tier: 'DIAMOND',
-            division: 'IV',
-            leaguePoints: 75,
-            summonerName: 'TestSummoner'
-          };
-        }
+        // Don't clear the cached user map when changing channels
+        // Instead, refresh it from storage
+        loadUserDataFromStorage();
         
         debugLog(`Reset state for channel: ${channelName}`);
         
@@ -443,42 +570,65 @@ function processNewMessage(messageNode) {
   
   // Always use lowercase for username lookups to handle display name case sensitivity
   const username = usernameElement.textContent.trim().toLowerCase();
+  console.log(`Processing message from: ${username} (original: ${usernameElement.textContent.trim()})`);
   
-  debugLog(`Processing message from: ${username}`);
+  // Debug output to check all cached usernames
+  console.log(`Available cached usernames: ${Object.keys(cachedUserMap).join(', ')}`);
   
-  // We'll list all usernames we're checking to debug the matching issue
-  debugLog(`Known usernames in cache: ${Object.keys(cachedUserMap).join(', ')}`);
+  // Check if this user has a cached rank (case insensitive)
+  const cachedUsername = Object.keys(cachedUserMap).find(key => 
+    key.toLowerCase() === username.toLowerCase()
+  );
   
-  // Check if this user has a cached rank
-  if (cachedUserMap[username]) {
-    debugLog(`Found cached rank for ${username}:`, cachedUserMap[username]);
-    addBadgeToMessage(usernameElement, cachedUserMap[username]);
+  if (cachedUsername) {
+    console.log(`Found cached rank for ${username} (matched: ${cachedUsername})`, cachedUserMap[cachedUsername]);
+    addBadgeToMessage(usernameElement, cachedUserMap[cachedUsername]);
     return;
   }
   
-  // If we haven't cached any usernames, add your own username for testing
-  // This is just for development/debugging purposes
-  if (Object.keys(cachedUserMap).length === 0) {
-    debugLog("No usernames in cache, adding test entry");
-    // Add the user's actual Twitch username
-    cachedUserMap['yomata1'] = {
-      tier: 'DIAMOND',
-      division: 'IV',
-      leaguePoints: 75,
-      summonerName: 'TestSummoner'
-    };
+  console.log(`No cached rank found for ${username}`);
+  
+  // For testing mode, check if this is the current user
+  if (TESTING_MODE && currentUser && username.toLowerCase() === currentUser.toLowerCase()) {
+    console.log(`This is the current user, checking for authenticated rank data`);
     
-    // Check if the current message is from the test user
-    if (username === 'yomata1') {
-      debugLog(`Matched test username: ${username}`);
-      addBadgeToMessage(usernameElement, cachedUserMap[username]);
-      return;
-    }
+    // Instead of using a hardcoded rank, get the user's actual rank from storage
+    chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+      let userRankData = null;
+      
+      // Check if we have authenticated Riot rank data
+      if (data.eloward_persistent_riot_user_data && data.eloward_persistent_riot_user_data.rankInfo) {
+        const riotData = data.eloward_persistent_riot_user_data;
+        console.log(`Found authenticated Riot rank data:`, riotData.rankInfo);
+        
+        // Convert the Riot rank format to our format
+        userRankData = {
+          tier: riotData.rankInfo.tier,
+          division: riotData.rankInfo.rank, // In Riot API, "rank" is the division (I, II, III, IV)
+          leaguePoints: riotData.rankInfo.leaguePoints,
+          summonerName: riotData.gameName
+        };
+        
+        console.log(`Using authenticated rank: ${userRankData.tier} ${userRankData.division} (${userRankData.leaguePoints} LP)`);
+      } else {
+        console.log(`No authenticated Riot rank data found. User has connected but may not have ranked data.`);
+        // Log this situation but don't add a rank badge when no actual data exists
+        return;
+      }
+      
+      // Only proceed if we found actual rank data
+      if (userRankData) {
+        // Add it to cache
+        cachedUserMap[username] = userRankData;
+        // Add the badge
+        addBadgeToMessage(usernameElement, userRankData);
+      }
+    });
+    return;
   }
   
-  // For testing mode, directly check against our hard-coded test usernames
+  // For testing mode, return since we don't have this user in cache
   if (TESTING_MODE) {
-    // We already checked the cache above, so this message isn't from a test user
     return;
   }
   
@@ -814,60 +964,133 @@ function addExtensionStyles() {
 
 // Direct test function that bypasses all normal extension mechanisms
 function directBadgeInsertionTest() {
-  // Target username - your Twitch username
-  const targetUsername = "yomata1";
-  
-  // Try to find messages in the chat
-  const usernameElements = document.querySelectorAll('.chat-author__display-name, [data-a-target="chat-message-username"]');
-  
-  let badgesAdded = 0;
-  usernameElements.forEach(usernameEl => {
-    // Check if this username matches our target
-    const username = usernameEl.textContent.trim().toLowerCase();
+  // Try to get the current user's username from storage
+  chrome.storage.local.get(null, (allData) => {
+    console.log("🔎 DIRECT TEST - All stored data:", allData);
     
-    if (username === targetUsername) {
-      // Check if this username element already has a badge next to it
-      // First check the element itself
-      if (usernameEl.querySelector('img[class*="badge"]')) {
-        return;
+    // Try multiple possible storage formats
+    let targetUsername = currentUser;
+    
+    if (!targetUsername) {
+      // First try PersistentStorage format (production)
+      if (allData.eloward_persistent_twitch_user_data) {
+        const twitchData = allData.eloward_persistent_twitch_user_data;
+        if (twitchData.login) {
+          targetUsername = twitchData.login.toLowerCase();
+          console.log(`🔎 DIRECT TEST - Using username from persistent storage: ${targetUsername}`);
+        }
+      } 
+      // Then try direct twitchUsername key (older versions)
+      else if (allData.twitchUsername) {
+        targetUsername = allData.twitchUsername.toLowerCase();
+        console.log(`🔎 DIRECT TEST - Using username from twitchUsername: ${targetUsername}`);
+      }
+      // Then try Twitch API user info
+      else if (allData.eloward_twitch_user_info) {
+        const twitchInfo = allData.eloward_twitch_user_info;
+        if (twitchInfo.login) {
+          targetUsername = twitchInfo.login.toLowerCase();
+          console.log(`🔎 DIRECT TEST - Using username from Twitch API info: ${targetUsername}`);
+        }
       }
       
-      // Then check the parent containers
-      const parentContainer = usernameEl.closest('.chat-line__username-container');
-      if (parentContainer && parentContainer.querySelector('img[class*="badge"]')) {
-        return;
-      }
-      
-      // Create a badge
-      const badge = document.createElement('img');
-      badge.className = 'chat-badge';
-      badge.alt = "DIAMOND";
-      
-      // Try to use chrome.runtime.getURL with error handling
-      try {
-        const imageURL = chrome.runtime.getURL("images/ranks/diamond18.png");
-        badge.src = imageURL;
-      } catch (error) {
-        console.error("Error accessing chrome.runtime.getURL:", error);
-        // Fallback to a direct URL for testing
-        badge.src = "https://raw.githubusercontent.com/lol-tracker/rank-images/main/diamond.png";
-      }
-      
-      badge.width = 18;
-      badge.height = 18;
-      badge.style.marginRight = '4px';
-      
-      // Get the parent container that holds the username
-      const usernameContainer = usernameEl.closest('.chat-line__username-container');
-      
-      if (usernameContainer) {
-        usernameContainer.insertBefore(badge, usernameContainer.firstChild);
-        badgesAdded++;
-      } else {
-        usernameEl.parentNode.insertBefore(badge, usernameEl);
-        badgesAdded++;
+      // If still not found, search all keys
+      if (!targetUsername) {
+        for (const key in allData) {
+          if (key.toLowerCase().includes('twitch') && allData[key]) {
+            const data = allData[key];
+            if (typeof data === 'object' && (data.login || data.display_name)) {
+              targetUsername = (data.login || data.display_name).toLowerCase();
+              console.log(`🔎 DIRECT TEST - Found username in key "${key}": ${targetUsername}`);
+              break;
+            }
+          }
+        }
       }
     }
+    
+    // If we don't have a target username, we can't add badges
+    if (!targetUsername) {
+      console.error("No user found in storage, cannot add badges");
+      return;
+    }
+    
+    console.log(`Direct test looking for username: ${targetUsername}`);
+    
+    // Try to find messages in the chat
+    const usernameElements = document.querySelectorAll('.chat-author__display-name, [data-a-target="chat-message-username"]');
+    console.log(`Found ${usernameElements.length} username elements to check`);
+    
+    let badgesAdded = 0;
+    usernameElements.forEach(usernameEl => {
+      // Check if this username matches our target (case insensitive)
+      const displayedName = usernameEl.textContent.trim();
+      const username = displayedName.toLowerCase();
+      
+      if (username === targetUsername.toLowerCase()) {
+        console.log(`Found match: "${displayedName}" matches target "${targetUsername}"`);
+        
+        // Check if this username element already has a badge next to it
+        // First check the element itself
+        if (usernameEl.querySelector('img[class*="badge"]')) {
+          console.log(`Element already has a badge, skipping`);
+          return;
+        }
+        
+        // Then check the parent containers
+        const parentContainer = usernameEl.closest('.chat-line__username-container');
+        if (parentContainer && parentContainer.querySelector('img[class*="badge"]')) {
+          console.log(`Username container already has a badge, skipping`);
+          return;
+        }
+        
+        // Create a badge
+        const badge = document.createElement('img');
+        badge.className = 'chat-badge';
+        
+        // Use rank data from cache if available
+        let rankTier = null;
+        if (cachedUserMap[username] && cachedUserMap[username].tier) {
+          rankTier = cachedUserMap[username].tier;
+          badge.alt = rankTier;
+          console.log(`Using rank tier from cache: ${rankTier}`);
+        } else {
+          console.log(`No rank in cache for ${username}, cannot add badge`);
+          return; // Don't add a badge if we don't have actual rank data
+        }
+        
+        // Try to use chrome.runtime.getURL with error handling
+        try {
+          const imageURL = chrome.runtime.getURL(`images/ranks/${rankTier.toLowerCase()}18.png`);
+          badge.src = imageURL;
+          console.log(`Set badge image URL: ${imageURL}`);
+        } catch (error) {
+          console.error("Error accessing chrome.runtime.getURL:", error);
+          return; // Don't continue if we can't get the image URL
+        }
+        
+        badge.width = 18;
+        badge.height = 18;
+        badge.style.marginRight = '4px';
+        
+        // Get the parent container that holds the username
+        const usernameContainer = usernameEl.closest('.chat-line__username-container');
+        
+        if (usernameContainer) {
+          console.log(`Inserting badge into username container`);
+          usernameContainer.insertBefore(badge, usernameContainer.firstChild);
+          badgesAdded++;
+        } else {
+          console.log(`No username container found, inserting before username element`);
+          usernameEl.parentNode.insertBefore(badge, usernameEl);
+          badgesAdded++;
+        }
+      } else {
+        console.log(`Username "${displayedName}" does not match target "${targetUsername}"`);
+      }
+    });
+    
+    console.log(`Direct test complete. Added ${badgesAdded} badges.`);
   });
 }
 
