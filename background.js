@@ -39,7 +39,8 @@ const ACTIVE_STREAMERS = [
   'pantsaredragon',
   'thebausffs',
   'gosu',
-  'nickich'
+  'nickich',
+  'triplelift'
 ];
 
 /* Track any open auth windows */
