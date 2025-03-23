@@ -431,13 +431,7 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.className = 'eloward-rank-badge';
   badgeContainer.title = formatRankText(rankData);
   
-  // Apply badge styling
-  badgeContainer.style.display = 'inline-block';
-  badgeContainer.style.verticalAlign = 'middle';
-  badgeContainer.style.marginLeft = '4px';
-  badgeContainer.style.marginRight = '4px';
-  badgeContainer.style.height = '24px';
-  badgeContainer.style.cursor = 'pointer';
+  // We'll let the CSS handle the styling now
   
   // Create the rank image
   const rankImg = document.createElement('img');
@@ -551,14 +545,18 @@ function addExtensionStyles() {
   styleElement.id = 'eloward-extension-styles';
   styleElement.textContent = `
     .eloward-rank-badge {
-      display: inline-block !important;
+      display: inline-flex !important;
+      justify-content: center !important;
+      align-items: center !important;
       margin-left: 4px !important;
       margin-right: 4px !important;
       vertical-align: middle !important;
       cursor: pointer !important;
       transform: none !important;
       transition: none !important;
+      width: 24px !important;
       height: 24px !important;
+      box-sizing: content-box !important;
     }
     
     .eloward-rank-badge:hover {
@@ -567,11 +565,12 @@ function addExtensionStyles() {
     }
     
     .eloward-rank-badge img {
-      display: inline-block !important;
+      display: block !important;
       width: 24px !important;
       height: 24px !important;
       transform: none !important;
       transition: none !important;
+      object-fit: contain !important;
     }
     
     .eloward-rank-badge img:hover {
