@@ -245,6 +245,14 @@ document.addEventListener('DOMContentLoaded', () => {
             soloQueueRank: storedRiotData.rankInfo
           };
           updateUserInterface(userData);
+          
+          // Get the connected region from storage and update the selector
+          chrome.storage.local.get(['connected_region'], (result) => {
+            if (result.connected_region) {
+              console.log('Setting region selector to connected region:', result.connected_region);
+              regionSelect.value = result.connected_region;
+            }
+          });
         }
       } else {
         // Show not connected UI for Riot
@@ -423,6 +431,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update UI with the user data
         updateUserInterface(userData);
+        
+        // Store the connected region in storage and ensure the region selector reflects the current region
+        await chrome.storage.local.set({ connected_region: region });
+        console.log('Stored connected region in storage:', region);
       } catch (error) {
         console.error('Error in connectRiotAccount:', error);
         
@@ -450,20 +462,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
     chrome.storage.local.set({ selectedRegion });
-    
-    // Check if user is authenticated and refresh rank data if they are
-    RiotAuth.isAuthenticated().then(isAuthenticated => {
-      if (isAuthenticated) {
-        // Add a small visual indicator that we're refreshing based on region change
-        const currentRankElement = document.getElementById('current-rank');
-        if (currentRankElement) {
-          currentRankElement.textContent = 'Updating...';
-        }
-        
-        // Call the existing refreshRank function
-        refreshRank();
-      }
-    });
+    console.log('Region preference saved:', selectedRegion);
+    // Region change should not trigger a refresh - only store the preference for next connection
   }
 
   // Refresh rank function to update player rank information
@@ -488,6 +488,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!accountInfo || !accountInfo.puuid) {
         throw new Error('Account information not available');
       }
+      
+      // Get the current selected region and update the connected_region
+      const selectedRegion = regionSelect.value;
+      await chrome.storage.local.set({ connected_region: selectedRegion });
+      console.log('Updated connected_region to match selected region during refresh:', selectedRegion);
       
       // Get summoner info using the puuid
       const summonerInfo = await RiotAuth.getSummonerInfo(accountInfo.puuid);
