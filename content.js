@@ -436,15 +436,15 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.style.verticalAlign = 'middle';
   badgeContainer.style.marginLeft = '4px';
   badgeContainer.style.marginRight = '4px';
-  badgeContainer.style.height = '18px';
+  badgeContainer.style.height = '24px';
   badgeContainer.style.cursor = 'pointer';
   
   // Create the rank image
   const rankImg = document.createElement('img');
   rankImg.alt = rankData.tier;
   rankImg.className = 'chat-badge'; // Add Twitch's chat-badge class for better styling
-  rankImg.width = 18;
-  rankImg.height = 18;
+  rankImg.width = 24;
+  rankImg.height = 24;
   
   // Set image source based on rank tier - use 36px images for higher quality
   try {
@@ -558,6 +558,7 @@ function addExtensionStyles() {
       cursor: pointer !important;
       transform: none !important;
       transition: none !important;
+      height: 24px !important;
     }
     
     .eloward-rank-badge:hover {
@@ -567,8 +568,8 @@ function addExtensionStyles() {
     
     .eloward-rank-badge img {
       display: inline-block !important;
-      width: 18px !important;
-      height: 18px !important;
+      width: 24px !important;
+      height: 24px !important;
       transform: none !important;
       transition: none !important;
     }
