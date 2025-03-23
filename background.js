@@ -6,7 +6,7 @@ import { PersistentStorage } from './js/persistentStorage.js';
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
-const TWITCH_REDIRECT_URL = 'https://www.eloward.xyz/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
+const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -1620,7 +1620,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     try {
       // IMMEDIATELY prevent further navigation by updating to the callback page
       chrome.tabs.update(tabId, {
-        url: 'https://www.eloward.xyz/ext/twitch/auth/redirect'
+        url: 'https://www.eloward.com/ext/twitch/auth/redirect'
       });
       
       // Extract parameters from the URL
@@ -1643,7 +1643,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         
         // Update the callback page with error parameters
         chrome.tabs.update(tabId, {
-          url: `https://www.eloward.xyz/ext/twitch/auth/redirect?error=${error}${errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''}`
+          url: `https://www.eloward.com/ext/twitch/auth/redirect?error=${error}${errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''}`
         });
         
         return;
@@ -1682,7 +1682,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         
         // Show success on the callback page
         chrome.tabs.update(tabId, {
-          url: `https://www.eloward.xyz/ext/twitch/auth/redirect?code=${code}&state=${state}`
+          url: `https://www.eloward.com/ext/twitch/auth/redirect?code=${code}&state=${state}`
         });
         
         // Let the callback page handle its own closing with countdown
@@ -1690,14 +1690,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         console.warn('Missing code or state in Twitch redirect URL');
         // Show error on callback page
         chrome.tabs.update(tabId, {
-          url: 'https://www.eloward.xyz/ext/twitch/auth/redirect?error=missing_parameters&error_description=Auth code or state parameter missing in redirect'
+          url: 'https://www.eloward.com/ext/twitch/auth/redirect?error=missing_parameters&error_description=Auth code or state parameter missing in redirect'
         });
       }
     } catch (error) {
       console.error('Error processing Twitch redirect URL:', error);
       // Show generic error on callback page
       chrome.tabs.update(tabId, {
-        url: `https://www.eloward.xyz/ext/twitch/auth/redirect?error=processing_error&error_description=${encodeURIComponent(error.message)}`
+        url: `https://www.eloward.com/ext/twitch/auth/redirect?error=processing_error&error_description=${encodeURIComponent(error.message)}`
       });
     }
   }

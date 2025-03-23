@@ -25,7 +25,7 @@
     "*://*.twitch.tv/*",
     "https://eloward-riotrso.unleashai-inquiries.workers.dev/*",
     "https://eloward-twitchrso.unleashai-inquiries.workers.dev/*",
-    "https://www.eloward.xyz/*"
+    "https://www.eloward.com/*"
   ],
   "content_scripts": [
     {

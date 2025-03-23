@@ -61,11 +61,11 @@ We do not store any personal information beyond what's necessary for the extensi
 ## Authentication Flows
 
 ### Riot Authentication
-- Uses the standard path: https://www.eloward.xyz/riot/auth/redirect
+- Uses the standard path: https://www.eloward.com/riot/auth/redirect
 - Closes automatically after authentication is complete
 
 ### Twitch Authentication
-- Uses extension-specific path: https://www.eloward.xyz/ext/twitch/auth/redirect
+- Uses extension-specific path: https://www.eloward.com/ext/twitch/auth/redirect
 - This path is separate from the website's Twitch authentication flow
 - Closes automatically after authentication is complete
 

@@ -48,7 +48,7 @@ User → Extension Popup → Background Script → Riot RSO API
 - The extension makes a request to the Cloudflare Worker endpoint: `/auth/init`
 - The Worker constructs the Riot authorization URL with:
   - `client_id`: The registered RSO Client ID from Riot Developer Portal
-  - `redirect_uri`: The standard redirect URI (`https://www.eloward.xyz/auth/redirect`)
+  - `redirect_uri`: The standard redirect URI (`https://www.eloward.com/auth/redirect`)
   - `response_type`: "code" for the authorization code flow
   - `scope`: "openid offline_access lol cpid" (minimum required scopes)
   - `state`: The random state parameter for CSRF protection
@@ -276,7 +276,7 @@ This implementation ensures efficient use of Riot API resources while providing 
 2. **Host Permissions**:
    - `*://*.twitch.tv/*`: For content script injection
    - `https://eloward-riotrso.unleashai-inquiries.workers.dev/*`: Cloudflare Worker domain
-   - `https://www.eloward.xyz/*`: Web application domain
+   - `https://www.eloward.com/*`: Web application domain
 
 3. **Backend Requirements**:
    - Cloudflare Worker with secure environment variables for client secret

@@ -15,7 +15,7 @@ const defaultConfig = {
   // Make sure this URL is correct and matches a deployed instance
   proxyBaseUrl: 'https://eloward-twitchrso.unleashai-inquiries.workers.dev',
   // Use an extension-specific redirect URI that's registered with Twitch
-  redirectUri: 'https://www.eloward.xyz/ext/twitch/auth/redirect',
+  redirectUri: 'https://www.eloward.com/ext/twitch/auth/redirect',
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
   endpoints: {

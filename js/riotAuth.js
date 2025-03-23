@@ -41,7 +41,7 @@ const safeStorage = {
 const defaultConfig = {
   proxyBaseUrl: 'https://eloward-riotrso.unleashai-inquiries.workers.dev',
   clientId: '38a4b902-7186-44ac-8183-89ba1ac56cf3',
-  redirectUri: 'https://www.eloward.xyz/riot/auth/redirect',
+  redirectUri: 'https://www.eloward.com/riot/auth/redirect',
   endpoints: {
     authInit: '/auth/init',
     authToken: '/auth/token',
