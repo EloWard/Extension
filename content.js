@@ -1,10 +1,6 @@
 // DIRECT TEST LOG - This should always appear
 console.log("🛡️ EloWard Extension Active");
 
-// For testing purposes, force enable all channels
-const TESTING_MODE = false; // Set to true for testing only
-const DEBUG = true;
-
 // Global state
 let isChannelSubscribed = false;
 let channelName = '';
@@ -14,13 +10,6 @@ let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
 let checkedStreamers = {}; // Cache for already checked streamers
-
-// Simple debug logger
-function debugLog(...args) {
-  if (DEBUG) {
-    console.log("EloWard:", ...args);
-  }
-}
 
 // Initialize storage data once at startup
 initializeStorage();
@@ -33,49 +22,17 @@ setTimeout(initializeExtension, 3000);
 // Add a window.onload handler as an additional initialization method
 window.addEventListener('load', function() {
   initializeExtension();
-  
-  // Add a direct test after 5 seconds to bypass all normal extension mechanisms
-  setTimeout(() => {
-    if (isChannelSubscribed) {
-      directBadgeInsertionTest();
-    }
-  }, 5000);
-  
-  // Also add a click handler to the debug indicator for manual testing
-  setupDebugIndicator();
 });
 
 // Initialize storage and load user data
 function initializeStorage() {
   chrome.storage.local.get(null, (allData) => {
-    if (DEBUG) {
-      console.log("🔎 STORAGE DEBUG - All stored data:", allData);
-      
-      // Specifically check for Twitch username in all possible formats
-      const possibleTwitchKeys = [
-        'twitchUsername', 
-        'twitch_username',
-        'eloward_persistent_twitch_user_data',
-        'eloward_twitch_user_info'
-      ];
-      
-      console.log("🔎 STORAGE DEBUG - Checking for Twitch username in all possible formats:");
-      possibleTwitchKeys.forEach(key => {
-        console.log(`  - Key "${key}": ${allData[key] ? JSON.stringify(allData[key]) : 'not found'}`);
-      });
-    }
-    
     // Find current user in storage using consolidated logic
     currentUser = findCurrentUser(allData);
     
     // Process rank data from linked accounts
     if (allData.linkedAccounts) {
       processLinkedAccounts(allData.linkedAccounts);
-    }
-    
-    // If debug mode, show an indicator
-    if (DEBUG) {
-      injectVisibleDebugIndicator();
     }
   });
 }
@@ -85,18 +42,15 @@ function findCurrentUser(allData) {
   // Check storage in order of preference
   if (allData.eloward_persistent_twitch_user_data?.login) {
     const twitchData = allData.eloward_persistent_twitch_user_data;
-    debugLog(`Found current user from persistent storage: ${twitchData.login.toLowerCase()} (display name: ${twitchData.display_name})`);
     return twitchData.login.toLowerCase();
   } 
   
   if (allData.twitchUsername) {
-    debugLog(`Found current user from direct 'twitchUsername' key: ${allData.twitchUsername.toLowerCase()}`);
     return allData.twitchUsername.toLowerCase();
   }
   
   if (allData.eloward_twitch_user_info?.login) {
     const twitchInfo = allData.eloward_twitch_user_info;
-    debugLog(`Found current user from Twitch API info: ${twitchInfo.login.toLowerCase()} (display name: ${twitchInfo.display_name})`);
     return twitchInfo.login.toLowerCase();
   }
   
@@ -105,14 +59,11 @@ function findCurrentUser(allData) {
     if (key.toLowerCase().includes('twitch')) {
       const data = allData[key];
       if (data && typeof data === 'object' && (data.login || data.display_name)) {
-        const username = (data.login || data.display_name).toLowerCase();
-        debugLog(`Extracted username from "${key}": ${username}`);
-        return username;
+        return (data.login || data.display_name).toLowerCase();
       }
     }
   }
   
-  debugLog('No Twitch user data found in any storage format');
   return null;
 }
 
@@ -123,7 +74,6 @@ function processLinkedAccounts(linkedAccounts) {
     if (account && account.rankData) {
       const lowerUsername = username.toLowerCase();
       cachedUserMap[lowerUsername] = account.rankData;
-      debugLog(`Loaded rank data for ${lowerUsername} from storage`);
     }
   });
   
@@ -134,23 +84,17 @@ function processLinkedAccounts(linkedAccounts) {
     );
     
     if (foundKey) {
-      debugLog(`Found current user with different case: ${foundKey}`);
       cachedUserMap[currentUser] = linkedAccounts[foundKey].rankData;
     }
   }
-  
-  debugLog("Available usernames in cache:", Object.keys(cachedUserMap));
 }
 
 function initializeExtension() {
   // Extract channel name from URL
   channelName = window.location.pathname.split('/')[1];
   if (!channelName) {
-    debugLog("No channel name found in URL");
     return;
   }
-  
-  debugLog(`Initializing for channel: ${channelName}`);
   
   // Add extension styles if needed
   if (!document.querySelector('#eloward-extension-styles')) {
@@ -158,9 +102,8 @@ function initializeExtension() {
   }
   
   // Check if we already verified this streamer's subscription status to avoid repeated checks
-  if (checkedStreamers[channelName] !== undefined) {
-    debugLog(`Using cached subscription status for ${channelName}: ${checkedStreamers[channelName]}`);
-    isChannelSubscribed = checkedStreamers[channelName];
+  if (checkedStreamers[channelName.toLowerCase()] !== undefined) {
+    isChannelSubscribed = checkedStreamers[channelName.toLowerCase()];
     if (isChannelSubscribed) {
       initializeObserver();
     }
@@ -173,7 +116,6 @@ function initializeExtension() {
       { action: 'check_streamer_subscription', streamer: channelName },
       (response) => {
         if (chrome.runtime.lastError) {
-          debugLog("Chrome runtime error:", chrome.runtime.lastError);
           return;
         }
         
@@ -182,7 +124,7 @@ function initializeExtension() {
           // Cache the result
           checkedStreamers[channelName.toLowerCase()] = true;
           
-          debugLog(`Channel ${channelName} is subscribed`);
+          console.log(`EloWard: Streamer ${channelName} subscribed`);
           initializeObserver();
           
           // Force refresh linked accounts from the background script
@@ -198,7 +140,7 @@ function initializeExtension() {
               );
               
               if (isSubscribed) {
-                debugLog(`Found ${channelName} in activeStreamers with case-insensitive match`);
+                console.log(`EloWard: Streamer ${channelName} subscribed (direct check)`);
                 isChannelSubscribed = true;
                 // Cache the result
                 checkedStreamers[channelName.toLowerCase()] = true;
@@ -210,15 +152,11 @@ function initializeExtension() {
             isChannelSubscribed = false;
             // Cache the result
             checkedStreamers[channelName.toLowerCase()] = false;
-            
-            debugLog(`Channel ${channelName} is NOT subscribed`);
           });
         }
       }
     );
   } catch (error) {
-    console.error("Error sending message to background script:", error);
-    
     // Fallback to direct storage check if message sending fails
     chrome.storage.local.get(['activeStreamers'], (data) => {
       if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
@@ -229,7 +167,7 @@ function initializeExtension() {
         );
         
         if (isSubscribed) {
-          debugLog(`Found ${channelName} in activeStreamers with case-insensitive match`);
+          console.log(`EloWard: Streamer ${channelName} subscribed (direct check)`);
           isChannelSubscribed = true;
           // Cache the result
           checkedStreamers[channelName.toLowerCase()] = true;
@@ -241,7 +179,6 @@ function initializeExtension() {
       isChannelSubscribed = false;
       // Cache the result
       checkedStreamers[channelName.toLowerCase()] = false;
-      debugLog(`Channel ${channelName} is NOT subscribed (direct check)`);
     });
   }
   
@@ -254,11 +191,9 @@ function setupUrlChangeObserver() {
   if (!window.elowardUrlChangeObserver) {
     window.elowardUrlChangeObserver = true;
     let lastUrl = window.location.href;
-    debugLog("Setting up URL change observer");
     
     new MutationObserver(() => {
       if (window.location.href !== lastUrl) {
-        debugLog(`URL changed from ${lastUrl} to ${window.location.href}`);
         lastUrl = window.location.href;
         
         // Reset state
@@ -275,7 +210,6 @@ function setupUrlChangeObserver() {
 
 function initializeObserver() {
   if (observerInitialized) {
-    debugLog("Observer already initialized, skipping");
     return;
   }
   
@@ -283,35 +217,28 @@ function initializeObserver() {
   
   if (chatContainer) {
     // Chat container found, set up the observer
-    debugLog("Setting up chat observer for container");
     setupChatObserver(chatContainer);
     observerInitialized = true;
     
     // Also set up a fallback observer for the whole chat area
     const chatArea = document.querySelector('.chat-room, .right-column, [data-test-selector="chat-room"]');
     if (chatArea && chatArea !== chatContainer) {
-      debugLog("Setting up fallback chat observer");
       setupChatObserver(chatArea, true);
     }
   } else {
     // Chat container not found yet, wait and try again
-    debugLog("Chat container not found, retrying in 2 seconds");
     setTimeout(() => {
       const chatContainer = findChatContainer();
       
       if (chatContainer) {
-        debugLog("Chat container found on retry");
         setupChatObserver(chatContainer);
         observerInitialized = true;
       } else {
         // Last resort: observe the whole right column
         const rightColumn = document.querySelector('.right-column, [data-test-selector="right-column"]');
         if (rightColumn) {
-          debugLog("Using right column as fallback for chat container");
           setupChatObserver(rightColumn, true);
           observerInitialized = true;
-        } else {
-          debugLog("Could not find any container for chat");
         }
       }
     }, 2000);
@@ -337,7 +264,6 @@ function findChatContainer() {
   for (const selector of chatContainerSelectors) {
     const container = document.querySelector(selector);
     if (container) {
-      debugLog(`Chat container found with selector: ${selector}`);
       return container;
     }
   }
@@ -348,7 +274,6 @@ function findChatContainer() {
   for (const container of potentialContainers) {
     const usernameElements = container.querySelectorAll('.chat-author__display-name, [data-a-target="chat-message-username"]');
     if (usernameElements.length > 0) {
-      debugLog(`Found chat container with ${usernameElements.length} username elements`);
       return container;
     }
   }
@@ -361,8 +286,6 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
   const chatObserver = new MutationObserver((mutations) => {
     // Process messages only if channel is subscribed
     if (!isChannelSubscribed) return;
-    
-    let newMessagesProcessed = 0;
     
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
@@ -377,22 +300,16 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
             
             if (isMessage) {
               processNewMessage(node);
-              newMessagesProcessed++;
             } else if (isFallbackObserver) {
               // For fallback observers, look deeper for chat messages
               const messages = node.querySelectorAll('[data-a-target="chat-line-message"], .chat-line__message, .chat-line');
               messages.forEach(message => {
                 processNewMessage(message);
-                newMessagesProcessed++;
               });
             }
           }
         }
       }
-    }
-    
-    if (newMessagesProcessed > 0) {
-      debugLog(`Processed ${newMessagesProcessed} new messages`);
     }
   });
   
@@ -441,22 +358,17 @@ function processNewMessage(messageNode) {
   );
   
   if (cachedUsername) {
-    debugLog(`Found cached rank for ${username}`);
     addBadgeToMessage(usernameElement, cachedUserMap[cachedUsername]);
     return;
   }
   
   // Check if this is the current user
   if (currentUser && username === currentUser.toLowerCase()) {
-    debugLog(`This is the current user, checking for authenticated rank data`);
-    
     // Get user's actual rank from Riot data
     chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
       const riotData = data.eloward_persistent_riot_user_data;
       
       if (riotData?.rankInfo) {
-        debugLog(`Found authenticated Riot rank data`);
-        
         // Convert the Riot rank format to our format
         const userRankData = {
           tier: riotData.rankInfo.tier,
@@ -670,133 +582,7 @@ function addExtensionStyles() {
     .eloward-tooltip.visible {
       opacity: 1;
     }
-    
-    .eloward-debug-indicator {
-      position: fixed;
-      bottom: 10px;
-      right: 10px;
-      background: rgba(0, 0, 0, 0.7);
-      color: #00ff00;
-      padding: 5px 10px;
-      border-radius: 5px;
-      z-index: 9999999;
-      font-size: 12px;
-      font-family: Arial, sans-serif;
-    }
   `;
   
   document.head.appendChild(styleElement);
-  debugLog("Added extension styles");
-}
-
-// Direct test function that bypasses normal extension mechanisms
-function directBadgeInsertionTest() {
-  // Use the cached currentUser
-  let targetUsername = currentUser;
-  
-  if (!targetUsername) {
-    // If not cached, try to get from storage
-    chrome.storage.local.get(null, (allData) => {
-      targetUsername = findCurrentUser(allData);
-      
-      if (!targetUsername) {
-        console.error("No user found in storage, cannot add badges");
-        return;
-      }
-      
-      performBadgeInsertion(targetUsername);
-    });
-  } else {
-    performBadgeInsertion(targetUsername);
-  }
-}
-
-function performBadgeInsertion(targetUsername) {
-  // Try to find messages in the chat
-  const usernameElements = document.querySelectorAll('.chat-author__display-name, [data-a-target="chat-message-username"]');
-  let badgesAdded = 0;
-  
-  usernameElements.forEach(usernameEl => {
-    // Check if this username matches our target (case insensitive)
-    const username = usernameEl.textContent.trim().toLowerCase();
-    
-    if (username === targetUsername.toLowerCase()) {
-      // Check for existing badges first
-      const parentContainer = usernameEl.closest('.chat-line__username-container');
-      if (parentContainer?.querySelector('.eloward-rank-badge, img[class*="badge"]')) return;
-      
-      // Create a badge if we have rank data
-      let rankTier = null;
-      if (cachedUserMap[username]?.tier) {
-        rankTier = cachedUserMap[username].tier;
-      } else {
-        // Check storage for Riot rank data
-        chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
-          const riotData = data.eloward_persistent_riot_user_data;
-          if (riotData?.rankInfo) {
-            // Add badge with actual rank data
-            const userRankData = {
-              tier: riotData.rankInfo.tier,
-              division: riotData.rankInfo.rank,
-              leaguePoints: riotData.rankInfo.leaguePoints,
-              summonerName: riotData.gameName
-            };
-            addBadgeToMessage(usernameEl, userRankData);
-          }
-        });
-        return;
-      }
-      
-      // If we have rank data in cache, use it
-      if (rankTier) {
-        addBadgeToMessage(usernameEl, cachedUserMap[username]);
-        badgesAdded++;
-      }
-    }
-  });
-  
-  debugLog(`Direct test complete. Added ${badgesAdded} badges.`);
-}
-
-// Function to inject a visible indicator on the page
-function injectVisibleDebugIndicator() {
-  if (document.getElementById('eloward-debug-indicator')) return;
-  
-  const indicator = document.createElement('div');
-  indicator.id = 'eloward-debug-indicator';
-  indicator.className = 'eloward-debug-indicator';
-  indicator.innerHTML = 'EloWard Active';
-  
-  // Add it to the document body if it exists, otherwise wait for it
-  if (document.body) {
-    document.body.appendChild(indicator);
-  } else {
-    // Body not available yet, wait for it
-    const observer = new MutationObserver(function() {
-      if (document.body) {
-        document.body.appendChild(indicator);
-        observer.disconnect();
-      }
-    });
-    
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true
-    });
-  }
-}
-
-// Setup debug indicator with click handler
-function setupDebugIndicator() {
-  const indicator = document.getElementById('eloward-debug-indicator');
-  if (indicator) {
-    indicator.innerHTML = 'EloWard Active' + (isChannelSubscribed ? ' (Click to Test)' : ' (Channel Not Subscribed)');
-    indicator.style.cursor = isChannelSubscribed ? 'pointer' : 'default';
-    
-    if (isChannelSubscribed) {
-      indicator.onclick = directBadgeInsertionTest;
-    } else {
-      indicator.onclick = null;
-    }
-  }
 } 
