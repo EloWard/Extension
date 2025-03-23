@@ -450,6 +450,20 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
     chrome.storage.local.set({ selectedRegion });
+    
+    // Check if user is authenticated and refresh rank data if they are
+    RiotAuth.isAuthenticated().then(isAuthenticated => {
+      if (isAuthenticated) {
+        // Add a small visual indicator that we're refreshing based on region change
+        const currentRankElement = document.getElementById('current-rank');
+        if (currentRankElement) {
+          currentRankElement.textContent = 'Updating...';
+        }
+        
+        // Call the existing refreshRank function
+        refreshRank();
+      }
+    });
   }
 
   // Refresh rank function to update player rank information
@@ -499,14 +513,25 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       console.error('Error refreshing rank:', error);
       
-      // Show error briefly on the rank text
-      const originalText = currentRank.textContent;
-      currentRank.textContent = 'Refresh failed';
-      
-      // Reset to original text after a short delay
-      setTimeout(() => {
-        currentRank.textContent = originalText;
-      }, 3000);
+      // Show "Unranked" if there's a rank lookup error or no data found for this region
+      if (error.message && (
+          error.message.includes('not found') || 
+          error.message.includes('not available') || 
+          error.message.includes('no rank data')
+      )) {
+        currentRank.textContent = 'Unranked';
+        rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+        rankBadgePreview.style.transform = 'translateY(-3px)';
+      } else {
+        // For other errors, show brief error message
+        const originalText = currentRank.textContent;
+        currentRank.textContent = 'Refresh failed';
+        
+        // Reset to original text after a short delay
+        setTimeout(() => {
+          currentRank.textContent = originalText;
+        }, 3000);
+      }
     } finally {
       // Remove the loading state
       refreshRankBtn.classList.remove('refreshing');

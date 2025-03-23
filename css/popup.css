@@ -186,6 +186,73 @@ header h1 {
   color: var(--success);
 }
 
+/* Region connection controls */
+.riot-connection-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.compact-select.button-width {
+  width: 100%;
+  background-color: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%23D9A336%22%20d%3D%22M1.5%203.5L6%208l4.5-4.5L12%204.88%206%2010.88%200%204.88z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 5px center;
+  padding-right: 18px;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  text-align: center;
+  height: 24px;
+}
+
+.compact-select.button-width:hover {
+  border-color: var(--primary-dark);
+}
+
+.compact-select.button-width:focus {
+  box-shadow: 0 0 0 2px rgba(217, 163, 54, 0.3);
+}
+
+/* Old region selector styles - can be removed if no longer used elsewhere */
+.riot-region-selector {
+  margin-top: 6px;
+}
+
+.compact-select {
+  background-color: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 2px 5px;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%23D9A336%22%20d%3D%22M1.5%203.5L6%208l4.5-4.5L12%204.88%206%2010.88%200%204.88z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 5px center;
+  padding-right: 18px;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+}
+
+.compact-select:hover {
+  border-color: var(--primary-dark);
+}
+
+.compact-select:focus {
+  box-shadow: 0 0 0 2px rgba(217, 163, 54, 0.3);
+}
+
 /* Error state for connection status */
 .connection-status.error {
   color: #e74c3c;
