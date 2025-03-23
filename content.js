@@ -2,17 +2,18 @@
 console.log("🛡️ EloWard Extension Active");
 
 // For testing purposes, force enable all channels
-const TESTING_MODE = true; // Set to false for production
+const TESTING_MODE = false; // Set to true for testing only
 const DEBUG = true;
 
 // Global state
-let isChannelSubscribed = TESTING_MODE;
+let isChannelSubscribed = false;
 let channelName = '';
 let processedMessages = new Set();
 let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
+let checkedStreamers = {}; // Cache for already checked streamers
 
 // Simple debug logger
 function debugLog(...args) {
@@ -35,7 +36,9 @@ window.addEventListener('load', function() {
   
   // Add a direct test after 5 seconds to bypass all normal extension mechanisms
   setTimeout(() => {
-    directBadgeInsertionTest();
+    if (isChannelSubscribed) {
+      directBadgeInsertionTest();
+    }
   }, 5000);
   
   // Also add a click handler to the debug indicator for manual testing
@@ -154,11 +157,13 @@ function initializeExtension() {
     addExtensionStyles();
   }
   
-  // In testing mode, skip subscription check
-  if (TESTING_MODE) {
-    debugLog(`TESTING MODE: Treating channel ${channelName} as subscribed`);
-    isChannelSubscribed = true;
-    initializeObserver();
+  // Check if we already verified this streamer's subscription status to avoid repeated checks
+  if (checkedStreamers[channelName] !== undefined) {
+    debugLog(`Using cached subscription status for ${channelName}: ${checkedStreamers[channelName]}`);
+    isChannelSubscribed = checkedStreamers[channelName];
+    if (isChannelSubscribed) {
+      initializeObserver();
+    }
     return;
   }
   
@@ -169,33 +174,75 @@ function initializeExtension() {
       (response) => {
         if (chrome.runtime.lastError) {
           debugLog("Chrome runtime error:", chrome.runtime.lastError);
-          if (TESTING_MODE) isChannelSubscribed = true;
           return;
         }
         
         if (response && response.subscribed) {
           isChannelSubscribed = true;
+          // Cache the result
+          checkedStreamers[channelName.toLowerCase()] = true;
+          
           debugLog(`Channel ${channelName} is subscribed`);
           initializeObserver();
           
           // Force refresh linked accounts from the background script
           chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
-        } else if (TESTING_MODE) {
-          isChannelSubscribed = true;
-          debugLog(`TESTING MODE: Overriding subscription check for ${channelName}`);
-          initializeObserver();
         } else {
-          isChannelSubscribed = false;
-          debugLog(`Channel ${channelName} is NOT subscribed`);
+          // Double-check directly with storage as a fallback
+          chrome.storage.local.get(['activeStreamers'], (data) => {
+            if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
+              // Case-insensitive check for streamer in activeStreamers array
+              const isSubscribed = data.activeStreamers.some(streamer => 
+                typeof streamer === 'string' && 
+                streamer.toLowerCase() === channelName.toLowerCase()
+              );
+              
+              if (isSubscribed) {
+                debugLog(`Found ${channelName} in activeStreamers with case-insensitive match`);
+                isChannelSubscribed = true;
+                // Cache the result
+                checkedStreamers[channelName.toLowerCase()] = true;
+                initializeObserver();
+                return;
+              }
+            }
+            
+            isChannelSubscribed = false;
+            // Cache the result
+            checkedStreamers[channelName.toLowerCase()] = false;
+            
+            debugLog(`Channel ${channelName} is NOT subscribed`);
+          });
         }
       }
     );
   } catch (error) {
     console.error("Error sending message to background script:", error);
-    if (TESTING_MODE) {
-      isChannelSubscribed = true;
-      initializeObserver();
-    }
+    
+    // Fallback to direct storage check if message sending fails
+    chrome.storage.local.get(['activeStreamers'], (data) => {
+      if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
+        // Case-insensitive check for streamer in activeStreamers array
+        const isSubscribed = data.activeStreamers.some(streamer => 
+          typeof streamer === 'string' && 
+          streamer.toLowerCase() === channelName.toLowerCase()
+        );
+        
+        if (isSubscribed) {
+          debugLog(`Found ${channelName} in activeStreamers with case-insensitive match`);
+          isChannelSubscribed = true;
+          // Cache the result
+          checkedStreamers[channelName.toLowerCase()] = true;
+          initializeObserver();
+          return;
+        }
+      }
+      
+      isChannelSubscribed = false;
+      // Cache the result
+      checkedStreamers[channelName.toLowerCase()] = false;
+      debugLog(`Channel ${channelName} is NOT subscribed (direct check)`);
+    });
   }
   
   // Setup URL change monitoring if not already done
@@ -215,7 +262,7 @@ function setupUrlChangeObserver() {
         lastUrl = window.location.href;
         
         // Reset state
-        isChannelSubscribed = TESTING_MODE;
+        isChannelSubscribed = false;
         channelName = window.location.pathname.split('/')[1];
         processedMessages.clear();
         
@@ -312,8 +359,8 @@ function findChatContainer() {
 function setupChatObserver(chatContainer, isFallbackObserver = false) {
   // Create a MutationObserver to watch for new chat messages
   const chatObserver = new MutationObserver((mutations) => {
-    // Process messages even if channel isn't subscribed when in testing mode
-    if (!isChannelSubscribed && !TESTING_MODE) return;
+    // Process messages only if channel is subscribed
+    if (!isChannelSubscribed) return;
     
     let newMessagesProcessed = 0;
     
@@ -377,6 +424,9 @@ function processNewMessage(messageNode) {
   // Mark this message as processed
   processedMessages.add(messageNode);
   
+  // Only process messages if the channel is subscribed
+  if (!isChannelSubscribed) return;
+  
   // Find username element
   let usernameElement = messageNode.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"]');
   
@@ -396,8 +446,8 @@ function processNewMessage(messageNode) {
     return;
   }
   
-  // For testing mode, check if this is the current user
-  if (TESTING_MODE && currentUser && username === currentUser.toLowerCase()) {
+  // Check if this is the current user
+  if (currentUser && username === currentUser.toLowerCase()) {
     debugLog(`This is the current user, checking for authenticated rank data`);
     
     // Get user's actual rank from Riot data
@@ -423,10 +473,7 @@ function processNewMessage(messageNode) {
     return;
   }
   
-  // In testing mode, stop here for non-current users
-  if (TESTING_MODE) return;
-  
-  // For production, fetch rank from background script
+  // For other users, fetch rank from background script
   fetchRankFromBackground(username, usernameElement);
 }
 
@@ -743,8 +790,13 @@ function injectVisibleDebugIndicator() {
 function setupDebugIndicator() {
   const indicator = document.getElementById('eloward-debug-indicator');
   if (indicator) {
-    indicator.innerHTML = 'EloWard Active (Click to Test)';
-    indicator.style.cursor = 'pointer';
-    indicator.onclick = directBadgeInsertionTest;
+    indicator.innerHTML = 'EloWard Active' + (isChannelSubscribed ? ' (Click to Test)' : ' (Channel Not Subscribed)');
+    indicator.style.cursor = isChannelSubscribed ? 'pointer' : 'default';
+    
+    if (isChannelSubscribed) {
+      indicator.onclick = directBadgeInsertionTest;
+    } else {
+      indicator.onclick = null;
+    }
   }
 } 
