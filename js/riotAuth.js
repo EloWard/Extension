@@ -705,39 +705,10 @@ export const RiotAuth = {
         expiryTimeISO: tokenExpiry ? new Date(parseInt(tokenExpiry)).toISOString() : 'undefined'
       });
       
-      // If no access token is found, we need to trigger a new authentication flow
+      // If no access token is found, return null - do not auto-authenticate
       if (!accessToken) {
         console.log('No access token found in storage');
-        
-        if (ignoreNoTokenError) {
-          return null;
-        }
-        
-        // Get the stored region or default to 'na1'
-        const storedRegion = await this._getStoredValue('selectedRegion') || 'na1';
-        console.log('No valid token available. Initiating new authentication flow for region:', storedRegion);
-        
-        try {
-          // Authenticate using the same flow as the connect button
-          await this.authenticate(storedRegion);
-          
-          // After authentication completes, retrieve the new token
-          const newTokenData = await new Promise(resolve => {
-            chrome.storage.local.get([this.config.storageKeys.accessToken], resolve);
-          });
-          
-          const newAccessToken = newTokenData[this.config.storageKeys.accessToken];
-          
-          if (!newAccessToken) {
-            throw new Error('Failed to obtain a new access token after authentication');
-          }
-          
-          console.log('Successfully obtained new access token through authentication flow');
-          return newAccessToken;
-        } catch (authError) {
-          console.error('Error during authentication flow:', authError);
-          throw new Error('Failed to get access token: ' + authError.message);
-        }
+        return null;
       }
       
       // Check if token is expired or will expire soon
@@ -752,17 +723,17 @@ export const RiotAuth = {
           console.log('Invalid expiry but refresh token available, attempting refresh');
           const refreshResult = await this.refreshToken(refreshToken);
           
-          // If refresh returns null (no error but no token), initiate auth flow
+          // If refresh returns null (no error but no token), return null
           if (refreshResult === null) {
-            console.log('Token refresh returned null, initiating new authentication flow');
-            return this._initiateAuthFlowForNewToken();
+            console.log('Token refresh returned null, no valid token available');
+            return null;
           }
           
           return refreshResult.access_token;
         }
         
-        // If refresh token refresh fails, try a new authentication flow
-        return this._initiateAuthFlowForNewToken();
+        // If no refresh token or refresh fails, return null
+        return null;
       }
       
       const expiresInMs = tokenExpiryMs - now;
@@ -778,9 +749,7 @@ export const RiotAuth = {
         
         if (!refreshToken) {
           console.error('Access token expired and no refresh token available');
-          
-          // If no refresh token is available, initiate a new authentication flow
-          return this._initiateAuthFlowForNewToken();
+          return null;
         }
         
         // Refresh the token
@@ -788,19 +757,17 @@ export const RiotAuth = {
         try {
           const refreshResult = await this.refreshToken(refreshToken);
           
-          // If refresh returns null (no error but no token), initiate auth flow
+          // If refresh returns null (no error but no token), return null
           if (refreshResult === null) {
-            console.log('Token refresh returned null, initiating new authentication flow');
-            return this._initiateAuthFlowForNewToken();
+            console.log('Token refresh returned null, no valid token available');
+            return null;
           }
           
           console.log('Token refresh successful');
           return refreshResult.access_token;
         } catch (refreshError) {
           console.error('Error refreshing token:', refreshError);
-          
-          // If token refresh fails, try initiating a new authentication flow
-          return this._initiateAuthFlowForNewToken();
+          return null;
         }
       }
       
@@ -809,36 +776,14 @@ export const RiotAuth = {
       return accessToken;
     } catch (error) {
       console.error('Error getting valid token:', error);
-      throw error;
+      return null;
     }
   },
   
-  // Helper method to initiate authentication flow for a new token
+  // Helper method for token handling - now just returns null instead of auto-authenticating
   async _initiateAuthFlowForNewToken() {
-    const storedRegion = await this._getStoredValue('selectedRegion') || 'na1';
-    console.log('Initiating new authentication flow for region:', storedRegion);
-    
-    try {
-      // Authenticate using the same flow as the connect button
-      await this.authenticate(storedRegion);
-      
-      // After authentication completes, retrieve the new token
-      const newTokenData = await new Promise(resolve => {
-        chrome.storage.local.get([this.config.storageKeys.accessToken], resolve);
-      });
-      
-      const newAccessToken = newTokenData[this.config.storageKeys.accessToken];
-      
-      if (!newAccessToken) {
-        throw new Error('Failed to obtain a new access token after authentication');
-      }
-      
-      console.log('Successfully obtained new access token through authentication flow');
-      return newAccessToken;
-    } catch (authError) {
-      console.error('Error during authentication flow:', authError);
-      throw new Error('Failed to get access token: ' + authError.message);
-    }
+    console.log('Auto-authentication disabled, returning null instead of initiating auth flow');
+    return null;
   },
   
   /**

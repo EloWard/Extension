@@ -130,18 +130,13 @@ document.addEventListener('DOMContentLoaded', () => {
       await new Promise(resolve => {
         chrome.storage.local.set({ 'auth_callback': { code: params.code, state: params.state } }, resolve);
         chrome.storage.local.set({ 'eloward_auth_callback': { code: params.code, state: params.state } }, resolve);
+        resolve();
       });
       
-      console.log('Stored auth callback in chrome.storage, completing auth flow');
+      console.log('Stored auth callback in chrome.storage, connection flow will handle data retrieval');
       
-      // Attempt to retrieve user data, but don't show errors to the user during this process
-      try {
-        const userData = await RiotAuth.getUserData(true);
-        await updateUserInterface(userData);
-      } catch (error) {
-        console.log('Error completing auth after callback:', error);
-        // Don't display this error to the user - we'll rely on the main authentication flow to handle it
-      }
+      // We don't automatically retrieve user data here anymore
+      // The connect button flow will handle this when explicitly triggered by the user
     } catch (error) {
       console.error('Error processing auth callback:', error);
       // Only show error if the connection button isn't in a "connecting" state
@@ -251,6 +246,25 @@ document.addEventListener('DOMContentLoaded', () => {
           };
           updateUserInterface(userData);
         }
+      } else {
+        // Show not connected UI for Riot
+        console.log('No Riot data in persistent storage, showing not connected UI');
+        riotConnectionStatus.textContent = 'Not Connected';
+        riotConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+        connectRiotBtn.textContent = 'Connect';
+        connectRiotBtn.disabled = false;
+        
+        // Reset rank display and show unranked graphic
+        currentRank.textContent = 'Unranked';
+        rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+        rankBadgePreview.style.transform = 'translateY(-3px)';
+        
+        // Set region from storage if available
+        chrome.storage.local.get(['selectedRegion'], (result) => {
+          if (result.selectedRegion) {
+            regionSelect.value = result.selectedRegion;
+          }
+        });
       }
       
       // If Twitch is connected in persistent storage, display that data immediately
@@ -262,54 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.classList.add('connected');
           connectTwitchBtn.textContent = 'Disconnect';
         }
-      }
-      
-      // Now perform standard authentication checks to validate tokens
-      // This ensures we verify that the stored tokens are still valid
-      
-      // Check if user is authenticated with Riot
-      const isAuthenticated = await RiotAuth.isAuthenticated();
-      
-      if (isAuthenticated) {
-        console.log('User is authenticated according to RiotAuth module');
-        
-        try {
-          // Get all user data
-          const userData = await RiotAuth.getUserData();
-          updateUserInterface(userData);
-          
-          // Update persistent storage with latest data
-          await PersistentStorage.storeRiotUserData(userData);
-        } catch (error) {
-          console.error('Error getting user data from RiotAuth:', error);
-          
-          // If we already displayed data from persistent storage, keep it
-          if (!persistentConnectedState.riot) {
-            // Fallback to chrome.storage only if no persistent data was shown
-            chrome.storage.local.get(['riotAuth', 'userRank', 'selectedRegion'], (result) => {
-              if (result.riotAuth && result.riotAuth.gameName) {
-                updateUserInterface(result.riotAuth);
-              } else {
-                showNotConnectedUI();
-              }
-              
-              // Set selected region if available
-              if (result.selectedRegion) {
-                regionSelect.value = result.selectedRegion;
-              }
-            });
-          }
-        }
-      } else if (!persistentConnectedState.riot) {
-        // Only show not connected UI if we haven't already displayed data from persistent storage
-        showNotConnectedUI();
-        
-        // Set region from storage if available
-        chrome.storage.local.get(['selectedRegion'], (result) => {
-          if (result.selectedRegion) {
-            regionSelect.value = result.selectedRegion;
-          }
-        });
       }
       
       // Check Twitch authentication status
