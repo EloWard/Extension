@@ -446,13 +446,20 @@ function addBadgeToMessage(usernameElement, rankData) {
   rankImg.width = 18;
   rankImg.height = 18;
   
-  // Set image source based on rank tier
+  // Set image source based on rank tier - use 36px images for higher quality
   try {
     const tier = rankData.tier.toLowerCase();
-    rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}18.png`);
+    rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}36.png`);
   } catch (error) {
     console.error("Error setting badge image source:", error);
-    return; // Don't continue if we can't get the image
+    // Fallback to 18px if 36px isn't available
+    try {
+      const tier = rankData.tier.toLowerCase();
+      rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}18.png`);
+    } catch (fallbackError) {
+      console.error("Error setting fallback badge image source:", fallbackError);
+      return; // Don't continue if we can't get the image
+    }
   }
   
   // Add the image to the badge container
@@ -544,22 +551,31 @@ function addExtensionStyles() {
   styleElement.id = 'eloward-extension-styles';
   styleElement.textContent = `
     .eloward-rank-badge {
-      display: inline-block;
-      margin-left: 4px;
-      margin-right: 4px;
-      vertical-align: middle;
-      cursor: pointer;
-      transition: transform 0.2s ease;
+      display: inline-block !important;
+      margin-left: 4px !important;
+      margin-right: 4px !important;
+      vertical-align: middle !important;
+      cursor: pointer !important;
+      transform: none !important;
+      transition: none !important;
     }
     
     .eloward-rank-badge:hover {
-      transform: scale(1.2);
+      transform: none !important;
+      scale: 1 !important;
     }
     
     .eloward-rank-badge img {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
+      display: inline-block !important;
+      width: 18px !important;
+      height: 18px !important;
+      transform: none !important;
+      transition: none !important;
+    }
+    
+    .eloward-rank-badge img:hover {
+      transform: none !important;
+      scale: 1 !important;
     }
     
     .eloward-tooltip {
