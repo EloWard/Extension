@@ -548,8 +548,8 @@ function addExtensionStyles() {
       display: inline-flex !important;
       justify-content: center !important;
       align-items: center !important;
-      margin-left: 4px !important;
-      margin-right: 4px !important;
+      margin-left: 0px !important;
+      margin-right: 0px !important;
       vertical-align: middle !important;
       cursor: pointer !important;
       transform: none !important;
