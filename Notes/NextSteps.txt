@@ -1,7 +1,4 @@
 - Remove league auth check on popup open
-- Remove mock rank data
-- remove hardcoded usernames
-- rank badge accumulating
 
 - Change Vercel deployment to Cloudflare Pages
 
