@@ -982,7 +982,10 @@ export const RiotAuth = {
         this.config.storageKeys.accountInfo,
         this.config.storageKeys.summonerInfo,
         this.config.storageKeys.rankInfo,
-        this.config.storageKeys.authState
+        this.config.storageKeys.authState,
+        'riotAuth', // Add the main riotAuth object to be cleared
+        'riot_auth_callback', // Also clear any auth callbacks
+        'eloward_auth_callback' // Clear common auth callback key
       ];
       
       // Clear from chrome.storage

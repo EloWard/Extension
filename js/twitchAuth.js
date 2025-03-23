@@ -590,20 +590,33 @@ export const TwitchAuth = {
    * @returns {Promise<boolean>} - Whether logout was successful
    */
   async logout() {
-    console.log('Logging out of Twitch');
-    
-    // Clear auth data from chrome.storage
-    await new Promise(resolve => {
-      chrome.storage.local.remove([
+    try {
+      console.log('Logging out of Twitch');
+      
+      // Clear persistent user data first
+      await PersistentStorage.clearServiceData('twitch');
+      console.log('Cleared persistent Twitch user data');
+      
+      // Clear auth data from chrome.storage
+      let keysToRemove = [
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
         this.config.storageKeys.tokenExpiry,
         this.config.storageKeys.authState,
-        'eloward_auth_callback'
-      ], resolve);
-    });
-    
-    return true;
+        'twitch_auth', // Also clear the main twitch_auth object
+        'twitch_auth_callback', // Clear any auth callbacks
+        'eloward_auth_callback' // Clear common auth callback key
+      ];
+      
+      await chrome.storage.local.remove(keysToRemove);
+      console.log('Cleared Twitch tokens from chrome.storage');
+      
+      console.log('Twitch logout completed successfully');
+      return true;
+    } catch (error) {
+      console.error('Error during Twitch logout:', error);
+      return false;
+    }
   },
   
   /**
