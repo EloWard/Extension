@@ -30,9 +30,6 @@ const PLATFORM_ROUTING = {
 
 // Mock active streamers (would be fetched from backend in real implementation)
 const ACTIVE_STREAMERS = [
-  'riotgames',
-  'lcs',
-  'faker',
   'doublelift',
   'loltyler1',
   'humzh',
