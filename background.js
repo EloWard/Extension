@@ -34,7 +34,7 @@ let authWindows = {};
 
 /* Handle auth callbacks */
 function handleAuthCallback(params) {
-  console.log('Handling auth callback in background script:', params ? 'data received' : 'no data');
+  console.log('Handling auth callback:', params ? 'data received' : 'no data');
   
   if (!params || !params.code) {
     console.error('Invalid auth callback data');
@@ -125,11 +125,13 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background script received message type:', message?.type || 'unknown', message?.action || '');
+  if (message?.type) {
+    console.log('Received message type:', message.type, message?.action || '');
+  }
   
   // Special handler for Twitch auth callback from the extension redirect page
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
-    console.log('Background received Twitch auth callback message');
+    console.log('Received Twitch auth callback message');
     
     try {
       // Extract params depending on message format
@@ -172,7 +174,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           type: 'twitch_auth_processed',
           success: true,
           timestamp: Date.now()
-        }).catch(err => console.log('Error sending auth processed notification:', err));
+        }).catch(err => console.log('Error sending auth processed notification'));
       }, 500);
       
       return true; // Keep the message channel open for the async response
@@ -446,14 +448,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Handle rank fetch requests from content script
   if (message.action === 'fetch_rank_for_username') {
-    console.log(`Background DEBUG: Received request to fetch rank for username ${message.username} in channel ${message.channel}`);
+    console.log(`Request to fetch rank for ${message.username} in channel ${message.channel}`);
     
     // Ensure username is always lowercase for consistency
     const normalizedUsername = message.username.toLowerCase();
     
     // Check if we have a cached response
     if (cachedRankResponses && cachedRankResponses[normalizedUsername]) {
-      console.log(`Background DEBUG: Found cached rank data for ${normalizedUsername}:`, cachedRankResponses[normalizedUsername]);
+      console.log(`Found cached rank data for ${normalizedUsername}`);
       sendResponse({
         success: true,
         rankData: cachedRankResponses[normalizedUsername],
@@ -464,10 +466,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Check if the streamer has a subscription
     checkStreamerSubscription(message.channel).then(isSubscribed => {
-      console.log(`Background DEBUG: Subscription check for channel ${message.channel}: ${isSubscribed ? 'Active' : 'Inactive'}`);
-      
       if (!isSubscribed) {
-        console.log(`Background DEBUG: Channel ${message.channel} is not subscribed, sending error response`);
+        console.log(`Channel ${message.channel} is not subscribed`);
         sendResponse({ 
           success: false, 
           error: 'Channel not subscribed' 
@@ -478,20 +478,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Get the user's selected region from storage
       chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
         const selectedRegion = data.selectedRegion || 'na1';
-        console.log(`Background DEBUG: Using region ${selectedRegion} for rank lookup for ${normalizedUsername}`);
         
         // Try to find a linked account for this username
         const linkedAccounts = data.linkedAccounts || {};
-        console.log('Background DEBUG: Available linked accounts:', Object.keys(linkedAccounts));
         
         // Check if we have this Twitch username mapped to a Riot ID
         if (linkedAccounts[normalizedUsername]) {
           const linkedAccount = linkedAccounts[normalizedUsername];
-          console.log(`Background DEBUG: Found linked account for ${normalizedUsername}:`, linkedAccount);
+          console.log(`Found linked account for ${normalizedUsername}`);
           
           // Get rank for the linked account
           fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-            console.log(`Background DEBUG: Fetched rank data for ${normalizedUsername}:`, rankData);
+            console.log(`Fetched rank data for ${normalizedUsername}`);
             
             // Cache the response
             if (!cachedRankResponses) cachedRankResponses = {};
@@ -503,43 +501,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               source: 'linked_account'
             });
           }).catch(error => {
-            console.error(`Background DEBUG: Error fetching rank for ${normalizedUsername}:`, error);
+            console.error(`Error fetching rank for ${normalizedUsername}:`, error);
             sendResponse({
               success: false,
               error: error.message
             });
           });
         } else {
-          console.log(`Background DEBUG: No linked account found for ${normalizedUsername}, using username as summoner name`);
+          console.log(`No linked account found for ${normalizedUsername}`);
           
-          // Try using the Twitch username as the summoner name as a fallback
-          fetchRankFromBackend(normalizedUsername, selectedRegion).then(rankData => {
-            console.log(`Background DEBUG: Fetched rank data for ${normalizedUsername}:`, rankData);
-            
-            // Cache the response if we found something
-            if (rankData && rankData.tier) {
-              if (!cachedRankResponses) cachedRankResponses = {};
-              cachedRankResponses[normalizedUsername] = rankData;
-            }
-            
-            sendResponse({
-              success: true,
-              rankData: rankData,
-              source: 'username_match'
-            });
-          }).catch(error => {
-            console.error(`Background DEBUG: Error fetching rank for ${normalizedUsername}:`, error);
-            
-            // Skip mock data generation since we don't need debug functionality
-            sendResponse({
-              success: false,
-              error: error.message
-            });
+          // No linked account found, return not found response
+          sendResponse({
+            success: false,
+            error: 'No linked account found'
           });
         }
       });
     }).catch(error => {
-      console.error(`Background DEBUG: Error checking subscription for ${message.channel}:`, error);
+      console.error(`Error checking subscription for ${message.channel}:`, error);
       sendResponse({
         success: false,
         error: 'Subscription check failed',
@@ -581,14 +560,13 @@ self.addEventListener('message', (event) => {
 
 // Initialize
 chrome.runtime.onInstalled.addListener((details) => {
-  console.log('EloWard extension installed or updated', details.reason);
+  console.log('EloWard extension installed or updated:', details.reason);
   
   // Clear all stored data to force a fresh start
   clearAllStoredData();
   
   // Initialize storage
   chrome.storage.local.set({
-    cachedRanks: {},
     lastRankUpdate: 0,
     selectedRegion: 'na1' // Default region
   });
@@ -818,7 +796,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * @returns {Promise<boolean>} - Resolves with subscription status
  */
 function checkStreamerSubscription(streamerName) {
-  console.log(`Background: Checking if streamer ${streamerName} has a subscription`);
+  console.log(`Checking subscription for channel: ${streamerName}`);
   
   return new Promise((resolve, reject) => {
     // Normalize the channel name to lowercase for case-insensitive matching
@@ -834,18 +812,18 @@ function checkStreamerSubscription(streamerName) {
     })
     .then(response => {
       if (!response.ok) {
-        console.log(`Background: API response not OK, no fallback available`);
+        console.log(`API response not OK for channel ${streamerName}`);
         // No fallback anymore - if API fails, assume not subscribed
         return { subscribed: false };
       }
       return response.json();
     })
     .then(data => {
-      console.log(`Background: ${streamerName} subscription status:`, data.subscribed);
+      console.log(`Channel ${streamerName} subscription status: ${data.subscribed}`);
       resolve(data.subscribed);
     })
     .catch(error => {
-      console.error('Background: Error checking subscription:', error);
+      console.error('Error checking subscription:', error);
       // If API fails, assume not subscribed
       resolve(false);
     });
@@ -869,13 +847,11 @@ function fetchRankFromBackend(username, platform) {
             .then(resolve)
             .catch(error => {
               console.error('Error getting rank for linked account:', error);
-              // Fallback to mock data
-              generateMockRankData(username, platform, resolve);
+              reject(new Error('Could not retrieve rank data for linked account'));
             });
         } else {
-          // No linked account, generate mock data for now
-          // In production, we would fetch from our database of linked accounts
-          generateMockRankData(username, platform, resolve);
+          // No linked account found
+          reject(new Error('No linked account found'));
         }
       });
   });
@@ -1383,13 +1359,12 @@ self.eloward = {
 function getUserLinkedAccount(twitchUsername) {
   return new Promise((resolve) => {
     if (!twitchUsername) {
-      console.log('EloWard: Empty username passed to getUserLinkedAccount');
+      console.log('Empty username passed to getUserLinkedAccount');
       resolve(null);
       return;
     }
     
     const normalizedTwitchUsername = twitchUsername.toLowerCase();
-    console.log(`EloWard: Looking up linked account for Twitch user: ${twitchUsername} (${normalizedTwitchUsername})`);
     
     // Check our database of linked accounts
     chrome.storage.local.get('linkedAccounts', data => {
@@ -1397,7 +1372,7 @@ function getUserLinkedAccount(twitchUsername) {
       
       // First, try direct lookup by Twitch username (most efficient path)
       if (linkedAccounts[normalizedTwitchUsername]) {
-        console.log(`EloWard: Found linked account for Twitch user ${twitchUsername}`);
+        console.log(`Found linked account for Twitch user ${twitchUsername}`);
         resolve(linkedAccounts[normalizedTwitchUsername]);
         return;
       }
@@ -1419,11 +1394,11 @@ function getUserLinkedAccount(twitchUsername) {
             };
             
             chrome.storage.local.set({ linkedAccounts }, () => {
-              console.log(`EloWard: Added current user ${twitchUsername} to linked accounts cache`);
+              console.log(`Added current user ${twitchUsername} to linked accounts cache`);
             });
           }
           
-          console.log(`EloWard: Current user is viewing their own account: ${twitchUsername}`);
+          console.log(`Current user is viewing their own account: ${twitchUsername}`);
           resolve(currentUserData.riotAccountInfo);
         } else {
           // No case-sensitive match, try a case-insensitive scan of all accounts
@@ -1436,14 +1411,14 @@ function getUserLinkedAccount(twitchUsername) {
                  (account.normalizedTwitchUsername && 
                   account.normalizedTwitchUsername === normalizedTwitchUsername))) {
               
-              console.log(`EloWard: Found linked account via case-insensitive search: ${account.twitchUsername}`);
+              console.log(`Found linked account via case-insensitive search: ${account.twitchUsername}`);
               resolve(account);
               return;
             }
           }
           
           // No linked account found after trying all methods
-          console.log(`EloWard: No linked account found for Twitch user ${twitchUsername}`);
+          console.log(`No linked account found for Twitch user ${twitchUsername}`);
           resolve(null);
         }
       });
@@ -1725,7 +1700,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // Add message handler for refresh_linked_accounts
   if (request.action === 'refresh_linked_accounts') {
-    console.log('EloWard: Received request to refresh linked accounts');
+    console.log('Received request to refresh linked accounts');
     preloadLinkedAccounts();
     sendResponse({ success: true });
     return true;
@@ -1742,28 +1717,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  */
 function fetchRankByTwitchUsername(twitchUsername, platform) {
   return new Promise((resolve, reject) => {
-    console.log(`EloWard: Fetching rank for Twitch user: ${twitchUsername}`);
+    console.log(`Fetching rank for Twitch user: ${twitchUsername}`);
     
     // Look up the linked account by Twitch username
     getUserLinkedAccount(twitchUsername)
       .then(linkedAccount => {
         if (linkedAccount) {
-          console.log(`EloWard: Found linked account for ${twitchUsername}, getting rank data`);
+          console.log(`Found linked account for ${twitchUsername}`);
           
           // We have a linked account, get real rank data
           getRankForLinkedAccount(linkedAccount, platform)
             .then(rankData => {
-              console.log(`EloWard: Got rank data for ${twitchUsername}:`, rankData);
+              console.log(`Got rank data for ${twitchUsername}`);
               resolve(rankData);
             })
             .catch(error => {
-              console.error(`EloWard: Error getting rank for linked account ${twitchUsername}:`, error);
-              // If there's an error getting rank data, return null instead of mock data
+              console.error(`Error getting rank for linked account ${twitchUsername}:`, error);
               resolve(null);
             });
         } else {
           // No linked account found
-          console.log(`EloWard: No linked account found for Twitch user ${twitchUsername}, returning null`);
+          console.log(`No linked account found for Twitch user ${twitchUsername}`);
           resolve(null);
         }
       });
@@ -1780,7 +1754,7 @@ function trackAuthWindow(createdWindow) {
 
 // Add a function to preload and sync all linked accounts
 function preloadLinkedAccounts() {
-  console.log('EloWard: Preloading linked accounts');
+  console.log('Preloading linked accounts');
   
   // First, ensure the linkedAccounts object exists in storage
   chrome.storage.local.get('linkedAccounts', (data) => {
@@ -1798,7 +1772,7 @@ function preloadLinkedAccounts() {
         if (!linkedAccounts[normalizedUsername] || 
             !linkedAccounts[normalizedUsername].summonerId) {
           
-          console.log(`EloWard: Adding current user's account (${userData.twitchUsername}) to linked accounts`);
+          console.log(`Adding current user's account (${userData.twitchUsername}) to linked accounts`);
           
           linkedAccounts[normalizedUsername] = {
             ...userData.riotAccountInfo,
@@ -1815,17 +1789,13 @@ function preloadLinkedAccounts() {
       // Store the updated linkedAccounts if changes were made
       if (updated) {
         chrome.storage.local.set({ linkedAccounts }, () => {
-          console.log('EloWard: Updated linked accounts in storage');
+          console.log('Updated linked accounts in storage');
         });
       }
       
-      // Log the available linked accounts for debugging
+      // Log only the count of linked accounts to reduce verbosity
       const accountCount = Object.keys(linkedAccounts).length;
-      console.log(`EloWard: ${accountCount} linked accounts available:`);
-      Object.keys(linkedAccounts).forEach(username => {
-        const account = linkedAccounts[username];
-        console.log(`- ${username}: ${account.gameName || 'Unknown'} (${account.summonerId ? 'has summonerId' : 'missing summonerId'})`);
-      });
+      console.log(`${accountCount} linked accounts available`);
     });
   });
 }
@@ -1848,10 +1818,10 @@ let cachedRankResponses = {};
 
 // Helper function to fetch rank for a linked account
 async function fetchRankForLinkedAccount(linkedAccount, region) {
-  console.log(`Background: Fetching rank for linked account:`, linkedAccount);
+  console.log(`Fetching rank for linked account:`, linkedAccount?.twitchUsername || 'unknown');
   
   if (!linkedAccount.summonerId || !linkedAccount.platform) {
-    console.log('Background: Missing summonerId or platform in linked account');
+    console.log('Missing summonerId or platform in linked account');
     return null;
   }
   
@@ -1859,7 +1829,7 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
     // Get the user's riot access token
     const tokenData = await RiotAuth.getAccessToken();
     if (!tokenData || !tokenData.access_token) {
-      console.error('Background: No valid Riot access token');
+      console.error('No valid Riot access token');
       throw new Error('No valid Riot access token');
     }
     
@@ -1872,13 +1842,13 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
     
     return rankData;
   } catch (error) {
-    console.error('Background: Error in fetchRankForLinkedAccount:', error);
+    console.error('Error in fetchRankForLinkedAccount:', error);
     return null;
   }
 }
 
 // Clear the rank cache periodically
 setInterval(() => {
-  console.log('Background: Clearing rank cache');
+  console.log('Clearing rank cache');
   cachedRankResponses = {};
 }, BADGE_REFRESH_INTERVAL); 
