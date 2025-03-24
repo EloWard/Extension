@@ -1,0 +1,10 @@
+# EloWard D1 Cloudflare Database
+
+- Database ID: [ID value] (need to fill in the exact ID)
+
+## Tables
+
+### subscribed-channels
+- Purpose: Stores channel names
+- Columns:
+  - `name` (text): Contains channel name values
