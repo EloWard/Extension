@@ -1,10 +1,13 @@
 # EloWard D1 Cloudflare Database
 
-- Database ID: [ID value] (need to fill in the exact ID)
+- Database Name: eloward
+- Database ID: ef228f37-9c28-43f2-a211-cfddd4188c78
 
 ## Tables
 
 ### subscribed-channels
-- Purpose: Stores channel names
+- Purpose: Stores channel identifiers
 - Columns:
-  - `name` (text): Contains channel name values
+  - `id` (INTEGER): Primary key, auto-incrementing
+  - `channel_id` (TEXT): External channel identifier, unique, indexed
+  - `subscription_date` (TIMESTAMP): When the channel was subscribed to
