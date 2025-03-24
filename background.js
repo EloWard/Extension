@@ -6,6 +6,7 @@ import { PersistentStorage } from './js/persistentStorage.js';
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
+const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 
 // Platform routing values for Riot API
@@ -834,34 +835,34 @@ function checkStreamerSubscription(streamerName) {
   console.log(`Background: Checking if streamer ${streamerName} has a subscription`);
   
   return new Promise((resolve, reject) => {
-    // Check against mock list
-    // In production, this would call the backend API
-    if (ACTIVE_STREAMERS.includes(streamerName.toLowerCase())) {
-      console.log(`Background: ${streamerName} found in active streamers list`);
-      resolve(true);
-      return;
-    }
+    // Normalize the channel name to lowercase for case-insensitive matching
+    const normalizedName = streamerName.toLowerCase();
     
-    // Call backend API to check subscription
-    console.log(`Background: ${streamerName} not in mock list, checking API`);
-    fetch(`${API_BASE_URL}/health`)
-      .then(response => {
-        if (!response.ok) {
-          console.log(`Background: API response not OK, falling back to mock list`);
-          // If API fails, fall back to mock list
-          return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
-        }
-        return { subscribed: ACTIVE_STREAMERS.includes(streamerName.toLowerCase()) };
-      })
-      .then(data => {
-        console.log(`Background: ${streamerName} subscription status:`, data.subscribed);
-        resolve(data.subscribed);
-      })
-      .catch(error => {
-        console.error('Background: Error checking subscription:', error);
-        // If API fails, fall back to mock list
-        resolve(ACTIVE_STREAMERS.includes(streamerName.toLowerCase()));
-      });
+    // Query the Cloudflare D1 database to check if the streamer has a subscription
+    fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ channel_name: normalizedName })
+    })
+    .then(response => {
+      if (!response.ok) {
+        console.log(`Background: API response not OK, falling back to mock list`);
+        // If API fails, fall back to mock list as temporary solution
+        return { subscribed: ACTIVE_STREAMERS.includes(normalizedName) };
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log(`Background: ${streamerName} subscription status:`, data.subscribed);
+      resolve(data.subscribed);
+    })
+    .catch(error => {
+      console.error('Background: Error checking subscription:', error);
+      // If API fails, fall back to mock list
+      resolve(ACTIVE_STREAMERS.includes(normalizedName));
+    });
   });
 }
 
