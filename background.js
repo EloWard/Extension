@@ -726,6 +726,15 @@ function checkStreamerSubscription(channelName) {
     return Promise.resolve(false);
   }
   
+  // Skip validation for obviously non-channel paths
+  if (channelName === 'oauth2' || 
+      channelName === 'oauth' || 
+      channelName === 'authorize' || 
+      channelName.includes('auth/callback') ||
+      channelName.includes('auth/redirect')) {
+    return Promise.resolve(false);
+  }
+  
   // Use local cache for frequent checks
   const cacheKey = channelName.toLowerCase();
   

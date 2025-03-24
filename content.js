@@ -177,10 +177,16 @@ async function checkChannelSubscription(channelName) {
 
 function initializeExtension() {
   // Extract channel name from URL
-  const newChannelName = window.location.pathname.split('/')[1];
+  const pathSegments = window.location.pathname.split('/');
+  const newChannelName = pathSegments[1];
   
-  // If no channel name or we're not on a channel page, don't do anything
-  if (!newChannelName) {
+  // If no channel name or we're on an auth-related path, don't do anything
+  if (!newChannelName || 
+      newChannelName === 'oauth2' || 
+      pathSegments.includes('oauth') || 
+      pathSegments.includes('authorize') ||
+      window.location.href.includes('auth/callback') ||
+      window.location.href.includes('auth/redirect')) {
     return;
   }
   
@@ -222,7 +228,18 @@ function setupUrlChangeObserver() {
   const urlObserver = new MutationObserver(function(mutations) {
     // Check if pathname has changed
     const currentPath = window.location.pathname;
-    const currentChannel = currentPath.split('/')[1];
+    const pathSegments = currentPath.split('/');
+    const currentChannel = pathSegments[1];
+    
+    // Skip auth-related paths
+    if (!currentChannel || 
+        currentChannel === 'oauth2' || 
+        pathSegments.includes('oauth') || 
+        pathSegments.includes('authorize') ||
+        window.location.href.includes('auth/callback') ||
+        window.location.href.includes('auth/redirect')) {
+      return;
+    }
     
     if (currentChannel !== channelName) {
       console.log(`EloWard: URL changed from ${channelName} to ${currentChannel}`);
