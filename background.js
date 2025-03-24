@@ -29,19 +29,6 @@ const PLATFORM_ROUTING = {
   'vn2': { region: 'sea', name: 'Vietnam' }
 };
 
-// Mock active streamers (would be fetched from backend in real implementation)
-const ACTIVE_STREAMERS = [
-  'doublelift',
-  'loltyler1',
-  'humzh',
-  'pantsaredragon',
-  'thebausffs',
-  'gosu',
-  'nickich',
-  'triplelift',
-  'midbeast'
-];
-
 /* Track any open auth windows */
 let authWindows = {};
 
@@ -601,7 +588,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   
   // Initialize storage
   chrome.storage.local.set({
-    activeStreamers: ACTIVE_STREAMERS,
     cachedRanks: {},
     lastRankUpdate: 0,
     selectedRegion: 'na1' // Default region
@@ -848,9 +834,9 @@ function checkStreamerSubscription(streamerName) {
     })
     .then(response => {
       if (!response.ok) {
-        console.log(`Background: API response not OK, falling back to mock list`);
-        // If API fails, fall back to mock list as temporary solution
-        return { subscribed: ACTIVE_STREAMERS.includes(normalizedName) };
+        console.log(`Background: API response not OK, no fallback available`);
+        // No fallback anymore - if API fails, assume not subscribed
+        return { subscribed: false };
       }
       return response.json();
     })
@@ -860,8 +846,8 @@ function checkStreamerSubscription(streamerName) {
     })
     .catch(error => {
       console.error('Background: Error checking subscription:', error);
-      // If API fails, fall back to mock list
-      resolve(ACTIVE_STREAMERS.includes(normalizedName));
+      // If API fails, assume not subscribed
+      resolve(false);
     });
   });
 }
