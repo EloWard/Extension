@@ -444,8 +444,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const username = message.username;
     const channel = message.channel;
     
-    // Only log the request, not redundant details
-    console.log(`Rank request: ${username} in ${channel}`);
+    // Only log occasionally to reduce console spam
+    if (Math.random() < 0.05) { // Only log ~5% of requests
+      console.log(`Rank request: ${username} in ${channel}`);
+    }
     
     // Ensure username is always lowercase for consistency
     const normalizedUsername = username.toLowerCase();
@@ -460,62 +462,66 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep the message channel open for async response
     }
     
-    // Check if the streamer has a subscription
-    checkStreamerSubscription(message.channel).then(isSubscribed => {
-      if (!isSubscribed) {
-        sendResponse({ 
-          success: false, 
-          error: 'Channel not subscribed' 
-        });
-        return;
-      }
+    // The content script should have already verified the subscription status,
+    // but we'll double-check using our cache to avoid frequent API calls
+    
+    // Use channel name as cache key
+    const channelCacheKey = channel.toLowerCase();
+    
+    // Check if we have a cached subscription status that's less than 1 hour old
+    const hasRecentCache = subscriptionCache[channelCacheKey] && 
+      (Date.now() - subscriptionCache[channelCacheKey].timestamp) < 3600000;
+    
+    // If we have a cached "false" subscription status, return early
+    if (hasRecentCache && !subscriptionCache[channelCacheKey].subscribed) {
+      sendResponse({ 
+        success: false, 
+        error: 'Channel not subscribed' 
+      });
+      return true;
+    }
+    
+    // If we have no cache or a "true" cache, proceed with the request
+    // This assumes the channel is subscribed and avoids an extra API call
+    
+    // Get the user's selected region from storage
+    chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
+      const selectedRegion = data.selectedRegion || 'na1';
       
-      // Get the user's selected region from storage
-      chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
-        const selectedRegion = data.selectedRegion || 'na1';
+      // Try to find a linked account for this username
+      const linkedAccounts = data.linkedAccounts || {};
+      
+      // Check if we have this Twitch username mapped to a Riot ID
+      if (linkedAccounts[normalizedUsername]) {
+        const linkedAccount = linkedAccounts[normalizedUsername];
         
-        // Try to find a linked account for this username
-        const linkedAccounts = data.linkedAccounts || {};
-        
-        // Check if we have this Twitch username mapped to a Riot ID
-        if (linkedAccounts[normalizedUsername]) {
-          const linkedAccount = linkedAccounts[normalizedUsername];
+        // Get rank for the linked account
+        fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
+          // Cache the response
+          if (!cachedRankResponses) cachedRankResponses = {};
+          cachedRankResponses[normalizedUsername] = rankData;
           
-          // Get rank for the linked account
-          fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-            // Cache the response
-            if (!cachedRankResponses) cachedRankResponses = {};
-            cachedRankResponses[normalizedUsername] = rankData;
-            
-            sendResponse({
-              success: true,
-              rankData: rankData,
-              source: 'linked_account'
-            });
-          }).catch(error => {
-            console.error(`Error fetching rank for ${normalizedUsername}:`, error);
-            sendResponse({
-              success: false,
-              error: error.message
-            });
+          sendResponse({
+            success: true,
+            rankData: rankData,
+            source: 'linked_account'
           });
-        } else {
-          console.log(`No linked account: ${normalizedUsername}`);
-          
-          // No linked account found, return not found response
+        }).catch(error => {
+          console.error(`Error fetching rank for ${normalizedUsername}:`, error);
           sendResponse({
             success: false,
-            error: 'No linked account found'
+            error: error.message
           });
-        }
-      });
-    }).catch(error => {
-      console.error(`Subscription check error for ${message.channel}:`, error);
-      sendResponse({
-        success: false,
-        error: 'Subscription check failed',
-        details: error.message
-      });
+        });
+      } else {
+        console.log(`No linked account: ${normalizedUsername}`);
+        
+        // No linked account found, return not found response
+        sendResponse({
+          success: false,
+          error: 'No linked account found'
+        });
+      }
     });
     
     return true; // Keep the message channel open for the async response

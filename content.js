@@ -89,11 +89,110 @@ function processLinkedAccounts(linkedAccounts) {
   }
 }
 
+/**
+ * Check if the current channel has an active subscription
+ * Uses sessionStorage to cache results for the duration of the page visit
+ */
+async function checkChannelSubscription(channelName) {
+  if (!channelName) return false;
+  
+  const normalizedName = channelName.toLowerCase();
+  
+  // First check session storage cache (persists until tab is closed/refreshed)
+  const cacheKey = `eloward_sub_${normalizedName}`;
+  const cachedValue = sessionStorage.getItem(cacheKey);
+  
+  if (cachedValue !== null) {
+    console.log(`EloWard: Using cached subscription status for ${channelName}: ${cachedValue === 'true'}`);
+    return cachedValue === 'true';
+  }
+  
+  // Next check memory cache
+  if (checkedStreamers[normalizedName] !== undefined) {
+    console.log(`EloWard: Using memory-cached subscription status for ${channelName}: ${checkedStreamers[normalizedName]}`);
+    
+    // Also update sessionStorage for future use
+    sessionStorage.setItem(cacheKey, checkedStreamers[normalizedName]);
+    
+    return checkedStreamers[normalizedName];
+  }
+  
+  // If not in cache, check with background script
+  try {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'check_streamer_subscription', streamer: channelName },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('EloWard: Error checking subscription:', chrome.runtime.lastError);
+            resolve(false);
+            return;
+          }
+          
+          let isSubscribed = false;
+          
+          if (response && response.subscribed) {
+            isSubscribed = true;
+            console.log(`EloWard: Streamer ${channelName} subscribed`);
+            
+            // Force refresh linked accounts from the background script
+            chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
+          } else {
+            // Double-check directly with storage as a fallback
+            chrome.storage.local.get(['activeStreamers'], (data) => {
+              if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
+                // Case-insensitive check for streamer in activeStreamers array
+                isSubscribed = data.activeStreamers.some(streamer => 
+                  typeof streamer === 'string' && 
+                  streamer.toLowerCase() === normalizedName
+                );
+                
+                if (isSubscribed) {
+                  console.log(`EloWard: Streamer ${channelName} subscribed (direct check)`);
+                }
+              }
+              
+              // Cache the results in both memory and sessionStorage
+              checkedStreamers[normalizedName] = isSubscribed;
+              sessionStorage.setItem(cacheKey, isSubscribed.toString());
+              
+              resolve(isSubscribed);
+            });
+            return;
+          }
+          
+          // Cache the results in both memory and sessionStorage
+          checkedStreamers[normalizedName] = isSubscribed;
+          sessionStorage.setItem(cacheKey, isSubscribed.toString());
+          
+          resolve(isSubscribed);
+        }
+      );
+    });
+  } catch (error) {
+    console.error('EloWard: Error checking subscription:', error);
+    return false;
+  }
+}
+
 function initializeExtension() {
   // Extract channel name from URL
-  channelName = window.location.pathname.split('/')[1];
-  if (!channelName) {
+  const newChannelName = window.location.pathname.split('/')[1];
+  
+  // If no channel name or we're not on a channel page, don't do anything
+  if (!newChannelName) {
     return;
+  }
+  
+  // Check if we've changed channels
+  if (newChannelName !== channelName) {
+    // Update the channel name
+    channelName = newChannelName;
+    
+    // Reset the initialization flag when changing channels
+    observerInitialized = false;
+    
+    console.log(`EloWard: Channel changed to ${channelName}`);
   }
   
   // Add extension styles if needed
@@ -101,111 +200,45 @@ function initializeExtension() {
     addExtensionStyles();
   }
   
-  // Check if we already verified this streamer's subscription status to avoid repeated checks
-  if (checkedStreamers[channelName.toLowerCase()] !== undefined) {
-    isChannelSubscribed = checkedStreamers[channelName.toLowerCase()];
-    if (isChannelSubscribed) {
+  // Check channel subscription and initialize if subscribed
+  checkChannelSubscription(channelName).then(subscribed => {
+    isChannelSubscribed = subscribed;
+    
+    if (isChannelSubscribed && !observerInitialized) {
       initializeObserver();
     }
-    return;
-  }
+  });
   
-  // Check subscription status with background script
-  try {
-    chrome.runtime.sendMessage(
-      { action: 'check_streamer_subscription', streamer: channelName },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          return;
-        }
-        
-        if (response && response.subscribed) {
-          isChannelSubscribed = true;
-          // Cache the result
-          checkedStreamers[channelName.toLowerCase()] = true;
-          
-          console.log(`EloWard: Streamer ${channelName} subscribed`);
-          initializeObserver();
-          
-          // Force refresh linked accounts from the background script
-          chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
-        } else {
-          // Double-check directly with storage as a fallback
-          chrome.storage.local.get(['activeStreamers'], (data) => {
-            if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
-              // Case-insensitive check for streamer in activeStreamers array
-              const isSubscribed = data.activeStreamers.some(streamer => 
-                typeof streamer === 'string' && 
-                streamer.toLowerCase() === channelName.toLowerCase()
-              );
-              
-              if (isSubscribed) {
-                console.log(`EloWard: Streamer ${channelName} subscribed (direct check)`);
-                isChannelSubscribed = true;
-                // Cache the result
-                checkedStreamers[channelName.toLowerCase()] = true;
-                initializeObserver();
-                return;
-              }
-            }
-            
-            isChannelSubscribed = false;
-            // Cache the result
-            checkedStreamers[channelName.toLowerCase()] = false;
-          });
-        }
-      }
-    );
-  } catch (error) {
-    // Fallback to direct storage check if message sending fails
-    chrome.storage.local.get(['activeStreamers'], (data) => {
-      if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
-        // Case-insensitive check for streamer in activeStreamers array
-        const isSubscribed = data.activeStreamers.some(streamer => 
-          typeof streamer === 'string' && 
-          streamer.toLowerCase() === channelName.toLowerCase()
-        );
-        
-        if (isSubscribed) {
-          console.log(`EloWard: Streamer ${channelName} subscribed (direct check)`);
-          isChannelSubscribed = true;
-          // Cache the result
-          checkedStreamers[channelName.toLowerCase()] = true;
-          initializeObserver();
-          return;
-        }
-      }
-      
-      isChannelSubscribed = false;
-      // Cache the result
-      checkedStreamers[channelName.toLowerCase()] = false;
-    });
-  }
-  
-  // Setup URL change monitoring if not already done
+  // Set up navigation observer to detect URL changes
   setupUrlChangeObserver();
 }
 
-// Set up observer for URL changes (when user navigates to a different channel)
+// Watch for URL changes (channel changes)
 function setupUrlChangeObserver() {
-  if (!window.elowardUrlChangeObserver) {
-    window.elowardUrlChangeObserver = true;
-    let lastUrl = window.location.href;
+  // Only set up once
+  if (window._eloward_url_observer) return;
+  
+  // Create observer instance
+  const urlObserver = new MutationObserver(function(mutations) {
+    // Check if pathname has changed
+    const currentPath = window.location.pathname;
+    const currentChannel = currentPath.split('/')[1];
     
-    new MutationObserver(() => {
-      if (window.location.href !== lastUrl) {
-        lastUrl = window.location.href;
-        
-        // Reset state
-        isChannelSubscribed = false;
-        channelName = window.location.pathname.split('/')[1];
-        processedMessages.clear();
-        
-        // Re-initialize for the new channel
-        initializeExtension();
-      }
-    }).observe(document, { subtree: true, childList: true });
-  }
+    if (currentChannel !== channelName) {
+      console.log(`EloWard: URL changed from ${channelName} to ${currentChannel}`);
+      
+      // Re-initialize with new channel
+      channelName = currentChannel;
+      observerInitialized = false;
+      initializeExtension();
+    }
+  });
+  
+  // Start observing the document for URL changes
+  urlObserver.observe(document, { subtree: true, childList: true });
+  
+  // Store observer for reference
+  window._eloward_url_observer = urlObserver;
 }
 
 function initializeObserver() {
@@ -342,6 +375,7 @@ function processNewMessage(messageNode) {
   processedMessages.add(messageNode);
   
   // Only process messages if the channel is subscribed
+  // This relies on the cached subscription status from sessionStorage
   if (!isChannelSubscribed) return;
   
   // Find username element
