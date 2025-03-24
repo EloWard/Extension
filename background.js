@@ -29,12 +29,18 @@ const PLATFORM_ROUTING = {
   'vn2': { region: 'sea', name: 'Vietnam' }
 };
 
+// Caches to improve performance and reduce API calls
+let cachedRankResponses = {};
+let subscriptionCache = {};
+let previousSubscriptionStatus = {};
+
 /* Track any open auth windows */
 let authWindows = {};
 
 /* Handle auth callbacks */
 function handleAuthCallback(params) {
-  console.log('Handling auth callback:', params ? 'data received' : 'no data');
+  // Only log basic info, not complete params
+  console.log('Auth callback received');
   
   if (!params || !params.code) {
     console.error('Invalid auth callback data');
@@ -53,14 +59,14 @@ function handleAuthCallback(params) {
   const isTwitchCallback = params.service === 'twitch';
   
   if (isTwitchCallback) {
-    console.log('Processing Twitch auth callback');
+    console.log('Processing Twitch auth');
     chrome.storage.local.set({
       'twitch_auth_callback': params
     }, () => {
       initiateTokenExchange(params, 'twitch');
     });
   } else {
-    console.log('Processing Riot auth callback');
+    console.log('Processing Riot auth');
     chrome.storage.local.set({
       'riot_auth_callback': params
     }, () => {
@@ -95,7 +101,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
       
       // Get user info
       const userInfo = await TwitchAuth.getUserInfo();
-      console.log('Retrieved Twitch user info:', userInfo?.display_name || 'unknown');
+      console.log('Retrieved Twitch user info');
       
       // Store in persistent storage with indefinite retention
       await PersistentStorage.storeTwitchUserData(userInfo);
@@ -109,7 +115,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
       
       // Get user data
       const userData = await RiotAuth.getUserData();
-      console.log('Retrieved Riot user data:', userData?.gameName || 'unknown');
+      console.log('Retrieved Riot user data');
       
       // Store in persistent storage with indefinite retention
       await PersistentStorage.storeRiotUserData(userData);
@@ -125,13 +131,19 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type) {
-    console.log('Received message type:', message.type, message?.action || '');
+  // Skip logging for frequent message types to reduce console spam
+  const frequentActions = ['fetch_rank_for_username', 'check_streamer_subscription'];
+  if (!frequentActions.includes(message.action)) {
+    if (message?.type) {
+      console.log('Message received:', message.type, message?.action || '');
+    } else {
+      console.log('Message received:', message.action || 'unknown');
+    }
   }
   
-  // Special handler for Twitch auth callback from the extension redirect page
+  // TWITCH AUTH CALLBACK HANDLING
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
-    console.log('Received Twitch auth callback message');
+    console.log('Received Twitch auth callback');
     
     try {
       // Extract params depending on message format
@@ -174,7 +186,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           type: 'twitch_auth_processed',
           success: true,
           timestamp: Date.now()
-        }).catch(err => console.log('Error sending auth processed notification'));
+        }).catch(() => {/* Ignore errors; popup might not be open */});
       }, 500);
       
       return true; // Keep the message channel open for the async response
@@ -188,6 +200,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
   
+  // AUTH RELATED MESSAGES
   if (message.type === 'get_auth_callback') {
     console.log('Handling get_auth_callback request');
     // Also check for Twitch-specific callback
@@ -209,6 +222,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Required for async sendResponse
   }
   
+  if (message.type === 'auth_callback' && message.code) {
+    console.log('Auth callback from redirect page');
+    
+    // Store the auth callback result for later retrieval
+    chrome.storage.local.set({
+      eloward_auth_callback_result: {
+        code: message.code,
+        state: message.state
+      }
+    });
+    
+    // Close any auth windows we might be tracking
+    cleanupAuthWindows();
+    
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (message.type === 'auth_callback') {
+    handleAuthCallback(message.params);
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // WINDOW MANAGEMENT
   if (message.type === 'open_auth_window') {
     if (message.url) {
       // Generate a unique ID for this auth window
@@ -237,6 +275,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Required for async sendResponse
   }
   
+  // TOKEN MANAGEMENT
   if (message.type === 'check_auth_tokens') {
     chrome.storage.local.get([
       'eloward_riot_access_token',
@@ -251,11 +290,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Required for async sendResponse
   }
   
-  if (message.type === 'auth_callback') {
-    handleAuthCallback(message.params);
-    sendResponse({ success: true });
-  }
-  
   if (message.type === 'store_tokens') {
     if (message.tokens) {
       chrome.storage.local.set({
@@ -268,7 +302,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           issued_at: Date.now()
         }
       }, () => {
-        console.log('Stored auth tokens in background script');
+        console.log('Stored auth tokens');
         sendResponse({ success: true });
       });
     } else {
@@ -277,30 +311,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Required for async sendResponse
   }
   
+  // RIOT AUTH HANDLING
   if (message.action === 'initiate_riot_auth') {
-    console.log('Background script handling initiate_riot_auth request for region:', message.region);
+    console.log('Handling initiate_riot_auth request for region:', message.region);
     
     // Use the provided state or generate a new one for CSRF protection
     const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     
-    console.log('Using auth state:', state);
-    
     // Store state for verification after callback
     chrome.storage.local.set({
       'eloward_auth_state': state,
       [RiotAuth.config.storageKeys.authState]: state, // Also store using the standard key
       'selectedRegion': message.region || 'na1'
-    }, () => {
-      console.log('Stored auth state in background script:', state);
     });
     
     // Request auth URL from our backend
     const region = message.region || 'na1';
     const url = `${API_BASE_URL}/auth/init?state=${state}&region=${region}`;
-    
-    console.log('Background script requesting auth URL from:', url);
     
     fetch(url)
       .then(response => {
@@ -310,8 +339,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return response.json();
       })
       .then(data => {
-        console.log('Background script received auth URL:', data.authorizationUrl ? 'Yes (URL hidden for security)' : 'No');
-        
         if (!data.authorizationUrl) {
           throw new Error('No authorization URL returned');
         }
@@ -323,7 +350,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error('Background script auth URL request error:', error);
+        console.error('Auth URL request error:', error);
         sendResponse({
           success: false,
           error: error.message || 'Failed to obtain authorization URL'
@@ -358,6 +385,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Indicate async response
   }
   
+  // USER PROFILE
   if (message.action === 'get_user_profile') {
     getUserProfile()
       .then(profile => {
@@ -370,6 +398,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Indicate async response
   }
   
+  // UI ACTIONS
   if (message.action === 'open_popup') {
     // Open the extension popup
     chrome.action.openPopup();
@@ -383,43 +412,113 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  // RANK DATA HANDLING
   if (message.action === 'get_rank_for_user') {
-    // First check if we have linked account data for the current user
-    getUserLinkedAccount(message.username)
-      .then(linkedAccount => {
-        if (linkedAccount) {
-          // We have a linked account, get real rank data
-          getRankForLinkedAccount(linkedAccount, message.platform)
-            .then(rankData => {
-              sendResponse({ rank: rankData });
-            })
-            .catch(error => {
-              console.error('Error getting rank for linked account:', error);
-              // Fallback to mock data
-              generateMockRankData(message.username, message.platform, mockRank => {
-                sendResponse({ rank: mockRank });
-              });
+    // Legacy method - kept for backward compatibility
+    fetchRankFromBackend(message.username, message.platform)
+      .then(rankData => {
+        sendResponse({ rank: rankData });
+      })
+      .catch(error => {
+        console.error('Error fetching rank:', error);
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
+  
+  if (message.action === 'get_rank_for_twitch_user') {
+    // New optimized method that uses Twitch username directly
+    fetchRankByTwitchUsername(message.twitchUsername, message.platform)
+      .then(rankData => {
+        sendResponse({ rank: rankData });
+      })
+      .catch(error => {
+        console.error('Error fetching rank by Twitch username:', error);
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
+  
+  // Handle rank fetch requests from content script
+  if (message.action === 'fetch_rank_for_username') {
+    const username = message.username;
+    const channel = message.channel;
+    
+    // Only log the request, not redundant details
+    console.log(`Rank request: ${username} in ${channel}`);
+    
+    // Ensure username is always lowercase for consistency
+    const normalizedUsername = username.toLowerCase();
+    
+    // Check if we have a cached response
+    if (cachedRankResponses && cachedRankResponses[normalizedUsername]) {
+      sendResponse({
+        success: true,
+        rankData: cachedRankResponses[normalizedUsername],
+        source: 'cache'
+      });
+      return true; // Keep the message channel open for async response
+    }
+    
+    // Check if the streamer has a subscription
+    checkStreamerSubscription(message.channel).then(isSubscribed => {
+      if (!isSubscribed) {
+        sendResponse({ 
+          success: false, 
+          error: 'Channel not subscribed' 
+        });
+        return;
+      }
+      
+      // Get the user's selected region from storage
+      chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
+        const selectedRegion = data.selectedRegion || 'na1';
+        
+        // Try to find a linked account for this username
+        const linkedAccounts = data.linkedAccounts || {};
+        
+        // Check if we have this Twitch username mapped to a Riot ID
+        if (linkedAccounts[normalizedUsername]) {
+          const linkedAccount = linkedAccounts[normalizedUsername];
+          
+          // Get rank for the linked account
+          fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
+            // Cache the response
+            if (!cachedRankResponses) cachedRankResponses = {};
+            cachedRankResponses[normalizedUsername] = rankData;
+            
+            sendResponse({
+              success: true,
+              rankData: rankData,
+              source: 'linked_account'
             });
+          }).catch(error => {
+            console.error(`Error fetching rank for ${normalizedUsername}:`, error);
+            sendResponse({
+              success: false,
+              error: error.message
+            });
+          });
         } else {
-          // No linked account, check if the current user has their own account linked
-          chrome.storage.local.get(['riotAccountInfo', 'summonerInfo'], data => {
-            if (data.riotAccountInfo && data.summonerInfo && 
-                data.riotAccountInfo.gameName.toLowerCase() === message.username.toLowerCase()) {
-              // This is the current user and they have a linked account
-              const rankInfo = data.summonerInfo.rankInfo || { tier: 'Unranked' };
-              sendResponse({ rank: rankInfo });
-            } else {
-              // Generate mock data for now
-              generateMockRankData(message.username, message.platform, mockRank => {
-                sendResponse({ rank: mockRank });
-              });
-            }
+          console.log(`No linked account: ${normalizedUsername}`);
+          
+          // No linked account found, return not found response
+          sendResponse({
+            success: false,
+            error: 'No linked account found'
           });
         }
       });
+    }).catch(error => {
+      console.error(`Subscription check error for ${message.channel}:`, error);
+      sendResponse({
+        success: false,
+        error: 'Subscription check failed',
+        details: error.message
+      });
+    });
     
-    // Return true to indicate we'll respond asynchronously
-    return true;
+    return true; // Keep the message channel open for the async response
   }
   
   if (message.action === 'get_user_rank_by_puuid') {
@@ -446,87 +545,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async response
   }
   
-  // Handle rank fetch requests from content script
-  if (message.action === 'fetch_rank_for_username') {
-    console.log(`Request to fetch rank for ${message.username} in channel ${message.channel}`);
-    
-    // Ensure username is always lowercase for consistency
-    const normalizedUsername = message.username.toLowerCase();
-    
-    // Check if we have a cached response
-    if (cachedRankResponses && cachedRankResponses[normalizedUsername]) {
-      console.log(`Found cached rank data for ${normalizedUsername}`);
-      sendResponse({
-        success: true,
-        rankData: cachedRankResponses[normalizedUsername],
-        source: 'cache'
-      });
-      return true; // Keep the message channel open for async response
-    }
-    
-    // Check if the streamer has a subscription
-    checkStreamerSubscription(message.channel).then(isSubscribed => {
-      if (!isSubscribed) {
-        console.log(`Channel ${message.channel} is not subscribed`);
-        sendResponse({ 
-          success: false, 
-          error: 'Channel not subscribed' 
-        });
-        return;
-      }
-      
-      // Get the user's selected region from storage
-      chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
-        const selectedRegion = data.selectedRegion || 'na1';
-        
-        // Try to find a linked account for this username
-        const linkedAccounts = data.linkedAccounts || {};
-        
-        // Check if we have this Twitch username mapped to a Riot ID
-        if (linkedAccounts[normalizedUsername]) {
-          const linkedAccount = linkedAccounts[normalizedUsername];
-          console.log(`Found linked account for ${normalizedUsername}`);
-          
-          // Get rank for the linked account
-          fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-            console.log(`Fetched rank data for ${normalizedUsername}`);
-            
-            // Cache the response
-            if (!cachedRankResponses) cachedRankResponses = {};
-            cachedRankResponses[normalizedUsername] = rankData;
-            
-            sendResponse({
-              success: true,
-              rankData: rankData,
-              source: 'linked_account'
-            });
-          }).catch(error => {
-            console.error(`Error fetching rank for ${normalizedUsername}:`, error);
-            sendResponse({
-              success: false,
-              error: error.message
-            });
-          });
-        } else {
-          console.log(`No linked account found for ${normalizedUsername}`);
-          
-          // No linked account found, return not found response
-          sendResponse({
-            success: false,
-            error: 'No linked account found'
-          });
-        }
-      });
+  // SUBSCRIPTION CHECKING
+  if (message.action === 'check_streamer_subscription') {
+    // Check if this streamer has an active subscription
+    checkStreamerSubscription(message.streamer).then(isSubscribed => {
+      sendResponse({ subscribed: isSubscribed });
     }).catch(error => {
-      console.error(`Error checking subscription for ${message.channel}:`, error);
-      sendResponse({
-        success: false,
-        error: 'Subscription check failed',
-        details: error.message
-      });
+      console.error('Error checking subscription:', error);
+      sendResponse({ subscribed: false, error: error.message });
     });
-    
-    return true; // Keep the message channel open for the async response
+    return true;
+  }
+  
+  // AUTH STATUS
+  if (message.action === 'check_auth_status') {
+    checkRiotAuthStatus()
+      .then(status => {
+        sendResponse(status);
+      })
+      .catch(error => {
+        console.error('Error checking auth status:', error);
+        sendResponse({ authenticated: false, error: error.message });
+      });
+    return true; // Indicate async response
+  }
+  
+  // LINKED ACCOUNTS
+  if (message.action === 'refresh_linked_accounts') {
+    preloadLinkedAccounts();
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // DEPRECATED ACTIONS
+  if (message.action === 'clear_local_storage') {
+    // Deprecated: This message is no longer needed as we only use chrome.storage.local
+    return true;
   }
   
   // If no handlers matched, send an error response
@@ -560,7 +614,7 @@ self.addEventListener('message', (event) => {
 
 // Initialize
 chrome.runtime.onInstalled.addListener((details) => {
-  console.log('EloWard extension installed or updated:', details.reason);
+  console.log('EloWard extension installed or updated');
   
   // Clear all stored data to force a fresh start
   clearAllStoredData();
@@ -597,7 +651,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 function clearAllStoredData() {
   return new Promise((resolve) => {
     try {
-      console.log('Clearing all stored data');
+      console.log('Clearing stored data');
       
       // Define the keys to remove from chrome.storage
       const keysToRemove = [
@@ -630,12 +684,12 @@ function clearAllStoredData() {
       
       // Clear from chrome.storage
       chrome.storage.local.remove(keysToRemove, () => {
-        console.log('Cleared auth data from chrome.storage');
+        console.log('Cleared auth data');
         
         // Clear persistent storage
         PersistentStorage.clearAllData()
           .then(() => {
-            console.log('Cleared data from persistent storage');
+            console.log('Cleared persistent storage');
             
             // Initialize persistent storage to reset persistence flag
             PersistentStorage.init();
@@ -654,179 +708,67 @@ function clearAllStoredData() {
   });
 }
 
-// Handle messages from popup and content scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background received message:', message);
-  
-  if (message.action === 'clear_local_storage') {
-    // Deprecated: This message is no longer needed as we only use chrome.storage.local
-    console.log('Received deprecated clear_local_storage message');
-    return;
-  }
-  
-  // Handle auth callback from the redirect page
-  if (message.type === 'auth_callback' && message.code) {
-    console.log('Received auth callback from redirect page');
-    
-    // Store the auth callback result for later retrieval
-    chrome.storage.local.set({
-      eloward_auth_callback_result: {
-        code: message.code,
-        state: message.state
-      }
-    }, () => {
-      console.log('Stored auth callback result in chrome.storage.local');
-    });
-    
-    // Close any auth windows we might be tracking
-    cleanupAuthWindows();
-    authWindows.forEach(win => {
-      try {
-        if (win && !win.closed) win.close();
-      } catch (e) {}
-    });
-    authWindows = {};
-    
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  if (message.action === 'check_streamer_subscription') {
-    // Check if this streamer has an active subscription
-    const isSubscribed = checkStreamerSubscription(message.streamer);
-    sendResponse({ subscribed: isSubscribed });
-  }
-  
-  if (message.action === 'check_auth_status') {
-    checkRiotAuthStatus()
-      .then(status => {
-        sendResponse(status);
-      })
-      .catch(error => {
-        console.error('Error checking auth status:', error);
-        sendResponse({ authenticated: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  if (message.action === 'handle_auth_callback') {
-    // This message comes from the callback.html page
-    handleAuthCallbackFromRedirect(message.code, message.state)
-      .then(result => {
-        sendResponse(result);
-      })
-      .catch(error => {
-        console.error('Error handling auth callback:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  if (message.action === 'sign_out') {
-    signOutUser()
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        console.error('Error signing out:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  if (message.action === 'get_user_profile') {
-    getUserProfile()
-      .then(profile => {
-        sendResponse(profile);
-      })
-      .catch(error => {
-        console.error('Error getting user profile:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  if (message.action === 'open_popup') {
-    // Open the extension popup
-    chrome.action.openPopup();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  if (message.action === 'get_rank_icon_url') {
-    const iconUrl = getRankIconUrl(message.tier);
-    sendResponse({ iconUrl: iconUrl });
-    return true;
-  }
-  
-  if (message.action === 'get_user_rank_by_puuid') {
-    const { puuid, summonerId, region } = message;
-    
-    // Check if we have a valid token
-    RiotAuth.getValidToken()
-      .then(token => {
-        // Get rank data using the League V4 API via backend
-        getRankBySummonerId(token, summonerId, region)
-          .then(rankData => {
-            sendResponse({ rank: rankData });
-          })
-          .catch(error => {
-            console.error('Error getting rank data:', error);
-            sendResponse({ error: error.message });
-          });
-      })
-      .catch(error => {
-        console.error('Error getting valid token:', error);
-        sendResponse({ error: error.message });
-      });
-    
-    return true; // Keep the message channel open for async response
-  }
-  
-  // If no handlers matched, send an error response
-  sendResponse({ error: 'Unknown action', action: message.action });
-  return true;
-});
-
 // Helper functions
 
 /**
- * Checks if a streamer has an active subscription
- * @param {string} streamerName - The streamer's Twitch username
- * @returns {Promise<boolean>} - Resolves with subscription status
+ * Check if a streamer has an active subscription to the extension
+ * @param {string} channelName - Twitch channel name to check
+ * @returns {Promise<boolean>} - Whether the streamer has an active subscription
  */
-function checkStreamerSubscription(streamerName) {
-  console.log(`Checking subscription for channel: ${streamerName}`);
+function checkStreamerSubscription(channelName) {
+  if (!channelName) {
+    return Promise.resolve(false);
+  }
   
-  return new Promise((resolve, reject) => {
-    // Normalize the channel name to lowercase for case-insensitive matching
-    const normalizedName = streamerName.toLowerCase();
+  // Use local cache for frequent checks
+  const cacheKey = channelName.toLowerCase();
+  
+  // If we have a cached result and it's less than 1 hour old, use it
+  if (subscriptionCache[cacheKey] && 
+      (Date.now() - subscriptionCache[cacheKey].timestamp) < 3600000) {
+    return Promise.resolve(subscriptionCache[cacheKey].subscribed);
+  }
+  
+  // Call the subscription API to check subscription status
+  return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ channel_name: channelName })
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`Subscription API returned ${response.status}`);
+    }
+    return response.json();
+  })
+  .then(data => {
+    // Update our cache with the result
+    subscriptionCache[cacheKey] = {
+      subscribed: data.subscribed,
+      timestamp: Date.now()
+    };
     
-    // Query the Cloudflare D1 database to check if the streamer has a subscription
-    fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ channel_name: normalizedName })
-    })
-    .then(response => {
-      if (!response.ok) {
-        console.log(`API response not OK for channel ${streamerName}`);
-        // No fallback anymore - if API fails, assume not subscribed
-        return { subscribed: false };
-      }
-      return response.json();
-    })
-    .then(data => {
-      console.log(`Channel ${streamerName} subscription status: ${data.subscribed}`);
-      resolve(data.subscribed);
-    })
-    .catch(error => {
-      console.error('Error checking subscription:', error);
-      // If API fails, assume not subscribed
-      resolve(false);
-    });
+    // Only log when status changes or debugging
+    if (!previousSubscriptionStatus[cacheKey] || 
+        previousSubscriptionStatus[cacheKey] !== data.subscribed) {
+      console.log(`Subscription status for ${channelName}: ${data.subscribed ? 'Active' : 'Inactive'}`);
+      previousSubscriptionStatus[cacheKey] = data.subscribed;
+    }
+    
+    return data.subscribed;
+  })
+  .catch(error => {
+    console.error(`Error checking subscription for ${channelName}:`, error);
+    
+    // If we have a cached result, return it as fallback
+    if (subscriptionCache[cacheKey]) {
+      return subscriptionCache[cacheKey].subscribed;
+    }
+    
+    // Default to false if we couldn't check
+    return false;
   });
 }
 
@@ -1372,7 +1314,6 @@ function getUserLinkedAccount(twitchUsername) {
       
       // First, try direct lookup by Twitch username (most efficient path)
       if (linkedAccounts[normalizedTwitchUsername]) {
-        console.log(`Found linked account for Twitch user ${twitchUsername}`);
         resolve(linkedAccounts[normalizedTwitchUsername]);
         return;
       }
@@ -1393,12 +1334,9 @@ function getUserLinkedAccount(twitchUsername) {
               lastUpdated: Date.now()
             };
             
-            chrome.storage.local.set({ linkedAccounts }, () => {
-              console.log(`Added current user ${twitchUsername} to linked accounts cache`);
-            });
+            chrome.storage.local.set({ linkedAccounts });
           }
           
-          console.log(`Current user is viewing their own account: ${twitchUsername}`);
           resolve(currentUserData.riotAccountInfo);
         } else {
           // No case-sensitive match, try a case-insensitive scan of all accounts
@@ -1411,14 +1349,12 @@ function getUserLinkedAccount(twitchUsername) {
                  (account.normalizedTwitchUsername && 
                   account.normalizedTwitchUsername === normalizedTwitchUsername))) {
               
-              console.log(`Found linked account via case-insensitive search: ${account.twitchUsername}`);
               resolve(account);
               return;
             }
           }
           
           // No linked account found after trying all methods
-          console.log(`No linked account found for Twitch user ${twitchUsername}`);
           resolve(null);
         }
       });
@@ -1574,7 +1510,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   
   // Check if this is our Twitch redirect URL
   if (changeInfo.url.startsWith(TWITCH_REDIRECT_URL)) {
-    console.log('Detected Twitch auth redirect URL for EXTENSION:', changeInfo.url);
+    console.log('Detected Twitch auth redirect:', changeInfo.url.substring(0, 60) + '...');
     
     try {
       // IMMEDIATELY prevent further navigation by updating to the callback page
@@ -1609,7 +1545,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       }
       
       if (code && state) {
-        console.log('Extracted Twitch auth code and state from redirect URL');
+        console.log('Extracted Twitch auth code and state');
         
         // Prepare the auth data
         const authData = {
@@ -1621,9 +1557,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         };
         
         // Store in chrome.storage.local
-        chrome.storage.local.set({ 'eloward_auth_callback': authData }, () => {
-          console.log('Stored Twitch auth data in chrome.storage.local');
-        });
+        chrome.storage.local.set({ 'eloward_auth_callback': authData });
         
         // Send a message to notify any listeners
         chrome.runtime.sendMessage({
@@ -1788,9 +1722,7 @@ function preloadLinkedAccounts() {
       
       // Store the updated linkedAccounts if changes were made
       if (updated) {
-        chrome.storage.local.set({ linkedAccounts }, () => {
-          console.log('Updated linked accounts in storage');
-        });
+        chrome.storage.local.set({ linkedAccounts });
       }
       
       // Log only the count of linked accounts to reduce verbosity
@@ -1807,18 +1739,25 @@ preloadLinkedAccounts();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local') {
     if (changes.riotAccountInfo || changes.twitchUsername) {
-      console.log('EloWard: User account data changed, updating linked accounts');
+      // Don't log every automatic update
       preloadLinkedAccounts();
     }
   }
 });
 
-// Cache for rank responses to reduce API calls
-let cachedRankResponses = {};
+// Listen for storage changes to update linked accounts
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local') {
+    if (changes.riotAccountInfo || changes.twitchUsername) {
+      // Don't log every automatic update
+      preloadLinkedAccounts();
+    }
+  }
+});
 
 // Helper function to fetch rank for a linked account
 async function fetchRankForLinkedAccount(linkedAccount, region) {
-  console.log(`Fetching rank for linked account:`, linkedAccount?.twitchUsername || 'unknown');
+  // Only log meaningful error cases, not the routine function call
   
   if (!linkedAccount.summonerId || !linkedAccount.platform) {
     console.log('Missing summonerId or platform in linked account');
@@ -1849,6 +1788,7 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
 
 // Clear the rank cache periodically
 setInterval(() => {
-  console.log('Clearing rank cache');
+  // Reinitialize cache
   cachedRankResponses = {};
-}, BADGE_REFRESH_INTERVAL); 
+  console.log('Rank data cache cleared (periodic)');
+}, 30 * 60 * 1000); // Every 30 minutes 
