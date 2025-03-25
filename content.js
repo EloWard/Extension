@@ -172,16 +172,63 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
   }
 }
 
-function initializeExtension() {
-  // Extract channel name from URL
+/**
+ * Get the current channel name using multiple fallback methods
+ * 1. Try to find the channel name in Twitch's data elements
+ * 2. Parse from URL if data elements aren't available
+ * @returns {string|null} The current channel name or null if not found
+ */
+function getCurrentChannelName() {
+  // Method 1: Try to get from Twitch's channel data in the DOM
+  // This is the most reliable method across all viewing modes
+  const channelElem = document.querySelector('[data-a-target="channel-display-name"], [data-a-target="user-display-name"]');
+  if (channelElem && channelElem.textContent) {
+    return channelElem.textContent.trim().toLowerCase();
+  }
+  
+  // Method 2: Try to get from channel header element
+  const channelHeader = document.querySelector('.channel-info-content h1, .tw-channel-header h1');
+  if (channelHeader && channelHeader.textContent) {
+    return channelHeader.textContent.trim().toLowerCase();
+  }
+  
+  // Method 3: Try to extract from the URL
   const pathSegments = window.location.pathname.split('/');
-  const newChannelName = pathSegments[1];
+  
+  // Handle moderator view URLs (format: /moderator/channelname)
+  if (pathSegments[1] === 'moderator' && pathSegments.length > 2) {
+    return pathSegments[2].toLowerCase();
+  }
+  
+  // Regular channel URL (format: /channelname)
+  if (pathSegments[1] && 
+      pathSegments[1] !== 'oauth2' && 
+      !pathSegments[1].includes('auth')) {
+    return pathSegments[1].toLowerCase();
+  }
+  
+  // Method 4: Try to find from other Twitch UI elements as last resort
+  const channelLink = document.querySelector('a[data-a-target="stream-game-link"]')?.closest('div')?.querySelector('a:not([data-a-target="stream-game-link"])');
+  if (channelLink) {
+    const channelPath = new URL(channelLink.href).pathname;
+    const channelNameFromLink = channelPath.split('/')[1];
+    if (channelNameFromLink) {
+      return channelNameFromLink.toLowerCase();
+    }
+  }
+  
+  // Could not determine channel name
+  return null;
+}
+
+function initializeExtension() {
+  // Get channel name using the new reliable method
+  const newChannelName = getCurrentChannelName();
   
   // If no channel name or we're on an auth-related path, don't do anything
   if (!newChannelName || 
-      newChannelName === 'oauth2' || 
-      pathSegments.includes('oauth') || 
-      pathSegments.includes('authorize') ||
+      window.location.pathname.includes('oauth2') ||
+      window.location.pathname.includes('auth/') ||
       window.location.href.includes('auth/callback') ||
       window.location.href.includes('auth/redirect')) {
     return;
@@ -242,16 +289,13 @@ function setupUrlChangeObserver() {
   
   // Create observer instance
   const urlObserver = new MutationObserver(function(mutations) {
-    // Check if pathname has changed
-    const currentPath = window.location.pathname;
-    const pathSegments = currentPath.split('/');
-    const currentChannel = pathSegments[1];
+    // Get the current channel name using our reliable method
+    const currentChannel = getCurrentChannelName();
     
-    // Skip auth-related paths
+    // Skip if we can't determine the channel or on auth-related paths
     if (!currentChannel || 
-        currentChannel === 'oauth2' || 
-        pathSegments.includes('oauth') || 
-        pathSegments.includes('authorize') ||
+        window.location.pathname.includes('oauth2') || 
+        window.location.pathname.includes('auth/') ||
         window.location.href.includes('auth/callback') ||
         window.location.href.includes('auth/redirect')) {
       return;
