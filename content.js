@@ -97,21 +97,51 @@ function processLinkedAccounts(linkedAccounts) {
 }
 
 /**
- * Simplified function to check if a channel is subscribed
- * Makes a direct API call to the background script without caching
+ * Optimized function to check if a channel is subscribed
+ * Uses local caching to avoid excessive API calls
  * @param {string} channelName - The channel to check
+ * @param {boolean} forceCheck - Whether to bypass cache and force a fresh check
  * @returns {Promise<boolean>} - Whether the channel is subscribed
  */
-async function checkChannelSubscription(channelName) {
+async function checkChannelSubscription(channelName, forceCheck = false) {
   if (!channelName) return false;
+  
+  // Normalize channel name
+  const normalizedChannel = channelName.toLowerCase();
+  
+  // Subscription cache is maintained in content script with a 5-minute TTL
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  
+  // Check session storage for cached subscription status
+  const cacheKey = `eloward_subscription_${normalizedChannel}`;
+  const cachedData = sessionStorage.getItem(cacheKey);
+  
+  // If we have cached data and not forcing a check, use it
+  if (!forceCheck && cachedData) {
+    try {
+      const parsedCache = JSON.parse(cachedData);
+      // Check if cache is still valid
+      if (Date.now() - parsedCache.timestamp < CACHE_TTL) {
+        console.log(`EloWard: Using cached subscription status for ${channelName}: ${parsedCache.subscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
+        return parsedCache.subscribed;
+      }
+    } catch (error) {
+      console.error('EloWard: Error parsing cached subscription data:', error);
+    }
+  }
   
   console.log(`EloWard: Checking subscription for ${channelName}`);
   
   try {
     return new Promise((resolve) => {
-      // Always use skipCache=true to ensure fresh check
+      // Send message to background script to check subscription
       chrome.runtime.sendMessage(
-        { action: 'check_streamer_subscription', streamer: channelName, skipCache: true },
+        { 
+          action: 'check_streamer_subscription', 
+          streamer: channelName,
+          // Only skip background cache on forced checks
+          skipCache: forceCheck 
+        },
         (response) => {
           if (chrome.runtime.lastError) {
             console.error('EloWard: Error checking subscription:', chrome.runtime.lastError);
@@ -126,6 +156,16 @@ async function checkChannelSubscription(channelName) {
             console.log(`EloWard: ${channelName} is Subscribed ✅`);
           } else {
             console.log(`EloWard: ${channelName} is Not Subscribed ❌`);
+          }
+          
+          // Cache the result in session storage
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({
+              subscribed: isSubscribed,
+              timestamp: Date.now()
+            }));
+          } catch (error) {
+            console.error('EloWard: Error caching subscription status:', error);
           }
           
           resolve(isSubscribed);
@@ -154,7 +194,8 @@ function initializeExtension() {
   }
   
   // Check if we've changed channels
-  if (newChannelName !== channelName) {
+  const channelChanged = newChannelName !== channelName;
+  if (channelChanged) {
     // Update the channel name
     channelName = newChannelName;
     
@@ -177,10 +218,11 @@ function initializeExtension() {
     observerInitialized = false;
   }
   
-  // Always check subscription status directly
+  // Only force check subscription status on channel changes
+  // Otherwise use the cached value to reduce API calls
   console.log(`EloWard: Checking subscription status for ${channelName}...`);
   
-  checkChannelSubscription(channelName)
+  checkChannelSubscription(channelName, channelChanged)
     .then(subscribed => {
       isChannelSubscribed = subscribed;
       
@@ -226,6 +268,7 @@ function setupUrlChangeObserver() {
       return;
     }
     
+    // Only reinitialize if the channel actually changed
     if (currentChannel !== channelName) {
       console.log(`EloWard: URL changed from ${channelName} to ${currentChannel}`);
       
@@ -241,6 +284,7 @@ function setupUrlChangeObserver() {
       }
       
       // Reinitialize with new channel
+      // This will trigger a fresh subscription check since channel changed
       initializeExtension();
     }
   });
