@@ -445,8 +445,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const username = message.username;
     const channel = message.channel;
     
-    // Only log occasionally to reduce console spam
-    if (Math.random() < 0.05) { // Only log ~5% of requests
+    // Only log occasionally to reduce console spam - reduced to 1% of requests
+    if (Math.random() < 0.01) { // Only log ~1% of requests
       console.log(`Rank request: ${username} in ${channel}`);
     }
     
@@ -467,7 +467,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Use cached subscription status if available and valid
     // This helps avoid making subscription API calls for every username
     const checkSubscription = () => {
-      // Only do a direct API call the first time or when cache expires
+      // Never skip cache for rank-related subscription checks
       return checkStreamerSubscription(channel, false);
     };
     
@@ -475,9 +475,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(isSubscribed => {
         // If the channel is not subscribed, return early
         if (!isSubscribed) {
-          if (Math.random() < 0.05) { // Only log occasionally
-            console.log(`Channel ${channel} is not subscribed, not fetching rank for ${username}`);
-          }
+          // No need to log every failed request
           sendResponse({ 
             success: false, 
             error: 'Channel not subscribed' 
@@ -508,14 +506,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 source: 'linked_account'
               });
             }).catch(error => {
-              console.error(`Error fetching rank for ${normalizedUsername}:`, error);
+              // Only log occasional errors to reduce spam
+              if (Math.random() < 0.1) {
+                console.error(`Error fetching rank for ${normalizedUsername}:`, error);
+              }
               sendResponse({
                 success: false,
                 error: error.message
               });
             });
           } else {
-            console.log(`No linked account: ${normalizedUsername}`);
+            // Only log no-linked-account messages occasionally to reduce spam
+            if (Math.random() < 0.01) {
+              console.log(`No linked account: ${normalizedUsername}`);
+            }
             
             // No linked account found, return not found response
             sendResponse({
@@ -565,17 +569,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const streamer = message.streamer;
     const skipCache = !!message.skipCache; // Default to using cache
     
-    // Log the subscription check request (only first time or forced checks)
-    console.log(`Received subscription check for ${streamer}${skipCache ? ' (bypass cache)' : ''}`);
+    // Log only for direct check requests from content script (not rank fetches)
+    if (skipCache) {
+      console.log(`Received subscription check for ${streamer}${skipCache ? ' (bypass cache)' : ''}`);
+    }
     
     checkStreamerSubscription(streamer, skipCache)
       .then(subscribed => {
-        console.log(`Sending subscription result for ${streamer}: ${subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+        // Only log the response for direct checks
+        if (skipCache) {
+          console.log(`Sending subscription result for ${streamer}: ${subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+        }
         sendResponse({ subscribed: subscribed });
       })
       .catch(error => {
         console.error('Error checking streamer subscription:', error);
-        console.log(`Sending failed subscription result for ${streamer}: NOT ACTIVE ❌`);
         sendResponse({ subscribed: false, error: error.message });
       });
     return true;
@@ -752,7 +760,6 @@ function clearAllStoredData() {
  */
 function checkStreamerSubscription(channelName, skipCache = false) {
   if (!channelName) {
-    console.log('checkStreamerSubscription: No channel name provided');
     return Promise.resolve(false);
   }
   
@@ -762,7 +769,6 @@ function checkStreamerSubscription(channelName, skipCache = false) {
       channelName === 'authorize' || 
       channelName.includes('auth/callback') ||
       channelName.includes('auth/redirect')) {
-    console.log(`checkStreamerSubscription: Skipping validation for ${channelName} (not a valid channel)`);
     return Promise.resolve(false);
   }
   
@@ -774,7 +780,10 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     const cachedResult = subscriptionCache[normalizedName];
     // Check if the cache entry is still valid
     if (Date.now() - cachedResult.timestamp < SUBSCRIPTION_CACHE_TTL) {
-      console.log(`Using cached subscription status for ${normalizedName}: ${cachedResult.subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+      // Only log if explicitly requested to skip cache (important checks)
+      if (skipCache) {
+        console.log(`Using cached subscription status for ${normalizedName}: ${cachedResult.subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+      }
       
       // Record this access to track active channels
       recordCacheAccess(normalizedName);
@@ -783,8 +792,10 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     }
   }
   
-  // Log the API call
-  console.log(`Performing subscription check API call for ${normalizedName}`);
+  // Only log API calls for explicit checks (not background rank fetches)
+  if (skipCache) {
+    console.log(`Performing subscription check API call for ${normalizedName}`);
+  }
   
   // Call the subscription API to check subscription status
   return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
@@ -804,8 +815,10 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     // Get the boolean subscription status
     const isSubscribed = !!data.subscribed;
     
-    // Log the result clearly
-    console.log(`Subscription API result for ${channelName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+    // Only log the result for explicit checks
+    if (skipCache) {
+      console.log(`Subscription API result for ${channelName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+    }
     
     // Store in cache
     subscriptionCache[normalizedName] = {
@@ -814,7 +827,7 @@ function checkStreamerSubscription(channelName, skipCache = false) {
       lastAccessed: Date.now()
     };
     
-    // Cache only for internal tracking of status changes
+    // Only log status changes (important diagnostic information)
     if (previousSubscriptionStatus[normalizedName] !== isSubscribed) {
       console.log(`Subscription status CHANGED for ${channelName}: ${isSubscribed ? 'Active' : 'Inactive'}`);
     }
@@ -823,10 +836,11 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     return isSubscribed;
   })
   .catch(error => {
-    console.error(`Error checking subscription for ${channelName}:`, error);
-    
-    // Always default to false on error
-    console.log(`Error in subscription check, defaulting ${channelName} to not subscribed`);
+    // Only log errors for explicit checks
+    if (skipCache) {
+      console.error(`Error checking subscription for ${channelName}:`, error);
+      console.log(`Error in subscription check, defaulting ${channelName} to not subscribed`);
+    }
     return false;
   });
 }
@@ -1807,12 +1821,27 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
   }
 }
 
-// Clear the rank cache periodically
+// Clean up subscription cache entries that haven't been accessed recently
+// This prevents the cache from growing too large with inactive channels
 setInterval(() => {
-  // Reinitialize cache
-  cachedRankResponses = {};
-  console.log('Rank data cache cleared (periodic)');
-}, 30 * 60 * 1000); // Every 30 minutes
+  const now = Date.now();
+  const UNUSED_THRESHOLD = 30 * 60 * 1000; // 30 minutes of no access
+  let removedCount = 0;
+  
+  Object.keys(subscriptionCache).forEach(channel => {
+    const entry = subscriptionCache[channel];
+    // If entry hasn't been accessed recently, remove it
+    if (entry.lastAccessed && now - entry.lastAccessed > UNUSED_THRESHOLD) {
+      delete subscriptionCache[channel];
+      removedCount++;
+    }
+  });
+  
+  // Only log if we actually removed something
+  if (removedCount > 0) {
+    console.log(`Removed ${removedCount} inactive subscription cache entries`);
+  }
+}, 15 * 60 * 1000); // Check every 15 minutes
 
 // Add a function to periodically clean the subscription cache
 setInterval(() => {
@@ -1829,10 +1858,19 @@ setInterval(() => {
     }
   });
   
+  // Only log if we actually removed something
   if (expiredCount > 0) {
     console.log(`Cleaned ${expiredCount} expired subscription cache entries`);
   }
 }, SUBSCRIPTION_CACHE_TTL); // Run cleanup at the TTL interval
+
+// Clear the rank cache periodically
+setInterval(() => {
+  // Reinitialize cache
+  cachedRankResponses = {};
+  // Only log if development logging is enabled
+  console.log('Rank data cache cleared (periodic)');
+}, 30 * 60 * 1000); // Every 30 minutes
 
 // Add access timestamps to subscription cache entries
 // This helps remove rarely-used channels from the cache
@@ -1861,6 +1899,7 @@ setInterval(() => {
     }
   });
   
+  // Only log if we actually removed something
   if (removedCount > 0) {
     console.log(`Removed ${removedCount} inactive subscription cache entries`);
   }

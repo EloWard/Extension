@@ -21,13 +21,11 @@ setTimeout(initializeExtension, 3000);
 
 // Add a window.onload handler as an additional initialization method
 window.addEventListener('load', function() {
-  console.log('EloWard: Page fully loaded, reinitializing');
   initializeExtension();
 });
 
 // Listen for URL changes (for SPA navigation)
 window.addEventListener('popstate', function() {
-  console.log('EloWard: Navigation detected via popstate');
   initializeExtension();
 });
 
@@ -122,15 +120,16 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
       const parsedCache = JSON.parse(cachedData);
       // Check if cache is still valid
       if (Date.now() - parsedCache.timestamp < CACHE_TTL) {
-        console.log(`EloWard: Using cached subscription status for ${channelName}: ${parsedCache.subscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
+        // Only log when changing channels or force checking
+        if (forceCheck) {
+          console.log(`EloWard: Using cached subscription for ${channelName}: ${parsedCache.subscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
+        }
         return parsedCache.subscribed;
       }
     } catch (error) {
-      console.error('EloWard: Error parsing cached subscription data:', error);
+      // Silent error - no need to log parsing errors
     }
   }
-  
-  console.log(`EloWard: Checking subscription for ${channelName}`);
   
   try {
     return new Promise((resolve) => {
@@ -144,7 +143,6 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
         },
         (response) => {
           if (chrome.runtime.lastError) {
-            console.error('EloWard: Error checking subscription:', chrome.runtime.lastError);
             resolve(false);
             return;
           }
@@ -152,11 +150,8 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
           // Extract the boolean value with casting to ensure it's a boolean
           const isSubscribed = response && response.subscribed === true;
           
-          if (isSubscribed) {
-            console.log(`EloWard: ${channelName} is Subscribed ✅`);
-          } else {
-            console.log(`EloWard: ${channelName} is Not Subscribed ❌`);
-          }
+          // Log subscription status (only for new checks, not every message)
+          console.log(`EloWard: ${channelName} is ${isSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
           
           // Cache the result in session storage
           try {
@@ -165,7 +160,7 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
               timestamp: Date.now()
             }));
           } catch (error) {
-            console.error('EloWard: Error caching subscription status:', error);
+            // Silent error - no need to log storage errors
           }
           
           resolve(isSubscribed);
@@ -173,7 +168,6 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
       );
     });
   } catch (error) {
-    console.error('EloWard: Error checking subscription:', error);
     return false;
   }
 }
@@ -203,6 +197,7 @@ function initializeExtension() {
     isChannelSubscribed = false;
     observerInitialized = false;
     
+    // Only log on channel change
     console.log(`EloWard: Channel changed to ${channelName}`);
   }
   
@@ -220,19 +215,13 @@ function initializeExtension() {
   
   // Only force check subscription status on channel changes
   // Otherwise use the cached value to reduce API calls
-  console.log(`EloWard: Checking subscription status for ${channelName}...`);
-  
   checkChannelSubscription(channelName, channelChanged)
     .then(subscribed => {
       isChannelSubscribed = subscribed;
       
-      console.log(`EloWard: Subscription check result for ${channelName}: ${isChannelSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
-      
       if (isChannelSubscribed && !observerInitialized) {
-        console.log(`EloWard: Initializing rank display for ${channelName}`);
         initializeObserver();
       } else if (!isChannelSubscribed) {
-        console.log(`EloWard: Ranks will not be displayed for ${channelName} (not subscribed)`);
         // Clean up any existing observers
         if (window._eloward_chat_observer) {
           window._eloward_chat_observer.disconnect();
