@@ -31,8 +31,7 @@ const PLATFORM_ROUTING = {
 
 // Caches to improve performance and reduce API calls
 let cachedRankResponses = {};
-let subscriptionCache = {};
-let previousSubscriptionStatus = {};
+let previousSubscriptionStatus = {}; // Only kept for logging status changes
 
 /* Track any open auth windows */
 let authWindows = {};
@@ -462,67 +461,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep the message channel open for async response
     }
     
-    // The content script should have already verified the subscription status,
-    // but we'll double-check using our cache to avoid frequent API calls
-    
-    // Use channel name as cache key
-    const channelCacheKey = channel.toLowerCase();
-    
-    // Check if we have a cached subscription status that's less than 1 hour old
-    const hasRecentCache = subscriptionCache[channelCacheKey] && 
-      (Date.now() - subscriptionCache[channelCacheKey].timestamp) < 3600000;
-    
-    // If we have a cached "false" subscription status, return early
-    if (hasRecentCache && !subscriptionCache[channelCacheKey].subscribed) {
-      sendResponse({ 
-        success: false, 
-        error: 'Channel not subscribed' 
-      });
-      return true;
-    }
-    
-    // If we have no cache or a "true" cache, proceed with the request
-    // This assumes the channel is subscribed and avoids an extra API call
-    
-    // Get the user's selected region from storage
-    chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
-      const selectedRegion = data.selectedRegion || 'na1';
-      
-      // Try to find a linked account for this username
-      const linkedAccounts = data.linkedAccounts || {};
-      
-      // Check if we have this Twitch username mapped to a Riot ID
-      if (linkedAccounts[normalizedUsername]) {
-        const linkedAccount = linkedAccounts[normalizedUsername];
+    // Always check channel subscription directly - no more caching here
+    // This ensures we get fresh subscription data every time
+    checkStreamerSubscription(channel, true)
+      .then(isSubscribed => {
+        // If the channel is not subscribed, return early
+        if (!isSubscribed) {
+          console.log(`Channel ${channel} is not subscribed, not fetching rank for ${username}`);
+          sendResponse({ 
+            success: false, 
+            error: 'Channel not subscribed' 
+          });
+          return;
+        }
         
-        // Get rank for the linked account
-        fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-          // Cache the response
-          if (!cachedRankResponses) cachedRankResponses = {};
-          cachedRankResponses[normalizedUsername] = rankData;
+        // Get the user's selected region from storage
+        chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
+          const selectedRegion = data.selectedRegion || 'na1';
           
-          sendResponse({
-            success: true,
-            rankData: rankData,
-            source: 'linked_account'
-          });
-        }).catch(error => {
-          console.error(`Error fetching rank for ${normalizedUsername}:`, error);
-          sendResponse({
-            success: false,
-            error: error.message
-          });
+          // Try to find a linked account for this username
+          const linkedAccounts = data.linkedAccounts || {};
+          
+          // Check if we have this Twitch username mapped to a Riot ID
+          if (linkedAccounts[normalizedUsername]) {
+            const linkedAccount = linkedAccounts[normalizedUsername];
+            
+            // Get rank for the linked account
+            fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
+              // Cache the response
+              if (!cachedRankResponses) cachedRankResponses = {};
+              cachedRankResponses[normalizedUsername] = rankData;
+              
+              sendResponse({
+                success: true,
+                rankData: rankData,
+                source: 'linked_account'
+              });
+            }).catch(error => {
+              console.error(`Error fetching rank for ${normalizedUsername}:`, error);
+              sendResponse({
+                success: false,
+                error: error.message
+              });
+            });
+          } else {
+            console.log(`No linked account: ${normalizedUsername}`);
+            
+            // No linked account found, return not found response
+            sendResponse({
+              success: false,
+              error: 'No linked account found'
+            });
+          }
         });
-      } else {
-        console.log(`No linked account: ${normalizedUsername}`);
-        
-        // No linked account found, return not found response
+      })
+      .catch(error => {
+        console.error(`Error checking subscription for ${channel}:`, error);
         sendResponse({
           success: false,
-          error: 'No linked account found'
+          error: 'Error checking channel subscription'
         });
-      }
-    });
+      });
     
     return true; // Keep the message channel open for the async response
   }
@@ -553,13 +552,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // SUBSCRIPTION CHECKING
   if (message.action === 'check_streamer_subscription') {
-    // Check if this streamer has an active subscription
-    checkStreamerSubscription(message.streamer).then(isSubscribed => {
-      sendResponse({ subscribed: isSubscribed });
-    }).catch(error => {
-      console.error('Error checking subscription:', error);
-      sendResponse({ subscribed: false, error: error.message });
-    });
+    const streamer = message.streamer;
+    
+    // Always skip cache for direct checks from content script
+    console.log(`Received subscription check for ${streamer}`);
+    
+    checkStreamerSubscription(streamer, true)
+      .then(subscribed => {
+        console.log(`Sending subscription result for ${streamer}: ${subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+        sendResponse({ subscribed: subscribed });
+      })
+      .catch(error => {
+        console.error('Error checking streamer subscription:', error);
+        console.log(`Sending failed subscription result for ${streamer}: NOT ACTIVE ❌`);
+        sendResponse({ subscribed: false, error: error.message });
+      });
     return true;
   }
   
@@ -651,6 +658,13 @@ chrome.runtime.onInstalled.addListener((details) => {
   loadConfiguration();
 });
 
+// Also clear subscription cache on browser startup
+chrome.runtime.onStartup.addListener(() => {
+  console.log('EloWard extension starting up, clearing subscription data');
+  // Reset subscription-related state
+  previousSubscriptionStatus = {};
+});
+
 /**
  * Clear all stored authentication and user data
  */
@@ -718,11 +732,15 @@ function clearAllStoredData() {
 
 /**
  * Check if a streamer has an active subscription to the extension
+ * Direct API call to the subscription worker without caching
+ * 
  * @param {string} channelName - Twitch channel name to check
+ * @param {boolean} skipCache - Whether to bypass cache (always true in this implementation)
  * @returns {Promise<boolean>} - Whether the streamer has an active subscription
  */
-function checkStreamerSubscription(channelName) {
+function checkStreamerSubscription(channelName, skipCache = false) {
   if (!channelName) {
+    console.log('checkStreamerSubscription: No channel name provided');
     return Promise.resolve(false);
   }
   
@@ -732,17 +750,15 @@ function checkStreamerSubscription(channelName) {
       channelName === 'authorize' || 
       channelName.includes('auth/callback') ||
       channelName.includes('auth/redirect')) {
+    console.log(`checkStreamerSubscription: Skipping validation for ${channelName} (not a valid channel)`);
     return Promise.resolve(false);
   }
   
-  // Use local cache for frequent checks
-  const cacheKey = channelName.toLowerCase();
+  // Normalize the channel name to lowercase for consistency
+  const normalizedName = channelName.toLowerCase();
   
-  // If we have a cached result and it's less than 1 hour old, use it
-  if (subscriptionCache[cacheKey] && 
-      (Date.now() - subscriptionCache[cacheKey].timestamp) < 3600000) {
-    return Promise.resolve(subscriptionCache[cacheKey].subscribed);
-  }
+  // Log the API call
+  console.log(`Performing subscription check API call for ${normalizedName}`);
   
   // Call the subscription API to check subscription status
   return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
@@ -750,7 +766,7 @@ function checkStreamerSubscription(channelName) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ channel_name: channelName })
+    body: JSON.stringify({ channel_name: normalizedName })
   })
   .then(response => {
     if (!response.ok) {
@@ -759,30 +775,25 @@ function checkStreamerSubscription(channelName) {
     return response.json();
   })
   .then(data => {
-    // Update our cache with the result
-    subscriptionCache[cacheKey] = {
-      subscribed: data.subscribed,
-      timestamp: Date.now()
-    };
+    // Get the boolean subscription status
+    const isSubscribed = !!data.subscribed;
     
-    // Only log when status changes or debugging
-    if (!previousSubscriptionStatus[cacheKey] || 
-        previousSubscriptionStatus[cacheKey] !== data.subscribed) {
-      console.log(`Subscription status for ${channelName}: ${data.subscribed ? 'Active' : 'Inactive'}`);
-      previousSubscriptionStatus[cacheKey] = data.subscribed;
+    // Log the result clearly
+    console.log(`Subscription API result for ${channelName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+    
+    // Cache only for internal tracking of status changes
+    if (previousSubscriptionStatus[normalizedName] !== isSubscribed) {
+      console.log(`Subscription status CHANGED for ${channelName}: ${isSubscribed ? 'Active' : 'Inactive'}`);
     }
+    previousSubscriptionStatus[normalizedName] = isSubscribed;
     
-    return data.subscribed;
+    return isSubscribed;
   })
   .catch(error => {
     console.error(`Error checking subscription for ${channelName}:`, error);
     
-    // If we have a cached result, return it as fallback
-    if (subscriptionCache[cacheKey]) {
-      return subscriptionCache[cacheKey].subscribed;
-    }
-    
-    // Default to false if we couldn't check
+    // Always default to false on error
+    console.log(`Error in subscription check, defaulting ${channelName} to not subscribed`);
     return false;
   });
 }
@@ -1615,47 +1626,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background script received message:', request);
   
-  if (request.action === 'check_streamer_subscription') {
-    const isSubscribed = checkStreamerSubscription(request.streamer);
-    sendResponse({ subscribed: isSubscribed });
-    return true;
-  }
-  
-  if (request.action === 'get_rank_for_user') {
-    // Legacy method - kept for backward compatibility
-    fetchRankFromBackend(request.username, request.platform)
-      .then(rankData => {
-        sendResponse({ rank: rankData });
-      })
-      .catch(error => {
-        console.error('Error fetching rank:', error);
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
-  
-  if (request.action === 'get_rank_for_twitch_user') {
-    // New optimized method that uses Twitch username directly
-    fetchRankByTwitchUsername(request.twitchUsername, request.platform)
-      .then(rankData => {
-        sendResponse({ rank: rankData });
-      })
-      .catch(error => {
-        console.error('Error fetching rank by Twitch username:', error);
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
-  
-  // Add message handler for refresh_linked_accounts
-  if (request.action === 'refresh_linked_accounts') {
-    console.log('Received request to refresh linked accounts');
-    preloadLinkedAccounts();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // ... existing code with other message handlers ...
+  // We've already handled these messages in the main message listener above
+  // So we'll remove this duplicate handler to avoid conflicts
+  return true;
 });
 
 /**

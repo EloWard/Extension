@@ -9,18 +9,25 @@ let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
-let checkedStreamers = {}; // Cache for already checked streamers
 
 // Initialize storage data once at startup
 initializeStorage();
 
 // Initialize when the page is loaded
 initializeExtension();
+
 // Also set a delayed initialization to catch slow-loading pages
 setTimeout(initializeExtension, 3000);
 
 // Add a window.onload handler as an additional initialization method
 window.addEventListener('load', function() {
+  console.log('EloWard: Page fully loaded, reinitializing');
+  initializeExtension();
+});
+
+// Listen for URL changes (for SPA navigation)
+window.addEventListener('popstate', function() {
+  console.log('EloWard: Navigation detected via popstate');
   initializeExtension();
 });
 
@@ -90,38 +97,21 @@ function processLinkedAccounts(linkedAccounts) {
 }
 
 /**
- * Check if the current channel has an active subscription
- * Uses sessionStorage to cache results for the duration of the page visit
+ * Simplified function to check if a channel is subscribed
+ * Makes a direct API call to the background script without caching
+ * @param {string} channelName - The channel to check
+ * @returns {Promise<boolean>} - Whether the channel is subscribed
  */
 async function checkChannelSubscription(channelName) {
   if (!channelName) return false;
   
-  const normalizedName = channelName.toLowerCase();
+  console.log(`EloWard: Checking subscription for ${channelName}`);
   
-  // First check session storage cache (persists until tab is closed/refreshed)
-  const cacheKey = `eloward_sub_${normalizedName}`;
-  const cachedValue = sessionStorage.getItem(cacheKey);
-  
-  if (cachedValue !== null) {
-    console.log(`EloWard: Using cached subscription status for ${channelName}: ${cachedValue === 'true'}`);
-    return cachedValue === 'true';
-  }
-  
-  // Next check memory cache
-  if (checkedStreamers[normalizedName] !== undefined) {
-    console.log(`EloWard: Using memory-cached subscription status for ${channelName}: ${checkedStreamers[normalizedName]}`);
-    
-    // Also update sessionStorage for future use
-    sessionStorage.setItem(cacheKey, checkedStreamers[normalizedName]);
-    
-    return checkedStreamers[normalizedName];
-  }
-  
-  // If not in cache, check with background script
   try {
     return new Promise((resolve) => {
+      // Always use skipCache=true to ensure fresh check
       chrome.runtime.sendMessage(
-        { action: 'check_streamer_subscription', streamer: channelName },
+        { action: 'check_streamer_subscription', streamer: channelName, skipCache: true },
         (response) => {
           if (chrome.runtime.lastError) {
             console.error('EloWard: Error checking subscription:', chrome.runtime.lastError);
@@ -129,41 +119,14 @@ async function checkChannelSubscription(channelName) {
             return;
           }
           
-          let isSubscribed = false;
+          // Extract the boolean value with casting to ensure it's a boolean
+          const isSubscribed = response && response.subscribed === true;
           
-          if (response && response.subscribed) {
-            isSubscribed = true;
-            console.log(`EloWard: Streamer ${channelName} subscribed`);
-            
-            // Force refresh linked accounts from the background script
-            chrome.runtime.sendMessage({ action: 'refresh_linked_accounts' });
+          if (isSubscribed) {
+            console.log(`EloWard: ${channelName} is Subscribed ✅`);
           } else {
-            // Double-check directly with storage as a fallback
-            chrome.storage.local.get(['activeStreamers'], (data) => {
-              if (data.activeStreamers && Array.isArray(data.activeStreamers)) {
-                // Case-insensitive check for streamer in activeStreamers array
-                isSubscribed = data.activeStreamers.some(streamer => 
-                  typeof streamer === 'string' && 
-                  streamer.toLowerCase() === normalizedName
-                );
-                
-                if (isSubscribed) {
-                  console.log(`EloWard: Streamer ${channelName} subscribed (direct check)`);
-                }
-              }
-              
-              // Cache the results in both memory and sessionStorage
-              checkedStreamers[normalizedName] = isSubscribed;
-              sessionStorage.setItem(cacheKey, isSubscribed.toString());
-              
-              resolve(isSubscribed);
-            });
-            return;
+            console.log(`EloWard: ${channelName} is Not Subscribed ❌`);
           }
-          
-          // Cache the results in both memory and sessionStorage
-          checkedStreamers[normalizedName] = isSubscribed;
-          sessionStorage.setItem(cacheKey, isSubscribed.toString());
           
           resolve(isSubscribed);
         }
@@ -195,7 +158,8 @@ function initializeExtension() {
     // Update the channel name
     channelName = newChannelName;
     
-    // Reset the initialization flag when changing channels
+    // Reset state when changing channels
+    isChannelSubscribed = false;
     observerInitialized = false;
     
     console.log(`EloWard: Channel changed to ${channelName}`);
@@ -206,14 +170,35 @@ function initializeExtension() {
     addExtensionStyles();
   }
   
-  // Check channel subscription and initialize if subscribed
-  checkChannelSubscription(channelName).then(subscribed => {
-    isChannelSubscribed = subscribed;
-    
-    if (isChannelSubscribed && !observerInitialized) {
-      initializeObserver();
-    }
-  });
+  // Disconnect any existing observer when reinitializing
+  if (window._eloward_chat_observer) {
+    window._eloward_chat_observer.disconnect();
+    window._eloward_chat_observer = null;
+    observerInitialized = false;
+  }
+  
+  // Always check subscription status directly
+  console.log(`EloWard: Checking subscription status for ${channelName}...`);
+  
+  checkChannelSubscription(channelName)
+    .then(subscribed => {
+      isChannelSubscribed = subscribed;
+      
+      console.log(`EloWard: Subscription check result for ${channelName}: ${isChannelSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
+      
+      if (isChannelSubscribed && !observerInitialized) {
+        console.log(`EloWard: Initializing rank display for ${channelName}`);
+        initializeObserver();
+      } else if (!isChannelSubscribed) {
+        console.log(`EloWard: Ranks will not be displayed for ${channelName} (not subscribed)`);
+        // Clean up any existing observers
+        if (window._eloward_chat_observer) {
+          window._eloward_chat_observer.disconnect();
+          window._eloward_chat_observer = null;
+        }
+        observerInitialized = false;
+      }
+    });
   
   // Set up navigation observer to detect URL changes
   setupUrlChangeObserver();
@@ -244,9 +229,18 @@ function setupUrlChangeObserver() {
     if (currentChannel !== channelName) {
       console.log(`EloWard: URL changed from ${channelName} to ${currentChannel}`);
       
-      // Re-initialize with new channel
+      // Reset state
       channelName = currentChannel;
       observerInitialized = false;
+      isChannelSubscribed = false;
+      
+      // Remove any existing observers
+      if (window._eloward_chat_observer) {
+        window._eloward_chat_observer.disconnect();
+        window._eloward_chat_observer = null;
+      }
+      
+      // Reinitialize with new channel
       initializeExtension();
     }
   });
