@@ -1,6 +1,9 @@
 // DIRECT TEST LOG - This should always appear
 console.log("🛡️ EloWard Extension Active");
 
+// Add a debug flag at the top of the file
+const DEBUG_MODE = false; // Set to true to enable debug logging
+
 // Global state
 let isChannelSubscribed = false;
 let channelName = '';
@@ -9,6 +12,9 @@ let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
+
+// Add a small delay before showing the tooltip to avoid flickering
+let tooltipShowTimeout = null;
 
 // Initialize storage data once at startup
 initializeStorage();
@@ -585,10 +591,14 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.addEventListener('mouseenter', showTooltip);
   badgeContainer.addEventListener('mouseleave', hideTooltip);
   
+  // Convert leaguePoints to string to ensure consistent storage
+  const lpValue = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
+                 rankData.leaguePoints.toString() : '';
+  
   // Store rank data as attributes for tooltip
   badgeContainer.dataset.rank = rankData.tier;
   badgeContainer.dataset.division = rankData.division || '';
-  badgeContainer.dataset.lp = rankData.leaguePoints || '';
+  badgeContainer.dataset.lp = lpValue;
   badgeContainer.dataset.username = rankData.summonerName || '';
   
   // Insert the badge in the appropriate location
@@ -601,15 +611,21 @@ function addBadgeToMessage(usernameElement, rankData) {
 }
 
 function formatRankText(rankData) {
-  if (!rankData) return 'Unranked';
+  if (!rankData || !rankData.tier || rankData.tier.toUpperCase() === 'UNRANKED') {
+    return 'UNRANKED';
+  }
   
-  let rankText = rankData.tier || 'Unranked';
+  let rankText = rankData.tier;
   
+  // Add division for ranks that have divisions (not Master, Grandmaster, Challenger)
   if (rankData.division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankData.tier.toUpperCase())) {
     rankText += ' ' + rankData.division;
   }
   
-  if (rankData.leaguePoints !== undefined) {
+  // Add LP for ranked players (not for Unranked)
+  if (rankData.tier.toUpperCase() !== 'UNRANKED' && 
+      rankData.leaguePoints !== undefined && 
+      rankData.leaguePoints !== null) {
     rankText += ' - ' + rankData.leaguePoints + ' LP';
   }
   
@@ -622,6 +638,11 @@ function formatRankText(rankData) {
 
 // Tooltip functions
 function showTooltip(event) {
+  // Clear any existing timeout
+  if (tooltipShowTimeout) {
+    clearTimeout(tooltipShowTimeout);
+  }
+
   // Create tooltip element if it doesn't exist globally
   if (!tooltipElement) {
     tooltipElement = document.createElement('div');
@@ -631,29 +652,85 @@ function showTooltip(event) {
   
   // Get rank data from the badge's dataset
   const badge = event.currentTarget;
-  const rankTier = badge.dataset.rank || 'Unranked';
+  const rankTier = badge.dataset.rank || 'UNRANKED';
   const division = badge.dataset.division || '';
-  const lp = badge.dataset.lp || '';
+  
+  // Ensure LP is properly formatted
+  let lp = badge.dataset.lp || '';
+  // If LP is a number, make sure it's formatted properly
+  if (lp && !isNaN(Number(lp))) {
+    lp = Number(lp).toString(); // Convert to clean number string
+  }
+  
   const username = badge.dataset.username || '';
   
-  // Format the tooltip text
-  let tooltipText = rankTier;
-  if (division) tooltipText += ' ' + division;
-  if (lp) tooltipText += ' - ' + lp + ' LP';
-  if (username) tooltipText += ` (${username})`;
+  // Format the tooltip text using same logic as formatRankText
+  // Handle unranked case
+  if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
+    tooltipElement.textContent = 'UNRANKED';
+    
+    // Position the tooltip (but don't show it yet)
+    const rect = badge.getBoundingClientRect();
+    const left = rect.left + (rect.width / 2);
+    
+    tooltipElement.style.left = `${left}px`;
+    tooltipElement.style.top = `${rect.bottom + 5}px`;
+    
+    // Show after a short delay to avoid flickering
+    tooltipShowTimeout = setTimeout(() => {
+      tooltipElement.classList.add('visible');
+    }, 50);
+    
+    return;
+  }
   
-  // Set the tooltip content and position
+  // For ranked players
+  let tooltipText = rankTier;
+  
+  // Add division for ranks that have divisions
+  if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
+    tooltipText += ' ' + division;
+  }
+  
+  // Always include LP for ranked players
+  if (lp !== undefined && lp !== null && lp !== '') {
+    tooltipText += ' - ' + lp + ' LP';
+  }
+  
+  // Debug logging if enabled
+  if (DEBUG_MODE) {
+    console.debug('Tooltip data:', {
+      rank: rankTier,
+      division: division,
+      lp: lp,
+      username: username,
+      displayText: tooltipText
+    });
+  }
+  
+  // Set the tooltip content
   tooltipElement.textContent = tooltipText;
   
+  // Position the tooltip (but don't show it yet)
   const rect = badge.getBoundingClientRect();
-  tooltipElement.style.left = `${rect.left + rect.width / 2}px`;
+  const left = rect.left + (rect.width / 2);
+  
+  tooltipElement.style.left = `${left}px`;
   tooltipElement.style.top = `${rect.bottom + 5}px`;
   
-  // Make the tooltip visible
-  tooltipElement.classList.add('visible');
+  // Show after a short delay to avoid flickering
+  tooltipShowTimeout = setTimeout(() => {
+    tooltipElement.classList.add('visible');
+  }, 50);
 }
 
 function hideTooltip() {
+  // Clear any pending show timeout
+  if (tooltipShowTimeout) {
+    clearTimeout(tooltipShowTimeout);
+    tooltipShowTimeout = null;
+  }
+  
   if (tooltipElement) {
     tooltipElement.classList.remove('visible');
   }
@@ -700,25 +777,43 @@ function addExtensionStyles() {
       scale: 1 !important;
     }
     
+    /* Simplified tooltip style inspired by BetterTTV */
     .eloward-tooltip {
-      position: absolute;
-      z-index: 99999;
-      background-color: rgba(34, 34, 34, 0.9);
-      color: white;
-      padding: 5px 10px;
-      border-radius: 4px;
-      font-size: 12px;
-      pointer-events: none;
-      transform: translateX(-50%);
-      white-space: nowrap;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(200, 170, 110, 0.5);
+      position: absolute !important;
+      z-index: 99999 !important;
+      pointer-events: none !important;
+      transform: translateX(-50%) !important;
+      color: #efeff1 !important;
+      background-color: #18181b !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      font-family: Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+      white-space: nowrap !important;
+      padding: 5px 8px !important;
+      border-radius: 4px !important;
+      line-height: 1.2 !important;
+      opacity: 0 !important;
+      transition: opacity 0.1s ease !important;
+      text-align: center !important;
+      border: none !important;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    }
+    
+    /* Show arrow using ::after pseudo-element (cleaner approach) */
+    .eloward-tooltip::after {
+      content: "" !important;
+      position: absolute !important;
+      top: -4px !important;
+      left: 50% !important;
+      margin-left: -4px !important;
+      border-width: 0 4px 4px 4px !important;
+      border-color: transparent transparent #18181b transparent !important;
+      border-style: solid !important;
+      transform: rotate(180deg) !important;
     }
     
     .eloward-tooltip.visible {
-      opacity: 1;
+      opacity: 1 !important;
     }
   `;
   
