@@ -808,21 +808,21 @@ function addExtensionStyles() {
       margin-top: -5px !important; /* Offset to position it nicely */
       will-change: transform, opacity !important; /* Hint for browser to optimize animations */
       
-      /* Dark mode (default) */
-      color: #efeff1 !important;
-      background-color: #0e0e10 !important;
+      /* Dark mode (default) - now using light colors */
+      color: #0e0e10 !important;
+      background-color: white !important;
     }
     
-    /* Light mode styles */
+    /* Light mode styles - now using dark colors */
     @media (prefers-color-scheme: light) {
       .eloward-tooltip {
-        color: #0e0e10 !important;
-        background-color: white !important;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2) !important;
+        color: #efeff1 !important;
+        background-color: #0e0e10 !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
       }
       
       .eloward-tooltip::after {
-        border-color: white transparent transparent transparent !important;
+        border-color: #0e0e10 transparent transparent transparent !important;
       }
     }
     
@@ -834,7 +834,7 @@ function addExtensionStyles() {
       left: 20% !important; /* Offset to the left more */
       margin-left: -4px !important;
       border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
-      border-color: #0e0e10 transparent transparent transparent !important;
+      border-color: white transparent transparent transparent !important;
       border-style: solid !important;
     }
     
