@@ -697,23 +697,31 @@ function showTooltip(event) {
     tooltipElement.textContent = tooltipText;
   }
   
-  // First show the tooltip offscreen to ensure it renders
+  // First reset the tooltip state and make it invisible
   tooltipElement.style.visibility = 'hidden';
+  tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
+  tooltipElement.style.opacity = '0';
   tooltipElement.classList.add('visible');
   
   // Position after a very short delay
   tooltipShowTimeout = setTimeout(() => {
     // Get badge position
     const rect = badge.getBoundingClientRect();
-    const left = rect.left + (rect.width / 2);
+    const badgeCenter = rect.left + (rect.width / 2);
     
-    // Position above the badge
-    tooltipElement.style.left = `${left}px`;
-    tooltipElement.style.top = `${rect.top - 3}px`;
+    // Position tooltip above the badge with an offset for left-shifted arrow
+    tooltipElement.style.left = `${badgeCenter}px`;
+    tooltipElement.style.top = `${rect.top - 5}px`;
     
-    // Make visible
+    // Animate in - make it visible first
     tooltipElement.style.visibility = 'visible';
-  }, 10);
+    
+    // Trigger animation in the next frame for better performance
+    requestAnimationFrame(() => {
+      tooltipElement.style.opacity = '1';
+      tooltipElement.style.transform = 'translate(-30%, -100%) scale(1)';
+    });
+  }, 5);
 }
 
 function hideTooltip() {
@@ -723,8 +731,15 @@ function hideTooltip() {
     tooltipShowTimeout = null;
   }
   
-  if (tooltipElement) {
-    tooltipElement.classList.remove('visible');
+  if (tooltipElement && tooltipElement.classList.contains('visible')) {
+    // Animate out - fade and scale down slightly
+    tooltipElement.style.opacity = '0';
+    tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
+    
+    // Remove visible class after animation completes
+    setTimeout(() => {
+      tooltipElement.classList.remove('visible');
+    }, 150);
   }
 }
 
@@ -777,7 +792,7 @@ function addExtensionStyles() {
       position: absolute !important;
       z-index: 99999 !important;
       pointer-events: none !important;
-      transform: translate(-50%, -100%) !important;
+      transform: translate(-30%, -100%) scale(0.9) !important;
       color: #efeff1 !important;
       background-color: #0e0e10 !important;
       font-size: 13px !important;
@@ -788,19 +803,20 @@ function addExtensionStyles() {
       border-radius: 3px !important;
       line-height: 1.2 !important;
       opacity: 0 !important;
-      transition: opacity 0.15s ease !important;
+      transition: opacity 0.1s ease-out, transform 0.12s ease-out !important;
       text-align: center !important;
       border: none !important;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
       margin-top: -5px !important; /* Offset to position it nicely */
+      will-change: transform, opacity !important; /* Hint for browser to optimize animations */
     }
     
-    /* Chat bubble arrow at bottom pointing toward badge */
+    /* Chat bubble arrow at bottom pointing toward badge, offset to the left */
     .eloward-tooltip::after {
       content: "" !important;
       position: absolute !important;
       bottom: -4px !important; /* Position at bottom */
-      left: 50% !important;
+      left: 20% !important; /* Offset to the left more */
       margin-left: -4px !important;
       border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
       border-color: #0e0e10 transparent transparent transparent !important;
@@ -809,6 +825,7 @@ function addExtensionStyles() {
     
     .eloward-tooltip.visible {
       opacity: 1 !important;
+      transform: translate(-30%, -100%) scale(1) !important;
     }
   `;
   
