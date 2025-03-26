@@ -793,8 +793,6 @@ function addExtensionStyles() {
       z-index: 99999 !important;
       pointer-events: none !important;
       transform: translate(-30%, -100%) scale(0.9) !important;
-      color: #efeff1 !important;
-      background-color: #0e0e10 !important;
       font-size: 13px !important;
       font-weight: 600 !important;
       font-family: Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
@@ -809,6 +807,23 @@ function addExtensionStyles() {
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
       margin-top: -5px !important; /* Offset to position it nicely */
       will-change: transform, opacity !important; /* Hint for browser to optimize animations */
+      
+      /* Dark mode (default) */
+      color: #efeff1 !important;
+      background-color: #0e0e10 !important;
+    }
+    
+    /* Light mode styles */
+    @media (prefers-color-scheme: light) {
+      .eloward-tooltip {
+        color: #0e0e10 !important;
+        background-color: white !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2) !important;
+      }
+      
+      .eloward-tooltip::after {
+        border-color: white transparent transparent transparent !important;
+      }
     }
     
     /* Chat bubble arrow at bottom pointing toward badge, offset to the left */
