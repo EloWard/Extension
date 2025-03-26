@@ -787,7 +787,7 @@ function addExtensionStyles() {
       scale: 1 !important;
     }
     
-    /* Chat bubble style tooltip */
+    /* Chat bubble style tooltip - base styles */
     .eloward-tooltip {
       position: absolute !important;
       z-index: 99999 !important;
@@ -807,23 +807,40 @@ function addExtensionStyles() {
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
       margin-top: -5px !important; /* Offset to position it nicely */
       will-change: transform, opacity !important; /* Hint for browser to optimize animations */
-      
-      /* Dark mode (default) - now using light colors */
-      color: #0e0e10 !important;
-      background-color: white !important;
     }
     
-    /* Light mode styles - now using dark colors */
-    @media (prefers-color-scheme: light) {
-      .eloward-tooltip {
-        color: #efeff1 !important;
-        background-color: #0e0e10 !important;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
-      }
-      
-      .eloward-tooltip::after {
-        border-color: #0e0e10 transparent transparent transparent !important;
-      }
+    /* Dark theme Twitch - show light tooltip */
+    html.tw-root--theme-dark .eloward-tooltip,
+    .tw-root--theme-dark .eloward-tooltip,
+    body[data-a-theme="dark"] .eloward-tooltip,
+    body.dark-theme .eloward-tooltip {
+      color: #0e0e10 !important;
+      background-color: white !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    html.tw-root--theme-dark .eloward-tooltip::after,
+    .tw-root--theme-dark .eloward-tooltip::after,
+    body[data-a-theme="dark"] .eloward-tooltip::after,
+    body.dark-theme .eloward-tooltip::after {
+      border-color: white transparent transparent transparent !important;
+    }
+    
+    /* Light theme Twitch - show dark tooltip */
+    html.tw-root--theme-light .eloward-tooltip,
+    .tw-root--theme-light .eloward-tooltip,
+    body[data-a-theme="light"] .eloward-tooltip,
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip {
+      color: #efeff1 !important;
+      background-color: #0e0e10 !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
+    }
+    
+    html.tw-root--theme-light .eloward-tooltip::after,
+    .tw-root--theme-light .eloward-tooltip::after,
+    body[data-a-theme="light"] .eloward-tooltip::after,
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after {
+      border-color: #0e0e10 transparent transparent transparent !important;
     }
     
     /* Chat bubble arrow at bottom pointing toward badge, offset to the left */
@@ -834,7 +851,6 @@ function addExtensionStyles() {
       left: 20% !important; /* Offset to the left more */
       margin-left: -4px !important;
       border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
-      border-color: white transparent transparent transparent !important;
       border-style: solid !important;
     }
     
