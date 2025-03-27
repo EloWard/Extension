@@ -792,7 +792,7 @@ function addExtensionStyles() {
       position: absolute !important;
       z-index: 99999 !important;
       pointer-events: none !important;
-      transform: translate(-10%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
+      transform: translate(-12%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
       font-size: 13px !important;
       font-weight: 600 !important;
       font-family: Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
