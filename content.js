@@ -792,7 +792,7 @@ function addExtensionStyles() {
       position: absolute !important;
       z-index: 99999 !important;
       pointer-events: none !important;
-      transform: translate(-30%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
+      transform: translate(-40%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
       font-size: 13px !important;
       font-weight: 600 !important;
       font-family: Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
@@ -805,7 +805,7 @@ function addExtensionStyles() {
       text-align: center !important;
       border: none !important;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
-      margin-top: -5px !important; /* Offset to position it nicely */
+      margin-top: -2px !important; /* Offset to position it nicely */
       will-change: transform, opacity !important; /* Hint for browser to optimize animations */
     }
     
@@ -848,7 +848,7 @@ function addExtensionStyles() {
       content: "" !important;
       position: absolute !important;
       bottom: -4px !important; /* Position at bottom */
-      left: 20% !important; /* Stem position: adjust this % to move stem left/right */
+      left: 30% !important; /* Stem position: adjust this % to move stem left/right */
       margin-left: -4px !important;
       border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
       border-style: solid !important;
@@ -856,7 +856,7 @@ function addExtensionStyles() {
     
     .eloward-tooltip.visible {
       opacity: 1 !important;
-      transform: translate(-30%, -100%) scale(1) !important; /* Bubble position when visible: must match transform above */
+      transform: translate(-40%, -100%) scale(1) !important; /* Bubble position when visible: must match transform above */
     }
   `;
   
