@@ -847,30 +847,11 @@ function addExtensionStyles() {
     .eloward-tooltip::after {
       content: "" !important;
       position: absolute !important;
-      bottom: -4px !important;
+      bottom: -4px !important; /* Position at bottom */
       left: 20% !important; /* Stem position: adjust this % to move stem left/right */
       margin-left: -4px !important;
-      width: 8px !important;
-      height: 8px !important;
-      transform: rotate(45deg) !important;
-      border-radius: 2px !important;
-    }
-    
-    /* Apply stem colors for dark theme */
-    html.tw-root--theme-dark .eloward-tooltip::after,
-    .tw-root--theme-dark .eloward-tooltip::after,
-    body[data-a-theme="dark"] .eloward-tooltip::after,
-    body.dark-theme .eloward-tooltip::after {
-      background-color: white !important;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    }
-    
-    /* Apply stem colors for light theme */
-    html.tw-root--theme-light .eloward-tooltip::after,
-    .tw-root--theme-light .eloward-tooltip::after,
-    body[data-a-theme="light"] .eloward-tooltip::after,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after {
-      background-color: #0e0e10 !important;
+      border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
+      border-style: solid !important;
     }
     
     .eloward-tooltip.visible {
