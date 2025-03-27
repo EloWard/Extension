@@ -798,7 +798,7 @@ function addExtensionStyles() {
       font-family: Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
       white-space: nowrap !important;
       padding: 6px 10px !important;
-      border-radius: 8px !important; /* Increased corner roundness (was 3px) */
+      border-radius: 6px !important; /* Increased corner roundness (was 3px) */
       line-height: 1.2 !important;
       opacity: 0 !important;
       transition: opacity 0.1s ease-out, transform 0.12s ease-out !important;
