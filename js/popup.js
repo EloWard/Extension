@@ -622,28 +622,50 @@ document.addEventListener('DOMContentLoaded', () => {
         connectTwitchBtn.disabled = true;
         
         try {
-          const userData = await TwitchAuth.authenticate();
-          console.log('Twitch authentication successful:', userData);
+          // First authenticate to get tokens - this now also updates persistent storage
+          await TwitchAuth.authenticate();
+          console.log('Twitch authentication successful');
           
-          // Store user data in persistent storage
-          await PersistentStorage.storeTwitchUserData(userData);
-          console.log('Stored Twitch user data in persistent storage during connect');
-          
-          // Update UI with user data
-          if (userData && (userData.display_name || userData.login)) {
-            twitchConnectionStatus.textContent = userData.display_name || userData.login;
-            twitchConnectionStatus.classList.add('connected');
-            twitchConnectionStatus.classList.remove('connecting');
-            connectTwitchBtn.textContent = 'Disconnect';
-          } else {
-            throw new Error('Invalid user data received');
+          // Try to get user info but don't fail if this part has issues
+          try {
+            const userData = await TwitchAuth.getUserInfo();
+            console.log('Twitch user info retrieved:', userData);
+            
+            // Store user data in persistent storage
+            if (userData) {
+              await PersistentStorage.storeTwitchUserData(userData);
+              console.log('Stored Twitch user data in persistent storage during connect');
+              
+              // Update UI with user data
+              twitchConnectionStatus.textContent = userData.display_name || userData.login;
+            } else {
+              // No user data but auth succeeded, show generic success
+              twitchConnectionStatus.textContent = 'Connected';
+              console.log('No user data available, showing generic connected state');
+            }
+          } catch (userInfoError) {
+            // User info failed but authentication succeeded
+            console.warn('Could not get user info, but authentication succeeded:', userInfoError);
+            twitchConnectionStatus.textContent = 'Connected';
+            
+            // Ensure the connected state is still set in persistent storage
+            await PersistentStorage.updateConnectedState('twitch', true);
           }
+          
+          // Update UI state regardless of user info success
+          twitchConnectionStatus.classList.add('connected');
+          twitchConnectionStatus.classList.remove('connecting');
+          connectTwitchBtn.textContent = 'Disconnect';
+          
         } catch (authError) {
           console.error('Twitch authentication error:', authError);
           twitchConnectionStatus.textContent = authError.message || 'Authentication Failed';
           twitchConnectionStatus.classList.add('error');
           twitchConnectionStatus.classList.remove('connecting');
           connectTwitchBtn.textContent = 'Connect';
+          
+          // Ensure the connected state is properly reset in case of error
+          await PersistentStorage.updateConnectedState('twitch', false);
           
           // Reset error after 5 seconds
           setTimeout(() => {
@@ -659,6 +681,9 @@ document.addEventListener('DOMContentLoaded', () => {
       twitchConnectionStatus.textContent = error.message || 'Error';
       twitchConnectionStatus.classList.add('error');
       twitchConnectionStatus.classList.remove('connecting', 'disconnecting');
+      
+      // Ensure connected state is reset on error
+      await PersistentStorage.updateConnectedState('twitch', false);
     } finally {
       connectTwitchBtn.disabled = false;
     }

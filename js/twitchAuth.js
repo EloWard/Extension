@@ -146,19 +146,46 @@ export const TwitchAuth = {
       }
       
       // Exchange the authorization code for tokens
-      const tokenData = await this.exchangeCodeForTokens(authResult.code);
-      console.log('Successfully exchanged code for Twitch tokens');
-      
-      // Get user info
-      const userInfo = await this.getUserInfo();
-      console.log('Retrieved Twitch user info for:', userInfo?.display_name || 'unknown user');
-      
-      // Store the user info in persistent storage
-      await PersistentStorage.storeTwitchUserData(userInfo);
-      
-      return userInfo;
+      try {
+        const tokenData = await this.exchangeCodeForTokens(authResult.code);
+        console.log('Successfully exchanged code for Twitch tokens');
+        
+        // Even if getting user info fails, authentication is still considered successful
+        // because we have valid tokens
+        
+        try {
+          // Get user info
+          const userInfo = await this.getUserInfo();
+          console.log('Retrieved Twitch user info for:', userInfo?.display_name || 'unknown user');
+          
+          // Store the user info in persistent storage
+          await PersistentStorage.storeTwitchUserData(userInfo);
+          
+          return userInfo;
+        } catch (userInfoError) {
+          // Log error but don't fail the authentication process
+          console.warn('Could not retrieve user info, but token exchange was successful:', userInfoError);
+          
+          // Ensure we still consider the user authenticated
+          await PersistentStorage.updateConnectedState('twitch', true);
+          
+          // Return a minimal user object
+          return { authenticated: true };
+        }
+      } catch (tokenError) {
+        console.error('Error exchanging code for tokens:', tokenError);
+        // Make sure the authentication state is cleared on token exchange failure
+        await PersistentStorage.updateConnectedState('twitch', false);
+        throw tokenError;
+      }
     } catch (error) {
       console.error('Twitch authentication error:', error);
+      // Ensure the connected state is reset on any error
+      try {
+        await PersistentStorage.updateConnectedState('twitch', false);
+      } catch (storageError) {
+        console.error('Failed to update persistent storage on auth error:', storageError);
+      }
       throw error;
     }
   },
@@ -309,37 +336,80 @@ export const TwitchAuth = {
       const checkForCallback = async () => {
         // Check chrome.storage for callback data
         const data = await new Promise(r => {
-          chrome.storage.local.get(['auth_callback', 'twitch_auth_callback'], r);
+          chrome.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], r);
         });
         
-        const callback = data.auth_callback || data.twitch_auth_callback;
+        // Check in multiple possible storage locations
+        const callback = data.auth_callback || 
+                         data.twitch_auth_callback || 
+                         data[this.config.storageKeys.authCallback];
         
-        if (callback && callback.code) {
+        if (callback) {
           console.log('Auth callback found in chrome.storage:', {
             hasCode: !!callback.code,
             codeLength: callback.code ? callback.code.length : 0,
-            hasState: !!callback.state
+            hasState: !!callback.state,
+            hasError: !!callback.error
           });
+          
+          // Check for error in the callback
+          if (callback.error) {
+            console.error('Auth callback contains error:', callback.error);
+          }
+          
+          // Stop the interval
           clearInterval(intervalId);
           
           // Clear the callback data from storage to prevent reuse
           try {
-            chrome.storage.local.remove(['auth_callback', 'twitch_auth_callback'], () => {
-              console.log('Auth callback cleared from chrome.storage after use');
-            });
+            chrome.storage.local.remove(
+              ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], 
+              () => {
+                console.log('Auth callback cleared from chrome.storage after use');
+              }
+            );
           } catch (e) {
             console.warn('Error clearing auth callback after use:', e);
           }
           
-          resolve(callback);
-          return true;
+          // Only resolve with the callback if it contains a code
+          if (callback.code) {
+            resolve(callback);
+            return true;
+          } else if (callback.error) {
+            // Resolve with null if there's an error to signal cancellation
+            console.warn('Auth error detected in callback, treating as cancelled');
+            resolve(null);
+            return true;
+          }
         }
         
         // Check if auth window was closed by user
         if (this.authWindow && this.authWindow.closed) {
           console.log('Auth window was closed by user');
           clearInterval(intervalId);
-          resolve(null); // User cancelled
+          
+          // Try to check storage for any last-moment callbacks that might have been missed
+          chrome.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], 
+            lastCheck => {
+              const lastCallback = lastCheck.auth_callback || 
+                                  lastCheck.twitch_auth_callback || 
+                                  lastCheck[this.config.storageKeys.authCallback];
+                                  
+              if (lastCallback && lastCallback.code) {
+                console.log('Found callback in final check after window close');
+                resolve(lastCallback);
+              } else {
+                console.log('No callback found in final check, user cancelled');
+                resolve(null); // User cancelled
+              }
+              
+              // Clear any callback data
+              chrome.storage.local.remove(
+                ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]
+              );
+            }
+          );
           return true;
         }
         
@@ -365,21 +435,34 @@ export const TwitchAuth = {
       
       // Also add a message listener for direct window messages
       const messageListener = event => {
+        // Look for different variations of auth callback data formats
         if (event.data && 
             ((event.data.type === 'auth_callback' && event.data.code) || 
              (event.data.source === 'eloward_auth' && event.data.code) ||
-             (event.data.service === 'twitch' && event.data.code))) {
+             (event.data.service === 'twitch' && event.data.code) ||
+             (event.data.code && (event.data.state || event.data.scope || event.data.token_type)))) {
           
           console.log('Auth callback received via window message');
           window.removeEventListener('message', messageListener);
           
-          // Store in chrome.storage for consistency
+          // Store in chrome.storage for consistency (using all possible keys)
+          const callbackData = {
+            ...event.data,
+            timestamp: Date.now() // Add timestamp for debugging
+          };
+          
           chrome.storage.local.set({
-            'auth_callback': event.data,
-            'twitch_auth_callback': event.data
+            'auth_callback': callbackData,
+            'twitch_auth_callback': callbackData,
+            [this.config.storageKeys.authCallback]: callbackData
           });
           
           resolve(event.data);
+        } else if (event.data && event.data.error) {
+          // Handle error messages
+          console.warn('Auth error received via window message:', event.data.error);
+          window.removeEventListener('message', messageListener);
+          resolve(null); // Treat as cancellation
         }
       };
       
@@ -425,6 +508,11 @@ export const TwitchAuth = {
       
       // Store the tokens
       await this._storeTokens(tokenData);
+      
+      // Immediately update the persistent storage connected state to prevent auth errors
+      // This ensures the user is considered authenticated even before getting user info
+      await PersistentStorage.updateConnectedState('twitch', true);
+      console.log('Updated persistent storage connected state for Twitch');
       
       return tokenData;
     } catch (error) {
