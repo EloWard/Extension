@@ -707,7 +707,7 @@ function showTooltip(event) {
   tooltipElement.style.opacity = '0';
   tooltipElement.classList.add('visible');
   
-  // Position after a very short delay
+  // Position after a delay - increased from 5ms to 500ms
   tooltipShowTimeout = setTimeout(() => {
     // Get badge position
     const rect = badge.getBoundingClientRect();
@@ -725,7 +725,7 @@ function showTooltip(event) {
       tooltipElement.style.opacity = '1';
       tooltipElement.style.transform = 'translate(-30%, -100%) scale(1)';
     });
-  }, 5);
+  }, 300); // Increased delay from 5ms to 500ms (half a second)
 }
 
 function hideTooltip() {
