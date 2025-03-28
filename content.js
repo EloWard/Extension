@@ -705,9 +705,9 @@ function showTooltip(event) {
   tooltipElement.style.visibility = 'hidden';
   tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
   tooltipElement.style.opacity = '0';
-  tooltipElement.classList.add('visible');
+  tooltipElement.classList.remove('visible');
   
-  // Position after a delay - increased from 5ms to 500ms
+  // Position after a delay
   tooltipShowTimeout = setTimeout(() => {
     // Get badge position
     const rect = badge.getBoundingClientRect();
@@ -717,15 +717,15 @@ function showTooltip(event) {
     tooltipElement.style.left = `${badgeCenter}px`;
     tooltipElement.style.top = `${rect.top - 5}px`;
     
-    // Animate in - make it visible first
+    // Make the element visible but with 0 opacity first
     tooltipElement.style.visibility = 'visible';
     
-    // Trigger animation in the next frame for better performance
-    requestAnimationFrame(() => {
-      tooltipElement.style.opacity = '1';
-      tooltipElement.style.transform = 'translate(-30%, -100%) scale(1)';
-    });
-  }, 300); // Increased delay from 5ms to 500ms (half a second)
+    // Force a reflow to ensure the browser registers the initial state
+    tooltipElement.offsetHeight;
+    
+    // Then add the visible class to trigger the transition
+    tooltipElement.classList.add('visible');
+  }, 300);
 }
 
 function hideTooltip() {
@@ -743,7 +743,7 @@ function hideTooltip() {
     // Remove visible class after animation completes
     setTimeout(() => {
       tooltipElement.classList.remove('visible');
-    }, 150);
+    }, 100);
   }
 }
 
@@ -799,13 +799,13 @@ function addExtensionStyles() {
       transform: translate(-12%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
       font-size: 13px !important;
       font-weight: 600 !important;
-      font-family: Inter, Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+      font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
       white-space: nowrap !important;
       padding: 6px 10px !important;
       border-radius: 6px !important; /* Increased corner roundness (was 3px) */
       line-height: 1.2 !important;
       opacity: 0 !important;
-      transition: opacity 0.1s ease-out, transform 0.12s ease-out !important;
+      transition: opacity 0.07s ease-in-out, transform 0.07s ease-in-out !important;
       text-align: center !important;
       border: none !important;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
