@@ -603,7 +603,11 @@ function addBadgeToMessage(usernameElement, rankData) {
   
   // Insert the badge in the appropriate location
   if (usernameContainer) {
-    usernameContainer.insertBefore(badgeContainer, usernameContainer.firstChild);
+    // Find the username span that follows the badges
+    const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
+    
+    // Insert the badge right before the username span (making it the rightmost badge)
+    usernameContainer.insertBefore(badgeContainer, usernameSpan);
   } else {
     // Fallback
     usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
