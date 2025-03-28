@@ -805,7 +805,7 @@ function addExtensionStyles() {
       font-weight: 600 !important;
       font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
       white-space: nowrap !important;
-      padding: 6px 10px !important;
+      padding: 4px 6px !important; /* Reduced padding */
       border-radius: 6px !important; /* Increased corner roundness (was 3px) */
       line-height: 1.2 !important;
       opacity: 0 !important;
