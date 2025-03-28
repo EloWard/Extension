@@ -12,6 +12,7 @@ let observerInitialized = false;
 let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
+let currentBadgeWithTooltip = null; // Track which badge currently has an active tooltip
 
 // Add a small delay before showing the tooltip to avoid flickering
 let tooltipShowTimeout = null;
@@ -654,8 +655,11 @@ function showTooltip(event) {
     document.body.appendChild(tooltipElement);
   }
   
+  // Track the badge element with the tooltip
+  currentBadgeWithTooltip = event.currentTarget;
+  
   // Get rank data from the badge's dataset
-  const badge = event.currentTarget;
+  const badge = currentBadgeWithTooltip;
   const rankTier = badge.dataset.rank || 'UNRANKED';
   const division = badge.dataset.division || '';
   
@@ -709,13 +713,7 @@ function showTooltip(event) {
   
   // Position after a very short delay
   tooltipShowTimeout = setTimeout(() => {
-    // Get badge position
-    const rect = badge.getBoundingClientRect();
-    const badgeCenter = rect.left + (rect.width / 2);
-    
-    // Position tooltip above the badge with an offset for left-shifted arrow
-    tooltipElement.style.left = `${badgeCenter}px`;
-    tooltipElement.style.top = `${rect.top - 5}px`;
+    updateTooltipPosition();
     
     // Animate in - make it visible first
     tooltipElement.style.visibility = 'visible';
@@ -726,6 +724,25 @@ function showTooltip(event) {
       tooltipElement.style.transform = 'translate(-30%, -100%) scale(1)';
     });
   }, 5);
+  
+  // Add scroll event listener to update tooltip position
+  const chatScrollArea = document.querySelector('.chat-scrollable-area, [data-a-target="chat-scroller"], .simplebar-scroll-content');
+  if (chatScrollArea) {
+    chatScrollArea.addEventListener('scroll', updateTooltipPosition);
+  }
+}
+
+// New function to update tooltip position based on badge position
+function updateTooltipPosition() {
+  if (!tooltipElement || !currentBadgeWithTooltip) return;
+  
+  // Get badge position
+  const rect = currentBadgeWithTooltip.getBoundingClientRect();
+  const badgeCenter = rect.left + (rect.width / 2);
+  
+  // Position tooltip above the badge with an offset for left-shifted arrow
+  tooltipElement.style.left = `${badgeCenter}px`;
+  tooltipElement.style.top = `${rect.top - 5}px`;
 }
 
 function hideTooltip() {
@@ -743,6 +760,15 @@ function hideTooltip() {
     // Remove visible class after animation completes
     setTimeout(() => {
       tooltipElement.classList.remove('visible');
+      
+      // Remove scroll event listener when tooltip is hidden
+      const chatScrollArea = document.querySelector('.chat-scrollable-area, [data-a-target="chat-scroller"], .simplebar-scroll-content');
+      if (chatScrollArea) {
+        chatScrollArea.removeEventListener('scroll', updateTooltipPosition);
+      }
+      
+      // Reset the current badge reference
+      currentBadgeWithTooltip = null;
     }, 150);
   }
 }

@@ -29,7 +29,7 @@
 
 /* Tooltip */
 .eloward-tooltip {
-  position: fixed;
+  position: absolute;
   background: rgba(28, 30, 48, 0.95);
   border: 1px solid rgba(217, 163, 54, 0.3);
   border-radius: 4px;
@@ -38,7 +38,7 @@
   color: #fff;
   z-index: 9999;
   pointer-events: none;
-  transform: translateX(-50%) translateY(-100%);
+  transform: translate(-30%, -100%) scale(0.9);
   opacity: 0;
   transition: opacity 0.2s ease, transform 0.2s ease;
   white-space: nowrap;
@@ -48,7 +48,7 @@
 
 .eloward-tooltip.visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(calc(-100% - 8px));
+  transform: translate(-30%, -100%) scale(1);
 }
 
 /* Notification */
