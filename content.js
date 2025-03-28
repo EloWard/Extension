@@ -228,65 +228,63 @@ function getCurrentChannelName() {
 }
 
 function initializeExtension() {
-  // Only initialize once
-  if (observerInitialized) return;
-  
-  // Make sure styles are added
-  addExtensionStyles();
-  
-  // Detect installed extensions for compatibility
-  const is7TVPresent = document.querySelector('#seventv-extension') !== null || document.querySelector('[class*="seventv-"]') !== null;
-  const isBTTVPresent = document.querySelector('[class*="bttv-"]') !== null;
-  
-  if (DEBUG_MODE) {
-    console.log(`EloWard: Extension integration - 7TV: ${is7TVPresent ? 'YES' : 'NO'}, BTTV: ${isBTTVPresent ? 'YES' : 'NO'}`);
-  }
-  
-  // Get the current channel name
+  // Get channel name using the new reliable method
   const newChannelName = getCurrentChannelName();
   
-  // If we've already got a channel and it's the same as the current one, no need to reinitialize
-  if (channelName && newChannelName && channelName.toLowerCase() === newChannelName.toLowerCase()) {
+  // If no channel name or we're on an auth-related path, don't do anything
+  if (!newChannelName || 
+      window.location.pathname.includes('oauth2') ||
+      window.location.pathname.includes('auth/') ||
+      window.location.href.includes('auth/callback') ||
+      window.location.href.includes('auth/redirect')) {
     return;
   }
   
-  // Update the channel name
-  if (newChannelName) {
+  // Check if we've changed channels
+  const channelChanged = newChannelName !== channelName;
+  if (channelChanged) {
+    // Update the channel name
     channelName = newChannelName;
+    
+    // Reset state when changing channels
+    isChannelSubscribed = false;
+    observerInitialized = false;
+    
+    // Only log on channel change
+    console.log(`EloWard: Channel changed to ${channelName}`);
   }
   
-  // Log the channel name for debugging
-  if (DEBUG_MODE) {
-    console.log("EloWard: Current channel is " + channelName);
+  // Add extension styles if needed
+  if (!document.querySelector('#eloward-extension-styles')) {
+    addExtensionStyles();
   }
   
-  // Check if the channel is subscribed
-  checkChannelSubscription(channelName)
+  // Disconnect any existing observer when reinitializing
+  if (window._eloward_chat_observer) {
+    window._eloward_chat_observer.disconnect();
+    window._eloward_chat_observer = null;
+    observerInitialized = false;
+  }
+  
+  // Only force check subscription status on channel changes
+  // Otherwise use the cached value to reduce API calls
+  checkChannelSubscription(channelName, channelChanged)
     .then(subscribed => {
       isChannelSubscribed = subscribed;
       
-      // Only initialize chat observer if channel is subscribed
-      if (subscribed) {
-        // For 7TV and BTTV integration, give their DOM changes time to apply
-        const integrationDelay = (is7TVPresent || isBTTVPresent) ? 1000 : 0;
-        
-        if (integrationDelay > 0 && DEBUG_MODE) {
-          console.log(`EloWard: Delaying initialization by ${integrationDelay}ms for extension integration`);
+      if (isChannelSubscribed && !observerInitialized) {
+        initializeObserver();
+      } else if (!isChannelSubscribed) {
+        // Clean up any existing observers
+        if (window._eloward_chat_observer) {
+          window._eloward_chat_observer.disconnect();
+          window._eloward_chat_observer = null;
         }
-        
-        setTimeout(() => {
-          initializeObserver();
-          
-          // Force reconnection of chat observers
-          observerInitialized = false;
-        }, integrationDelay);
+        observerInitialized = false;
       }
-    })
-    .catch(error => {
-      console.error("Error checking channel subscription:", error);
     });
   
-  // Also set up an observer to watch for URL changes (for SPA navigation)
+  // Set up navigation observer to detect URL changes
   setupUrlChangeObserver();
 }
 
@@ -375,36 +373,48 @@ function initializeObserver() {
 }
 
 function findChatContainer() {
-  // Try to find the chat containers in order of likelihood
-  // Standard Twitch chat container selectors
-  const containers = [
-    document.querySelector('[data-test-selector="chat-scrollable-area__message-container"]'),
+  // Try to find chat container using multiple selectors
+  const potentialContainers = [
+    // Standard Twitch chat selectors
     document.querySelector('.chat-scrollable-area__message-container'),
     document.querySelector('[data-a-target="chat-scroller"]'),
-    document.querySelector('[data-a-target="chat-list"]'),
-    document.querySelector('.chat-list--default'),
-    document.querySelector('.chat-list'),
-    document.querySelector('.stream-chat'),
-    document.querySelector('[class*="chat-list"]'),
+    document.querySelector('.chat-list--default, .chat-list'),
+    document.querySelector('.chat-list__list'),
     
-    // Check for 7TV or BetterTTV containers
-    document.querySelector('[data-seventv-container]'),
-    document.querySelector('[class*="seventv-chat-container"]'),
-    document.querySelector('[class*="bttv-chat-container"]'),
-    document.querySelector('[class*="bttv-"] .chat-list')
-  ];
+    // 7TV specific selectors
+    document.querySelector('.seventv-chat-list'),
+    document.querySelector('main[data-a-target="chat-main-container"]'),
+    
+    // BetterTTV specific selectors 
+    document.querySelector('.chat-list--default, .chat-list--other'),
+    document.querySelector('.bttv-chat-container')
+  ].filter(Boolean); // Remove null elements
   
-  // Return the first match
-  for (const container of containers) {
-    if (container) return container;
+  for (const container of potentialContainers) {
+    // Look for elements that might contain chat messages
+    const usernameElements = container.querySelectorAll(
+      '.chat-author__display-name, [data-a-target="chat-message-username"], ' + 
+      '.seventv-chat-user, .seventv-chat-author, ' +
+      '.chat-line__username'
+    );
+    
+    if (usernameElements.length > 0) {
+      return container;
+    }
   }
   
-  // If still no container found, fallback to body for a global observer
-  if (DEBUG_MODE) {
-    console.warn("EloWard: Could not find chat container, using body fallback");
+  // Ultimate fallback - get the chat container by looking for any chat message
+  const anyMessage = document.querySelector(
+    '.chat-line__message, .chat-line, .seventv-chat-message'
+  );
+  
+  if (anyMessage) {
+    return anyMessage.closest('[role="log"]') || 
+           anyMessage.parentElement || 
+           anyMessage.closest('div[data-a-target="chat-scroller"]');
   }
   
-  return document.body;
+  return null;
 }
 
 function setupChatObserver(chatContainer, isFallbackObserver = false) {
@@ -413,42 +423,27 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
     // Process messages only if channel is subscribed
     if (!isChannelSubscribed) return;
     
-    // Check if 7TV or BTTV is active to adjust how we look for messages
-    const is7TVActive = document.querySelector('#seventv-extension') !== null;
-    const isBTTVActive = document.querySelector('[class*="bttv-"]') !== null;
-    
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // Check if this is a chat message with expanded selectors
+            // Check if this is a chat message using multiple extension-aware selectors
             const isMessage = node.classList && (
               node.classList.contains('chat-line__message') || 
               node.classList.contains('chat-line') ||
-              node.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"]') ||
-              (is7TVActive && (
-                node.classList.contains('seventv-chat-message') ||
-                node.hasAttribute('data-seventv-message') ||
-                node.querySelector('[class*="seventv-chat"]') ||
-                node.querySelector('[data-seventv-message]')
-              )) ||
-              (isBTTVActive && (
-                node.classList.contains('bttv-message') ||
-                node.querySelector('[class*="bttv-message"]')
-              ))
+              node.classList.contains('seventv-chat-message') ||
+              node.classList.contains('bttv-message') ||
+              node.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"], .seventv-chat-user, .seventv-chat-author, .chat-line__username')
             );
             
             if (isMessage) {
               processNewMessage(node);
-            } else if (isFallbackObserver || is7TVActive || isBTTVActive) {
-              // For fallback observers or when extensions are active, look deeper for chat messages
+            } else if (isFallbackObserver) {
+              // For fallback observers, look deeper for chat messages from any extension
               const messages = node.querySelectorAll(
-                // Standard Twitch selectors
                 '[data-a-target="chat-line-message"], .chat-line__message, .chat-line, ' +
-                // 7TV selectors
-                '[data-seventv-message], .seventv-chat-message, [class*="seventv-chat-message"], ' +
-                // BTTV selectors
-                '[class*="bttv-message"], .bttv-message'
+                '.seventv-chat-message, .seventv-chat-line, ' +
+                '.bttv-message, .bttv-chat-line'
               );
               messages.forEach(message => {
                 processNewMessage(message);
@@ -463,22 +458,22 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
   // Start observing the chat container
   chatObserver.observe(chatContainer, {
     childList: true,
-    subtree: true // Always use subtree to catch deeply nested changes with extensions
+    subtree: true // Always use subtree: true to catch changes made by other extensions
   });
   
-  // Also process any existing messages with expanded selectors for extensions
+  // Also process any existing messages, supporting multiple extensions' formats
   const existingMessages = chatContainer.querySelectorAll(
-    // Standard Twitch selectors
     '[data-a-target="chat-line-message"], .chat-line__message, .chat-line, ' +
-    // 7TV selectors
-    '[data-seventv-message], .seventv-chat-message, [class*="seventv-chat-message"], ' +
-    // BTTV selectors
-    '[class*="bttv-message"], .bttv-message'
+    '.seventv-chat-message, .seventv-chat-line, ' +
+    '.bttv-message, .bttv-chat-line'
   );
     
   for (const message of existingMessages) {
     processNewMessage(message);
   }
+  
+  // Log successful observer setup
+  console.log(`🛡️ EloWard chat observer setup completed. Chat messages will be processed for rank display.`);
 }
 
 function processNewMessage(messageNode) {
@@ -497,14 +492,15 @@ function processNewMessage(messageNode) {
   // This relies on the cached subscription status from sessionStorage
   if (!isChannelSubscribed) return;
   
-  // Find username element - expand selectors to include 7TV and BTTV elements
-  let usernameElement = 
-    messageNode.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"]') ||
-    messageNode.querySelector('[class*="seventv-"] [data-a-target="chat-message-username"]') ||
-    messageNode.querySelector('[class*="seventv-"] .chat-author__display-name') ||
-    messageNode.querySelector('[class*="bttv-"] [data-a-target="chat-message-username"]') ||
-    messageNode.querySelector('[class*="bttv-"] .chat-author__display-name') ||
-    messageNode.querySelector('[class*="username"]'); // More generic fallback
+  // Find username element - support various extensions' DOM structures
+  let usernameElement = messageNode.querySelector(
+    // Standard Twitch selectors
+    '.chat-author__display-name, [data-a-target="chat-message-username"], ' +
+    // 7TV specific selectors
+    '.seventv-chat-user, .seventv-chat-author, ' +
+    // BetterTTV specific selectors
+    '.chat-line__username'
+  );
   
   if (!usernameElement) return;
   
@@ -578,11 +574,15 @@ function addBadgeToMessage(usernameElement, rankData) {
   if (!rankData?.tier) return;
   
   // Check if badge already exists in this message
-  const messageContainer = usernameElement.closest('.chat-line__message') || usernameElement.closest('.chat-line');
+  const messageContainer = usernameElement.closest('.chat-line__message') || usernameElement.closest('.chat-line') || usernameElement.closest('.seventv-chat-message');
   if (messageContainer?.querySelector('.eloward-rank-badge')) return;
   
   // Get the parent container that holds the username
-  const usernameContainer = usernameElement.closest('.chat-line__username-container');
+  // Support multiple extension structures - standard Twitch, 7TV, and BetterTTV
+  const usernameContainer = usernameElement.closest('.chat-line__username-container') || 
+                            usernameElement.closest('.seventv-chat-badges-container')?.parentElement || 
+                            usernameElement.closest('[data-test-selector="chat-message-username"]')?.parentElement;
+                            
   if (usernameContainer?.querySelector('.eloward-rank-badge')) return;
   
   // Create badge container
@@ -632,67 +632,58 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.dataset.lp = lpValue;
   badgeContainer.dataset.username = rankData.summonerName || '';
   
-  // Insert the badge in the appropriate location
+  // Insert the badge in the appropriate location based on the extension environment
   if (usernameContainer) {
-    // Find the username span that follows the badges
-    const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
+    // Check if 7TV is active by looking for its elements
+    const isSevenTV = !!document.querySelector('#seventv-extension') || 
+                     !!usernameContainer.closest('.seventv-chat-message') || 
+                     !!usernameElement.closest('.seventv-chat-badges-container');
+                     
+    // Check if BetterTTV is active
+    const isBTTV = !!document.querySelector('.bttv-tooltip') || 
+                  !!usernameContainer.querySelector('.bttv-badge');
     
-    // Check if 7TV or BTTV have modified the DOM structure
-    const is7TVActive = document.querySelector('#seventv-extension') !== null;
-    const isBTTVActive = document.querySelector('[class*="bttv-"]') !== null;
-    
-    if (usernameSpan) {
-      // Standard Twitch or compatible structure
-      usernameContainer.insertBefore(badgeContainer, usernameSpan);
+    if (isSevenTV) {
+      // 7TV-specific insertion logic
+      const badgesContainer = usernameContainer.querySelector('.seventv-chat-badges-container') || 
+                             usernameContainer.querySelector('.chat-badge-container');
+      
+      if (badgesContainer) {
+        // Insert at the end of badges container
+        badgesContainer.appendChild(badgeContainer);
+      } else {
+        // Find the username span and insert before it (typical 7TV structure)
+        const usernameSpan = usernameContainer.querySelector('[data-a-target="chat-message-username"], .chat-author__display-name');
+        if (usernameSpan) {
+          usernameContainer.insertBefore(badgeContainer, usernameSpan);
+        } else {
+          // Last resort fallback - insert at the end
+          usernameContainer.appendChild(badgeContainer);
+        }
+      }
+    } else if (isBTTV) {
+      // BetterTTV-specific insertion logic
+      const badgesContainer = usernameContainer.querySelector('.chat-badge-container, .bttv-badges-container');
+      
+      if (badgesContainer) {
+        // Add to the end of badges container
+        badgesContainer.appendChild(badgeContainer);
+      } else {
+        // Find the username span that follows the badges 
+        const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
+        // Insert the badge right before the username span (making it the rightmost badge)
+        usernameContainer.insertBefore(badgeContainer, usernameSpan);
+      }
     } else {
-      // Check for 7TV-specific structure
-      if (is7TVActive) {
-        // Try different 7TV selectors for the username container
-        const seventvBadgeContainer = usernameElement.closest('[data-seventv-container]') || 
-                                      usernameElement.closest('.seventv-chat-message-username') ||
-                                      usernameElement.closest('[class*="seventv-"]') ||
-                                      usernameElement.closest('[class*="7tv-"]');
-                                      
-        if (seventvBadgeContainer) {
-          // For 7TV, we need to insert it in the right location
-          // Find if there's a badges container or create one
-          let badgesContainer = seventvBadgeContainer.querySelector('.chat-line__message--badges') || 
-                                seventvBadgeContainer.querySelector('[class*="badges"]');
-                                
-          if (badgesContainer) {
-            // Add to existing badges container
-            badgesContainer.appendChild(badgeContainer);
-          } else {
-            // Insert before the username element
-            seventvBadgeContainer.insertBefore(badgeContainer, usernameElement);
-          }
-          return;
-        }
-      }
+      // Standard Twitch insertion
+      // Find the username span that follows the badges
+      const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
       
-      // Check for BTTV-specific structure
-      if (isBTTVActive) {
-        const bttvContainer = usernameElement.closest('[class*="bttv-"]') || 
-                              messageContainer?.querySelector('[class*="bttv-message-container"]');
-                              
-        if (bttvContainer) {
-          // Try to find the badge container in BTTV
-          const bttvBadgeContainer = bttvContainer.querySelector('[class*="bttv-badges"]') || 
-                                     bttvContainer.querySelector('.chat-badge-container');
-                                    
-          if (bttvBadgeContainer) {
-            // Add to BTTV badge container
-            bttvBadgeContainer.appendChild(badgeContainer);
-            return;
-          }
-        }
-      }
-      
-      // Universal fallback - insert as sibling before username
-      usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
+      // Insert the badge right before the username span (making it the rightmost badge)
+      usernameContainer.insertBefore(badgeContainer, usernameSpan);
     }
   } else {
-    // Final fallback - insert before the username element directly
+    // Fallback
     usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
   }
 }
@@ -786,54 +777,23 @@ function showTooltip(event) {
     
     // Set the tooltip content
     tooltipElement.textContent = tooltipText;
-    
-    // Add summoner name if available
-    if (username) {
-      tooltipElement.textContent += ` (${username})`;
-    }
   }
   
   // First reset the tooltip state and make it invisible
   tooltipElement.style.visibility = 'hidden';
-  tooltipElement.style.transform = 'translate(-50%, -100%) scale(0.9)';
+  tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
   tooltipElement.style.opacity = '0';
   tooltipElement.classList.remove('visible');
-  
-  // Clear any existing 7TV or BTTV tooltips that might interfere
-  // This helps prevent tooltip collisions between extensions
-  const existingTooltips = document.querySelectorAll('[class*="seventv-tooltip"], [class*="bttv-tooltip"], [class*="twitch-tooltip"]');
-  existingTooltips.forEach(tooltip => {
-    if (tooltip !== tooltipElement) {
-      tooltip.style.display = 'none';
-      tooltip.style.visibility = 'hidden';
-      tooltip.style.opacity = '0';
-    }
-  });
   
   // Position after a delay
   tooltipShowTimeout = setTimeout(() => {
     // Get badge position
     const rect = badge.getBoundingClientRect();
+    const badgeCenter = rect.left + (rect.width / 2);
     
-    // Check if we're inside a 7TV or BTTV context to adjust positioning
-    const is7TVContext = badge.closest('[data-seventv-container], [class*="seventv-"]') !== null;
-    const isBTTVContext = badge.closest('[class*="bttv-"]') !== null;
-    
-    let badgeCenter = rect.left + (rect.width / 2);
-    let badgeTop = rect.top;
-    
-    // Apply specific positioning adjustments for known extension contexts
-    if (is7TVContext) {
-      // 7TV-specific tooltip positioning
-      badgeTop -= 2; // Slight vertical adjustment for 7TV
-    } else if (isBTTVContext) {
-      // BTTV-specific tooltip positioning
-      badgeTop -= 2; // Slight vertical adjustment for BTTV
-    }
-    
-    // Position tooltip above the badge
+    // Position tooltip above the badge with an offset for left-shifted arrow
     tooltipElement.style.left = `${badgeCenter}px`;
-    tooltipElement.style.top = `${badgeTop - 5}px`;
+    tooltipElement.style.top = `${rect.top - 5}px`;
     
     // Make the element visible but with 0 opacity first
     tooltipElement.style.visibility = 'visible';
@@ -843,7 +803,7 @@ function showTooltip(event) {
     
     // Then add the visible class to trigger the transition
     tooltipElement.classList.add('visible');
-  }, 150); // Reduced delay for better responsiveness
+  }, 300);
 }
 
 function hideTooltip() {
@@ -856,121 +816,131 @@ function hideTooltip() {
   if (tooltipElement && tooltipElement.classList.contains('visible')) {
     // Animate out - fade and scale down slightly
     tooltipElement.style.opacity = '0';
-    tooltipElement.style.transform = 'translate(-50%, -100%) scale(0.9)';
+    tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
     
-    // After the animation completes, hide the tooltip completely
+    // Remove visible class after animation completes
     setTimeout(() => {
-      tooltipElement.style.visibility = 'hidden';
       tooltipElement.classList.remove('visible');
-    }, 200);
+    }, 100);
   }
 }
 
 // Add the CSS needed for badges
 function addExtensionStyles() {
-  // Check if our styles have already been added
-  if (document.getElementById('eloward-styles')) return;
+  if (document.querySelector('#eloward-extension-styles')) return;
   
-  // Create a style element
   const styleElement = document.createElement('style');
-  styleElement.id = 'eloward-styles';
-  
-  // Add our custom styles
+  styleElement.id = 'eloward-extension-styles';
   styleElement.textContent = `
     .eloward-rank-badge {
-      display: inline-flex;
-      vertical-align: middle;
-      margin: 0 2px;
-      cursor: pointer;
-      position: relative;
+      display: inline-flex !important;
+      justify-content: center !important;
+      align-items: center !important;
+      margin-left: 0px !important;
+      margin-right: 0px !important;
+      vertical-align: middle !important;
+      cursor: pointer !important;
+      transform: none !important;
+      transition: none !important;
+      width: 24px !important;
+      height: 24px !important;
+      box-sizing: content-box !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      -webkit-touch-callout: none !important;
     }
-
+    
+    .eloward-rank-badge:hover {
+      transform: none !important;
+      scale: 1 !important;
+    }
+    
     .eloward-rank-badge img {
-      transition: transform 0.1s ease-in-out;
+      display: block !important;
+      width: 24px !important;
+      height: 24px !important;
+      transform: none !important;
+      transition: none !important;
+      object-fit: contain !important;
     }
-
-    .eloward-rank-badge:hover img {
-      transform: scale(1.2);
+    
+    .eloward-rank-badge img:hover {
+      transform: none !important;
+      scale: 1 !important;
     }
-
+    
+    /* Chat bubble style tooltip - base styles */
     .eloward-tooltip {
-      position: absolute;
-      background-color: rgba(0, 0, 0, 0.9);
-      color: white;
-      padding: 6px 10px;
-      border-radius: 4px;
-      font-size: 12px;
-      z-index: 10000;
-      pointer-events: none;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-      opacity: 0;
-      transform: translate(-50%, -100%) scale(0.9);
-      transition: opacity 0.2s ease, transform 0.2s ease;
-      font-family: 'Inter', 'Roobert', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      text-transform: none;
+      position: absolute !important;
+      z-index: 99999 !important;
+      pointer-events: none !important;
+      transform: translate(-12%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+      white-space: nowrap !important;
+      padding: 4px 6px !important; /* Reduced padding */
+      border-radius: 6px !important; /* Increased corner roundness (was 3px) */
+      line-height: 1.2 !important;
+      opacity: 0 !important;
+      transition: opacity 0.07s ease-in-out, transform 0.07s ease-in-out !important;
+      text-align: center !important;
+      border: none !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
+      margin-top: -2px !important; /* Offset to position it nicely */
+      will-change: transform, opacity !important; /* Hint for browser to optimize animations */
     }
-
-    .eloward-tooltip.visible {
-      opacity: 1;
-      transform: translate(-50%, -100%) scale(1);
+    
+    /* Dark theme Twitch - show light tooltip */
+    html.tw-root--theme-dark .eloward-tooltip,
+    .tw-root--theme-dark .eloward-tooltip,
+    body[data-a-theme="dark"] .eloward-tooltip,
+    body.dark-theme .eloward-tooltip {
+      color: #0e0e10 !important;
+      background-color: white !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
     }
-
+    
+    html.tw-root--theme-dark .eloward-tooltip::after,
+    .tw-root--theme-dark .eloward-tooltip::after,
+    body[data-a-theme="dark"] .eloward-tooltip::after,
+    body.dark-theme .eloward-tooltip::after {
+      border-color: white transparent transparent transparent !important;
+    }
+    
+    /* Light theme Twitch - show dark tooltip */
+    html.tw-root--theme-light .eloward-tooltip,
+    .tw-root--theme-light .eloward-tooltip,
+    body[data-a-theme="light"] .eloward-tooltip,
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip {
+      color: #efeff1 !important;
+      background-color: #0e0e10 !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
+    }
+    
+    html.tw-root--theme-light .eloward-tooltip::after,
+    .tw-root--theme-light .eloward-tooltip::after,
+    body[data-a-theme="light"] .eloward-tooltip::after,
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after {
+      border-color: #0e0e10 transparent transparent transparent !important;
+    }
+    
+    /* Chat bubble arrow at bottom pointing toward badge, offset to the left */
     .eloward-tooltip::after {
-      content: '';
-      position: absolute;
-      bottom: -4px;
-      left: 50%;
-      margin-left: -4px;
-      width: 0;
-      height: 0;
-      border-top: 4px solid rgba(0, 0, 0, 0.9);
-      border-right: 4px solid transparent;
-      border-left: 4px solid transparent;
+      content: "" !important;
+      position: absolute !important;
+      bottom: -4px !important; /* Position at bottom */
+      left: 10% !important; /* Stem position: adjust this % to move stem left/right */
+      margin-left: -4px !important;
+      border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
+      border-style: solid !important;
     }
     
-    /* 7TV Compatibility Styles */
-    [data-seventv-container] .eloward-rank-badge,
-    [class*="seventv-"] .eloward-rank-badge {
-      margin: 0 2px;
-      display: inline-flex;
-      align-items: center;
-    }
-    
-    /* Make sure our badges are properly sized in 7TV context */
-    [data-seventv-container] .eloward-rank-badge img,
-    [class*="seventv-"] .eloward-rank-badge img {
-      width: 18px;
-      height: 18px;
-      vertical-align: middle;
-    }
-    
-    /* BetterTTV Compatibility Styles */
-    [class*="bttv-"] .eloward-rank-badge {
-      margin: 0 2px;
-      display: inline-flex;
-      align-items: center;
-    }
-    
-    /* Handle chat line structure for both extensions */
-    .seventv-chat-message .eloward-rank-badge,
-    .bttv-message .eloward-rank-badge {
-      margin-right: 4px;
-      margin-left: 0;
-    }
-    
-    /* Add any specific fixes for message badges area */
-    [class*="badges"] .eloward-rank-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    
-    /* Ensure proper stacking with other extensions */
-    .eloward-rank-badge {
-      z-index: 1;
+    .eloward-tooltip.visible {
+      opacity: 1 !important;
+      transform: translate(-12%, -100%) scale(1) !important; /* Bubble position when visible: must match transform above */
     }
   `;
   
-  // Add the style element to the document head
   document.head.appendChild(styleElement);
 } 
