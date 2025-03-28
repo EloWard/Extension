@@ -671,10 +671,14 @@ function showTooltip(event) {
   // Format the tooltip text using same logic as formatRankText
   // Handle unranked case
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
-    tooltipElement.textContent = 'UNRANKED';
+    tooltipElement.textContent = 'Unranked';
   } else {
     // For ranked players
-    let tooltipText = rankTier;
+    // Properly capitalize the rank tier (only first letter uppercase)
+    let formattedTier = rankTier.toLowerCase();
+    formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
+    
+    let tooltipText = formattedTier;
     
     // Add division for ranks that have divisions
     if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
