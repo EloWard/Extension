@@ -638,24 +638,31 @@ document.addEventListener('DOMContentLoaded', () => {
               
               // Update UI with user data
               twitchConnectionStatus.textContent = userData.display_name || userData.login;
+              
+              // Only mark as connected if we have valid user data
+              twitchConnectionStatus.classList.add('connected');
+              twitchConnectionStatus.classList.remove('connecting');
+              connectTwitchBtn.textContent = 'Disconnect';
             } else {
-              // No user data but auth succeeded, show generic success
-              twitchConnectionStatus.textContent = 'Connected';
-              console.log('No user data available, showing generic connected state');
+              // Authentication succeeded but no user data
+              throw new Error('Failed to retrieve user info');
             }
           } catch (userInfoError) {
-            // User info failed but authentication succeeded
-            console.warn('Could not get user info, but authentication succeeded:', userInfoError);
-            twitchConnectionStatus.textContent = 'Connected';
+            // User info failed - show error and reset connection state
+            console.warn('Could not get user info:', userInfoError);
+            twitchConnectionStatus.textContent = 'Authentication Failed';
+            twitchConnectionStatus.classList.add('error');
+            twitchConnectionStatus.classList.remove('connecting');
+            connectTwitchBtn.textContent = 'Connect';
             
-            // Ensure the connected state is still set in persistent storage
-            await PersistentStorage.updateConnectedState('twitch', true);
+            // Keep the auth token but don't show as connected
+            setTimeout(() => {
+              if (twitchConnectionStatus.classList.contains('error')) {
+                twitchConnectionStatus.textContent = 'Not Connected';
+                twitchConnectionStatus.classList.remove('error');
+              }
+            }, 5000);
           }
-          
-          // Update UI state regardless of user info success
-          twitchConnectionStatus.classList.add('connected');
-          twitchConnectionStatus.classList.remove('connecting');
-          connectTwitchBtn.textContent = 'Disconnect';
           
         } catch (authError) {
           console.error('Twitch authentication error:', authError);
