@@ -28,9 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
   dropdownArrow.textContent = '▼';
-  
-  // Initially hide the refresh button until Riot account is connected
-  refreshRankBtn.style.display = 'none';
 
   // Check authentication status
   checkAuthStatus();
@@ -162,9 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.remove('error', 'connecting');
         connectRiotBtn.textContent = 'Disconnect';
         connectRiotBtn.disabled = false;
-        
-        // Show the refresh button when account is connected
-        refreshRankBtn.style.display = 'block';
+        refreshRankBtn.classList.remove('hidden'); // Show refresh button
         
         // Adapt the new userData format to match what the UI expects
         let rankInfo = null;
@@ -234,10 +229,6 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       console.log('Checking auth status...');
       
-      // Initially disable Riot connect button until Twitch status is confirmed
-      connectRiotBtn.disabled = true;
-      regionSelect.disabled = true; // Also disable region select initially
-      
       // First check persistent storage for connected states
       const persistentConnectedState = await PersistentStorage.getConnectedState();
       console.log('Persistent connected state:', persistentConnectedState);
@@ -255,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
             soloQueueRank: storedRiotData.rankInfo
           };
           updateUserInterface(userData);
+          refreshRankBtn.classList.remove('hidden'); // Show refresh button
           
           // Get the connected region from storage and update the selector
           chrome.storage.local.get(['connected_region'], (result) => {
@@ -271,6 +263,9 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
         connectRiotBtn.textContent = 'Connect';
         connectRiotBtn.disabled = false;
+        currentRank.textContent = 'Unknown';
+        rankBadgePreview.style.backgroundImage = 'none';
+        refreshRankBtn.classList.add('hidden'); // Hide refresh button
         
         // Reset rank display and show unranked graphic
         currentRank.textContent = 'Unranked';
@@ -311,10 +306,6 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.classList.remove('connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Disconnect';
           
-          // Enable Riot connect button and region select as Twitch is connected
-          connectRiotBtn.disabled = false;
-          regionSelect.disabled = false;
-          
           // Update persistent storage with latest data if available
           try {
             if (userData) {
@@ -328,9 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Connect';
-          // Keep Riot connect button and region select disabled
-          connectRiotBtn.disabled = true;
-          regionSelect.disabled = true;
         }
       } catch (twitchError) {
         console.error('Error checking Twitch auth status:', twitchError);
@@ -339,9 +327,6 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Connect';
-          // Keep Riot connect button and region select disabled
-          connectRiotBtn.disabled = true;
-          regionSelect.disabled = true;
         }
       }
       
@@ -355,19 +340,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function showNotConnectedUI() {
     // Reset Riot connection UI
     riotConnectionStatus.textContent = 'Not Connected';
-    riotConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+    riotConnectionStatus.classList.remove('connected', 'error', 'connecting');
     connectRiotBtn.textContent = 'Connect';
-    connectRiotBtn.disabled = true; // Ensure Riot is disabled if Twitch isn't connected
-    regionSelect.disabled = true; // Ensure region select is disabled too
-    
-    // Hide the refresh button when account is not connected
-    refreshRankBtn.style.display = 'none';
+    connectRiotBtn.disabled = false;
+    currentRank.textContent = 'Unknown';
+    rankBadgePreview.style.backgroundImage = 'none';
+    refreshRankBtn.classList.add('hidden'); // Hide refresh button
     
     // Reset Twitch connection UI
     twitchConnectionStatus.textContent = 'Not Connected';
     twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
     connectTwitchBtn.textContent = 'Connect';
-    connectTwitchBtn.disabled = false;
     connectTwitchBtn.disabled = false;
     
     // Reset rank display and show unranked graphic
@@ -409,9 +392,6 @@ document.addEventListener('DOMContentLoaded', () => {
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('connected', 'disconnecting');
             connectRiotBtn.textContent = 'Connect';
-            
-            // Hide the refresh button when disconnected
-            refreshRankBtn.style.display = 'none';
             
             // Show unranked rank display
             currentRank.textContent = 'Unranked';
@@ -587,11 +567,6 @@ document.addEventListener('DOMContentLoaded', () => {
       rankText += ` ${rankData.division}`;
     }
     
-    // Append LP information if available, matching the tooltip format
-    if (rankData.leaguePoints !== undefined && rankData.leaguePoints !== null) {
-      rankText += ` - ${rankData.leaguePoints} LP`;
-    }
-    
     currentRank.textContent = rankText;
     
     // Determine the rank badge image path
@@ -646,12 +621,6 @@ document.addEventListener('DOMContentLoaded', () => {
         twitchConnectionStatus.textContent = 'Not Connected';
         connectTwitchBtn.textContent = 'Connect';
         twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting');
-        
-        // Disable Riot button and region select on Twitch disconnect
-        connectRiotBtn.disabled = true;
-        regionSelect.disabled = true;
-        // Optionally reset Riot UI fully if desired
-        // showNotConnectedUI(); // Calling this would reset both Twitch and Riot UI elements
       } else {
         // Connect flow
         twitchConnectionStatus.textContent = 'Connecting...';
@@ -682,24 +651,17 @@ document.addEventListener('DOMContentLoaded', () => {
               twitchConnectionStatus.classList.add('connected');
               twitchConnectionStatus.classList.remove('connecting');
               connectTwitchBtn.textContent = 'Disconnect';
-              
-              // Enable Riot connect button and region select now that Twitch is connected
-              connectRiotBtn.disabled = false; 
-              regionSelect.disabled = false;
             } else {
               // Authentication succeeded but no user data
               throw new Error('Failed to retrieve user info');
             }
           } catch (userInfoError) {
+            // User info failed - show error and reset connection state
             console.warn('Could not get user info:', userInfoError);
             twitchConnectionStatus.textContent = 'Authentication Failed';
             twitchConnectionStatus.classList.add('error');
             twitchConnectionStatus.classList.remove('connecting');
             connectTwitchBtn.textContent = 'Connect';
-            
-            // Keep Riot button and region select disabled if user info fails
-            connectRiotBtn.disabled = true;
-            regionSelect.disabled = true;
             
             // Keep the auth token but don't show as connected
             setTimeout(() => {
@@ -719,9 +681,6 @@ document.addEventListener('DOMContentLoaded', () => {
           
           // Ensure the connected state is properly reset in case of error
           await PersistentStorage.updateConnectedState('twitch', false);
-          // Keep Riot button and region select disabled on Twitch auth error
-          connectRiotBtn.disabled = true;
-          regionSelect.disabled = true;
           
           // Reset error after 5 seconds
           setTimeout(() => {
@@ -740,9 +699,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Ensure connected state is reset on error
       await PersistentStorage.updateConnectedState('twitch', false);
-      // Keep Riot button and region select disabled on general Twitch error
-      connectRiotBtn.disabled = true;
-      regionSelect.disabled = true;
     } finally {
       connectTwitchBtn.disabled = false;
     }

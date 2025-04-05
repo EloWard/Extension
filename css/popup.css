@@ -511,4 +511,9 @@ footer {
 .tip-card h2, 
 .dropdown-arrow {
   color: var(--primary); /* Ensure both use the same gold color */
+}
+
+/* Utility Classes */
+.hidden {
+  display: none !important;
 } 
