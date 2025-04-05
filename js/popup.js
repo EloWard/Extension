@@ -397,6 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentRank.textContent = 'Unranked';
             rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
             rankBadgePreview.style.transform = 'translateY(-3px)';
+            refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
             
             console.log('Successfully disconnected from Riot account');
           } catch (error) {
