@@ -13,6 +13,10 @@ let cachedUserMap = {}; // Cache for mapping Twitch usernames to Riot IDs
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
 
+// Add cache for viewer ranks fetched in content script
+let viewerRankCacheContentScript = {};
+const VIEWER_RANK_CACHE_TTL_CS = 5 * 60 * 1000; // 5 minutes cache in content script
+
 // Add a small delay before showing the tooltip to avoid flickering
 let tooltipShowTimeout = null;
 
@@ -477,333 +481,205 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
 }
 
 function processNewMessage(messageNode) {
-  // Skip if we've already processed this message or too many processed
-  if (processedMessages.has(messageNode)) return;
-  
-  // Memory management - clear if too many messages
-  if (processedMessages.size > 1000) {
-    processedMessages.clear();
+  // Ensure we have the messageNode and it hasn't been processed
+  if (!messageNode || processedMessages.has(messageNode)) {
+    return;
   }
+
+  // Find the username element within the message
+  // Use a selector that captures usernames in chat lines and potentially other areas
+  const usernameElement = messageNode.querySelector('[data-a-user], .chat-author__display-name');
   
-  // Mark this message as processed
+  if (usernameElement && usernameElement.textContent) {
+    const username = usernameElement.textContent.trim().toLowerCase();
+
+    // Check subscription status (async, continues in background)
+    // We don't need to wait for this to add the badge
+    if (channelName) {
+      checkChannelSubscription(channelName);
+    }
+
+    // --- NEW LOGIC: Fetch rank for ANY user --- 
+    getAndDisplayRank(usernameElement, username, 'lol'); // Currently hardcoded to 'lol'
+    // --- END NEW LOGIC ---
+  }
+
+  // Mark this message node as processed
   processedMessages.add(messageNode);
-  
-  // Only process messages if the channel is subscribed
-  // This relies on the cached subscription status from sessionStorage
-  if (!isChannelSubscribed) return;
-  
-  // Find username element - support various extensions' DOM structures
-  let usernameElement = messageNode.querySelector(
-    // Standard Twitch selectors
-    '.chat-author__display-name, [data-a-target="chat-message-username"], ' +
-    // 7TV specific selectors
-    '.seventv-chat-user, .seventv-chat-author, ' +
-    // BetterTTV specific selectors
-    '.chat-line__username'
-  );
-  
-  if (!usernameElement) return;
-  
-  // Get lowercase username for case-insensitive matching
-  const username = usernameElement.textContent.trim().toLowerCase();
-  
-  // Check if this user has a cached rank
-  const cachedUsername = Object.keys(cachedUserMap).find(key => 
-    key.toLowerCase() === username
-  );
-  
-  if (cachedUsername) {
-    addBadgeToMessage(usernameElement, cachedUserMap[cachedUsername]);
-    return;
-  }
-  
-  // Check if this is the current user
-  if (currentUser && username === currentUser.toLowerCase()) {
-    // Get user's actual rank from Riot data
-    chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
-      const riotData = data.eloward_persistent_riot_user_data;
-      
-      if (riotData?.rankInfo) {
-        // Convert the Riot rank format to our format
-        const userRankData = {
-          tier: riotData.rankInfo.tier,
-          division: riotData.rankInfo.rank, // In Riot API, "rank" is the division
-          leaguePoints: riotData.rankInfo.leaguePoints,
-          summonerName: riotData.gameName
-        };
-        
-        // Add to cache and display
-        cachedUserMap[username] = userRankData;
-        addBadgeToMessage(usernameElement, userRankData);
-      }
-    });
-    return;
-  }
-  
-  // For other users, fetch rank from background script
-  fetchRankFromBackground(username, usernameElement);
 }
 
-function fetchRankFromBackground(username, usernameElement) {
-  try {
-    chrome.runtime.sendMessage(
-      { 
-        action: 'fetch_rank_for_username',
-        username: username,
-        channel: channelName
-      },
-      response => {
-        if (chrome.runtime.lastError) return;
-        
-        if (response?.success && response.rankData) {
-          // Cache the response
-          cachedUserMap[username] = response.rankData;
-          
-          // Add the badge to the message
-          addBadgeToMessage(usernameElement, response.rankData);
-        }
-      }
-    );
-  } catch (error) {
-    console.error("Error sending rank lookup message:", error);
-  }
-}
+// --- NEW FUNCTION: Get rank from background/cache and display --- 
+async function getAndDisplayRank(usernameElement, username, game) {
+  const cacheKey = `${game}:${username}`;
+  const now = Date.now();
 
+  // 1. Check content script cache first
+  if (viewerRankCacheContentScript[cacheKey] && (now - viewerRankCacheContentScript[cacheKey].timestamp < VIEWER_RANK_CACHE_TTL_CS)) {
+    const cachedData = viewerRankCacheContentScript[cacheKey].data;
+    // Only add badge if rank data exists (not null or error)
+    if (cachedData && !cachedData.error) {
+       if (DEBUG_MODE) console.log(`CS Cache hit for ${cacheKey}`);
+       addBadgeToMessage(usernameElement, cachedData); 
+    }
+    return; // Found in cache (or known not to exist/error), exit
+  }
+
+  // 2. If not in content script cache, request from background script
+  if (DEBUG_MODE) console.log(`CS Cache miss for ${cacheKey}. Requesting from background...`);
+  chrome.runtime.sendMessage(
+    { action: 'fetch_viewer_rank', username: username, game: game },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        // Handle potential errors like the background script being unavailable
+        console.error(`Error sending message to background script for ${username}:`, chrome.runtime.lastError.message);
+        // Cache the error temporarily to avoid spamming
+        viewerRankCacheContentScript[cacheKey] = { data: { error: 'Background script error' }, timestamp: now };
+        return;
+      }
+
+      // Cache the response (rank data, null for 404, or error object)
+      viewerRankCacheContentScript[cacheKey] = { data: response, timestamp: now };
+
+      // Check if the response contains valid rank data (not null and no error property)
+      if (response && !response.error) {
+        if (DEBUG_MODE) console.log(`Received rank for ${cacheKey} from background:`, response);
+        addBadgeToMessage(usernameElement, response);
+      } else if (response && response.error) {
+        // Log errors received from the background/API
+        console.warn(`Failed to get rank for ${username}: ${response.error}`, response.details || '');
+      } else {
+        // Response was null (likely a 404 from the API), do nothing visually
+        if (DEBUG_MODE) console.log(`No rank found for ${cacheKey} (received null)`);
+      }
+    }
+  );
+}
+// --- END NEW FUNCTION ---
+
+// Add badge to the specified username element
+// Modify this function to handle the data structure from the viewer API
 function addBadgeToMessage(usernameElement, rankData) {
-  // Skip if no rank data
-  if (!rankData?.tier) return;
-  
-  // Check if badge already exists in this message
-  const messageContainer = usernameElement.closest('.chat-line__message') || usernameElement.closest('.chat-line') || usernameElement.closest('.seventv-chat-message');
-  if (messageContainer?.querySelector('.eloward-rank-badge')) return;
-  
-  // Get the parent container that holds the username
-  // Support multiple extension structures - standard Twitch, 7TV, and BetterTTV
-  const usernameContainer = usernameElement.closest('.chat-line__username-container') || 
-                            usernameElement.closest('.seventv-chat-badges-container')?.parentElement || 
-                            usernameElement.closest('[data-test-selector="chat-message-username"]')?.parentElement;
-                            
-  if (usernameContainer?.querySelector('.eloward-rank-badge')) return;
-  
-  // Create badge container
-  const badgeContainer = document.createElement('div');
-  badgeContainer.className = 'eloward-rank-badge';
-  
-  // Store rank text as a data attribute instead of title to avoid browser tooltip
-  badgeContainer.dataset.rankText = formatRankText(rankData);
-  
-  // Create the rank image
-  const rankImg = document.createElement('img');
-  rankImg.alt = rankData.tier;
-  rankImg.className = 'chat-badge'; // Add Twitch's chat-badge class for better styling
-  rankImg.width = 24;
-  rankImg.height = 24;
-  
-  // Set image source based on rank tier - use 36px images for higher quality
-  try {
-    const tier = rankData.tier.toLowerCase();
-    rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}36.png`);
-  } catch (error) {
-    console.error("Error setting badge image source:", error);
-    // Fallback to 18px if 36px isn't available
-    try {
-      const tier = rankData.tier.toLowerCase();
-      rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}18.png`);
-    } catch (fallbackError) {
-      console.error("Error setting fallback badge image source:", fallbackError);
-      return; // Don't continue if we can't get the image
-    }
+  if (!usernameElement || !rankData || typeof rankData !== 'object' || rankData.error) {
+    // Don't add if element is missing, data is invalid, or it's an error object
+    return;
   }
-  
-  // Add the image to the badge container
-  badgeContainer.appendChild(rankImg);
-  
-  // Setup tooltip functionality
-  badgeContainer.addEventListener('mouseenter', showTooltip);
-  badgeContainer.addEventListener('mouseleave', hideTooltip);
-  
-  // Convert leaguePoints to string to ensure consistent storage
-  const lpValue = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
-                 rankData.leaguePoints.toString() : '';
-  
-  // Store rank data as attributes for tooltip
-  badgeContainer.dataset.rank = rankData.tier;
-  badgeContainer.dataset.division = rankData.division || '';
-  badgeContainer.dataset.lp = lpValue;
-  badgeContainer.dataset.username = rankData.summonerName || '';
-  
-  // Insert the badge in the appropriate location based on the extension environment
-  if (usernameContainer) {
-    // Check if 7TV is active by looking for its elements
-    const isSevenTV = !!document.querySelector('#seventv-extension') || 
-                     !!usernameContainer.closest('.seventv-chat-message') || 
-                     !!usernameElement.closest('.seventv-chat-badges-container');
-                     
-    // Check if BetterTTV is active
-    const isBTTV = !!document.querySelector('.bttv-tooltip') || 
-                  !!usernameContainer.querySelector('.bttv-badge');
-    
-    if (isSevenTV) {
-      // 7TV-specific insertion logic
-      const badgesContainer = usernameContainer.querySelector('.seventv-chat-badges-container') || 
-                             usernameContainer.querySelector('.chat-badge-container');
-      
-      if (badgesContainer) {
-        // Insert at the end of badges container
-        badgesContainer.appendChild(badgeContainer);
-      } else {
-        // Find the username span and insert before it (typical 7TV structure)
-        const usernameSpan = usernameContainer.querySelector('[data-a-target="chat-message-username"], .chat-author__display-name');
-        if (usernameSpan) {
-          usernameContainer.insertBefore(badgeContainer, usernameSpan);
-        } else {
-          // Last resort fallback - insert at the end
-          usernameContainer.appendChild(badgeContainer);
-        }
-      }
-    } else if (isBTTV) {
-      // BetterTTV-specific insertion logic
-      const badgesContainer = usernameContainer.querySelector('.chat-badge-container, .bttv-badges-container');
-      
-      if (badgesContainer) {
-        // Add to the end of badges container
-        badgesContainer.appendChild(badgeContainer);
-      } else {
-        // Find the username span that follows the badges 
-        const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
-        // Insert the badge right before the username span (making it the rightmost badge)
-        usernameContainer.insertBefore(badgeContainer, usernameSpan);
-      }
+
+  // Prevent adding multiple badges to the same element
+  if (usernameElement.parentNode.querySelector('.eloward-rank-badge')) {
+    return;
+  }
+
+  const badge = document.createElement('img');
+  badge.classList.add('chat-badge', 'eloward-rank-badge'); // Use Twitch's class + our own
+  badge.style.marginLeft = '3px'; // Add some spacing
+  badge.style.verticalAlign = 'middle'; // Align with text
+
+  // Determine rank tier and get icon URL (assuming a helper function exists or we create one)
+  const tier = rankData.rank_tier ? rankData.rank_tier.toLowerCase() : 'unranked';
+  badge.src = getRankIconUrl(tier); // Use existing or create getRankIconUrl
+  badge.alt = formatRankText(rankData); // Use rank data for alt text
+
+  // Add tooltip event listeners
+  badge.addEventListener('mouseenter', (event) => showTooltip(event, rankData));
+  badge.addEventListener('mouseleave', hideTooltip);
+
+  // Insert the badge before the username text within its container
+  // Inserting after the existing badges (if any) is usually preferred
+  const parent = usernameElement.parentNode;
+  if (parent) {
+    // Find the last existing badge to insert after, or insert before the username span
+    const lastBadge = parent.querySelector('.chat-badge:last-of-type');
+    if (lastBadge) {
+        lastBadge.insertAdjacentElement('afterend', badge);
     } else {
-      // Standard Twitch insertion
-      // Find the username span that follows the badges
-      const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
-      
-      // Insert the badge right before the username span (making it the rightmost badge)
-      usernameContainer.insertBefore(badgeContainer, usernameSpan);
+        // If no other badges, insert directly before the username text container
+        usernameElement.insertAdjacentElement('beforebegin', badge); 
     }
-  } else {
-    // Fallback
-    usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
+  }
+
+  if (DEBUG_MODE) {
+    const username = usernameElement.textContent.trim().toLowerCase();
+    console.log(`Badge added for ${username}: ${tier}`);
   }
 }
 
+// Create or modify getRankIconUrl based on RankDisplay.txt requirements
+function getRankIconUrl(tier) {
+    tier = tier ? tier.toLowerCase() : 'unranked';
+    // Use a consistent naming scheme, e.g., images/ranks/lol/bronze.png
+    // TODO: Ensure these images exist in the extension package!
+    const basePath = chrome.runtime.getURL('images/ranks/lol'); 
+    
+    // Map tiers to image filenames (ensure these filenames match your assets)
+    const tierImageMap = {
+        'iron': 'iron.png',
+        'bronze': 'bronze.png',
+        'silver': 'silver.png',
+        'gold': 'gold.png',
+        'platinum': 'platinum.png',
+        'emerald': 'emerald.png', // Added Emerald
+        'diamond': 'diamond.png',
+        'master': 'master.png',
+        'grandmaster': 'grandmaster.png',
+        'challenger': 'challenger.png',
+        'unranked': 'unranked.png' // Default/unranked image
+    };
+
+    const imageName = tierImageMap[tier] || 'unranked.png'; // Fallback to unranked
+    return `${basePath}/${imageName}`;
+}
+
+// Modify formatRankText to use the new data structure
 function formatRankText(rankData) {
-  if (!rankData || !rankData.tier || rankData.tier.toUpperCase() === 'UNRANKED') {
-    return 'UNRANKED';
+  if (!rankData || typeof rankData !== 'object') {
+    return 'EloWard Rank: Unknown';
   }
   
-  let rankText = rankData.tier;
+  // Handle cases where rank might not be fully defined (e.g., unranked)
+  const tier = rankData.rank_tier || 'Unranked';
+  const division = rankData.rank_division ? ` ${rankData.rank_division}` : ''; // e.g., " IV"
+  const lp = (rankData.lp !== null && rankData.lp !== undefined) ? ` ${rankData.lp} LP` : ''; // e.g., " 50 LP"
+  const riotId = rankData.riot_id ? ` (${rankData.riot_id})` : ''; // e.g., " (Stealthy#NA1)"
   
-  // Add division for ranks that have divisions (not Master, Grandmaster, Challenger)
-  if (rankData.division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankData.tier.toUpperCase())) {
-    rankText += ' ' + rankData.division;
+  // Capitalize first letter of tier
+  const capitalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase();
+
+  // Construct the rank string
+  if (tier.toLowerCase() === 'unranked') {
+      return `EloWard: Unranked${riotId}`;
+  } else if (['master', 'grandmaster', 'challenger'].includes(tier.toLowerCase())) {
+      // These ranks don't have divisions
+      return `EloWard: ${capitalizedTier}${lp}${riotId}`;
+  } else {
+      return `EloWard: ${capitalizedTier}${division}${lp}${riotId}`;
   }
-  
-  // Add LP for ranked players (not for Unranked)
-  if (rankData.tier.toUpperCase() !== 'UNRANKED' && 
-      rankData.leaguePoints !== undefined && 
-      rankData.leaguePoints !== null) {
-    rankText += ' - ' + rankData.leaguePoints + ' LP';
-  }
-  
-  if (rankData.summonerName) {
-    rankText += ` (${rankData.summonerName})`;
-  }
-  
-  return rankText;
 }
 
-// Tooltip functions
-function showTooltip(event) {
-  // Clear any existing timeout
+// Modify showTooltip to use the new data structure
+function showTooltip(event, rankData) {
+  // Clear any existing timeout to prevent multiple tooltips
   if (tooltipShowTimeout) {
     clearTimeout(tooltipShowTimeout);
+    tooltipShowTimeout = null;
   }
 
-  // Create tooltip element if it doesn't exist globally
+  // Create tooltip if it doesn't exist
   if (!tooltipElement) {
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'eloward-tooltip';
     document.body.appendChild(tooltipElement);
   }
-  
-  // Get rank data from the badge's dataset
-  const badge = event.currentTarget;
-  const rankTier = badge.dataset.rank || 'UNRANKED';
-  const division = badge.dataset.division || '';
-  
-  // Ensure LP is properly formatted
-  let lp = badge.dataset.lp || '';
-  // If LP is a number, make sure it's formatted properly
-  if (lp && !isNaN(Number(lp))) {
-    lp = Number(lp).toString(); // Convert to clean number string
-  }
-  
-  const username = badge.dataset.username || '';
-  
-  // Format the tooltip text using same logic as formatRankText
-  // Handle unranked case
-  if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
-    tooltipElement.textContent = 'Unranked';
-  } else {
-    // For ranked players
-    // Properly capitalize the rank tier (only first letter uppercase)
-    let formattedTier = rankTier.toLowerCase();
-    formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
-    
-    let tooltipText = formattedTier;
-    
-    // Add division for ranks that have divisions
-    if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
-      tooltipText += ' ' + division;
-    }
-    
-    // Always include LP for ranked players
-    if (lp !== undefined && lp !== null && lp !== '') {
-      tooltipText += ' - ' + lp + ' LP';
-    }
-    
-    // Debug logging if enabled
-    if (DEBUG_MODE) {
-      console.debug('Tooltip data:', {
-        rank: rankTier,
-        division: division,
-        lp: lp,
-        username: username,
-        displayText: tooltipText
-      });
-    }
-    
-    // Set the tooltip content
-    tooltipElement.textContent = tooltipText;
-  }
-  
-  // First reset the tooltip state and make it invisible
-  tooltipElement.style.visibility = 'hidden';
-  tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
-  tooltipElement.style.opacity = '0';
-  tooltipElement.classList.remove('visible');
-  
-  // Position after a delay
+
+  // Set content using the updated formatRankText
+  tooltipElement.textContent = formatRankText(rankData);
+
+  // Small delay before showing
   tooltipShowTimeout = setTimeout(() => {
-    // Get badge position
-    const rect = badge.getBoundingClientRect();
-    const badgeCenter = rect.left + (rect.width / 2);
-    
-    // Position tooltip above the badge with an offset for left-shifted arrow
-    tooltipElement.style.left = `${badgeCenter}px`;
-    tooltipElement.style.top = `${rect.top - 5}px`;
-    
-    // Make the element visible but with 0 opacity first
-    tooltipElement.style.visibility = 'visible';
-    
-    // Force a reflow to ensure the browser registers the initial state
-    tooltipElement.offsetHeight;
-    
-    // Then add the visible class to trigger the transition
-    tooltipElement.classList.add('visible');
-  }, 300);
+    const rect = event.target.getBoundingClientRect();
+    tooltipElement.style.left = `${rect.left + window.scrollX}px`;
+    tooltipElement.style.top = `${rect.bottom + window.scrollY + 5}px`; // Position below badge
+    tooltipElement.style.display = 'block';
+  }, 150); // 150ms delay
 }
 
 function hideTooltip() {

@@ -9,6 +9,8 @@ const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; 
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const SUBSCRIPTION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache for subscription status
+const RANK_VIEWER_API_URL = 'https://eloward-viewers-api.unleashai-inquiries.workers.dev'; // Rank viewer API worker
+const VIEWER_RANK_CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache for viewer ranks
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -34,6 +36,7 @@ const PLATFORM_ROUTING = {
 let cachedRankResponses = {};
 let previousSubscriptionStatus = {}; // Only kept for logging status changes
 let subscriptionCache = {}; // Cache for subscription status
+let viewerRankCache = {}; // Cache for ranks fetched from the viewer API
 
 /* Track any open auth windows */
 let authWindows = {};
@@ -246,6 +249,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  // --- NEW: Fetch Rank for Arbitrary User ---
+  if (message.action === 'fetch_viewer_rank') {
+    const { username, game } = message;
+    if (!username || !game) {
+      sendResponse({ error: "Missing username or game" });
+      return false; // No async operation, return false
+    }
+
+    // Use Promise to handle async fetch and response
+    fetchRankFromViewerAPI(username, game)
+      .then(rankData => {
+        sendResponse(rankData); // Send back the fetched data (or null/error object)
+      })
+      .catch(error => {
+        console.error(`Error fetching viewer rank for ${game}/${username}:`, error);
+        // Send back an error object, content script should check for this
+        sendResponse({ error: "Failed to fetch rank", details: error.message });
+      });
+
+    return true; // Indicates that the response is sent asynchronously
+  }
+  // --- END NEW ---
   
   // WINDOW MANAGEMENT
   if (message.type === 'open_auth_window') {
@@ -1903,4 +1929,48 @@ setInterval(() => {
   if (removedCount > 0) {
     console.log(`Removed ${removedCount} inactive subscription cache entries`);
   }
-}, 15 * 60 * 1000); // Check every 15 minutes 
+}, 15 * 60 * 1000); // Check every 15 minutes
+
+// --- NEW: Fetch Rank from Viewer API ---
+async function fetchRankFromViewerAPI(username, game) {
+  const cacheKey = `${game}:${username.toLowerCase()}`;
+  const now = Date.now();
+
+  // Check cache
+  if (viewerRankCache[cacheKey] && (now - viewerRankCache[cacheKey].timestamp < VIEWER_RANK_CACHE_TTL)) {
+    if (DEBUG_MODE) console.log(`Cache hit for viewer rank: ${cacheKey}`);
+    return viewerRankCache[cacheKey].data; // Return cached data (could be rank object or null for 404)
+  }
+
+  if (DEBUG_MODE) console.log(`Cache miss or expired for viewer rank: ${cacheKey}. Fetching...`);
+
+  const apiUrl = `${RANK_VIEWER_API_URL}/api/ranks/${game.toLowerCase()}/${username.toLowerCase()}`;
+
+  try {
+    const response = await fetch(apiUrl, { method: 'GET' });
+
+    if (response.ok) {
+      const rankData = await response.json();
+      if (DEBUG_MODE) console.log(`Successfully fetched rank for ${cacheKey}:`, rankData);
+      // Cache the successful response
+      viewerRankCache[cacheKey] = { data: rankData, timestamp: now };
+      return rankData;
+    } else if (response.status === 404) {
+      if (DEBUG_MODE) console.log(`Rank not found (404) for ${cacheKey}`);
+      // Cache the fact that the user wasn't found to avoid repeated checks
+      viewerRankCache[cacheKey] = { data: null, timestamp: now };
+      return null; // Indicate not found
+    } else {
+      // Handle other errors (e.g., 500 Internal Server Error)
+      const errorText = await response.text();
+      console.error(`API error fetching rank for ${cacheKey}: ${response.status} ${response.statusText}`, errorText);
+      // Don't cache server errors, maybe they are temporary
+      return { error: `API Error ${response.status}`, details: errorText };
+    }
+  } catch (error) {
+    console.error(`Network or fetch error fetching rank for ${cacheKey}:`, error);
+    // Don't cache network errors
+    return { error: "Network error", details: error.message };
+  }
+}
+// --- END NEW --- 
