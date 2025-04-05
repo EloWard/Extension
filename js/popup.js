@@ -28,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
   dropdownArrow.textContent = '▼';
+  
+  // Initially hide the refresh button until Riot account is connected
+  refreshRankBtn.style.display = 'none';
 
   // Check authentication status
   checkAuthStatus();
@@ -159,6 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.remove('error', 'connecting');
         connectRiotBtn.textContent = 'Disconnect';
         connectRiotBtn.disabled = false;
+        
+        // Show the refresh button when account is connected
+        refreshRankBtn.style.display = 'block';
         
         // Adapt the new userData format to match what the UI expects
         let rankInfo = null;
@@ -339,6 +345,9 @@ document.addEventListener('DOMContentLoaded', () => {
     connectRiotBtn.textContent = 'Connect';
     connectRiotBtn.disabled = false;
     
+    // Hide the refresh button when account is not connected
+    refreshRankBtn.style.display = 'none';
+    
     // Reset Twitch connection UI
     twitchConnectionStatus.textContent = 'Not Connected';
     twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
@@ -384,6 +393,9 @@ document.addEventListener('DOMContentLoaded', () => {
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('connected', 'disconnecting');
             connectRiotBtn.textContent = 'Connect';
+            
+            // Hide the refresh button when disconnected
+            refreshRankBtn.style.display = 'none';
             
             // Show unranked rank display
             currentRank.textContent = 'Unranked';
