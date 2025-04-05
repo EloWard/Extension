@@ -580,16 +580,26 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    let rankText = rankData.tier;
-    if (rankData.division && rankData.tier !== 'Master' && 
-        rankData.tier !== 'Grandmaster' && rankData.tier !== 'Challenger') {
+    // Properly capitalize the tier
+    let formattedTier = rankData.tier.toLowerCase();
+    formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
+    
+    let rankText = formattedTier;
+    
+    // Add division for ranks that have divisions (not Master, Grandmaster, Challenger)
+    if (rankData.division && !['Master', 'Grandmaster', 'Challenger'].includes(formattedTier)) {
       rankText += ` ${rankData.division}`;
+    }
+    
+    // Add LP if available
+    if (rankData.leaguePoints !== undefined && rankData.leaguePoints !== null) {
+      rankText += ` - ${rankData.leaguePoints} LP`;
     }
     
     currentRank.textContent = rankText;
     
     // Determine the rank badge image path
-    let rankImageFileName = rankData.tier.toLowerCase();
+    let rankImageFileName = formattedTier;
     
     // Set the rank badge image
     rankBadgePreview.style.backgroundImage = `url('../images/ranks/${rankImageFileName}.png')`;
