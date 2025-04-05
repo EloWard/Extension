@@ -124,7 +124,14 @@ async function initiateTokenExchange(authData, service = 'riot') {
       // Store in persistent storage with indefinite retention
       await PersistentStorage.storeRiotUserData(userData);
       await PersistentStorage.updateConnectedState('riot', true);
-      
+
+      // --- NEW: Send rank data to database ---
+      // Run this asynchronously, don't block the auth flow
+      sendLoLRankToDatabase(userData).catch(err => {
+        console.error("Error sending initial LoL rank to database:", err);
+      });
+      // --- END NEW ---
+
       return userData;
     }
   } catch (error) {
@@ -1739,14 +1746,6 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
   });
 }
 
-function cleanupAuthWindows() {
-  // Implementation of cleanupAuthWindows function
-}
-
-function trackAuthWindow(createdWindow) {
-  // Implementation of trackAuthWindow function
-}
-
 // Add a function to preload and sync all linked accounts
 function preloadLinkedAccounts() {
   console.log('Preloading linked accounts');
@@ -1971,6 +1970,114 @@ async function fetchRankFromViewerAPI(username, game) {
     console.error(`Network or fetch error fetching rank for ${cacheKey}:`, error);
     // Don't cache network errors
     return { error: "Network error", details: error.message };
+  }
+}
+// --- END NEW ---
+
+// --- NEW: Function to send LoL rank data to the database worker ---
+async function sendLoLRankToDatabase(riotUserData) {
+  if (!riotUserData || !riotUserData.puuid || !riotUserData.gameName || !riotUserData.tagLine) {
+    console.warn("Cannot send rank to DB: Missing Riot user data (PUUID, GameName, TagLine).");
+    return;
+  }
+
+  // 1. Get the linked Twitch Username from persistent storage
+  let twitchUsername = null;
+  try {
+    const twitchData = await PersistentStorage.getTwitchUserData(); 
+    if (twitchData && twitchData.login) {
+      twitchUsername = twitchData.login;
+    } else {
+       // Fallback: try reading directly from storage if PersistentStorage method isn't available/doesn't work
+       const storageData = await chrome.storage.local.get(['eloward_persistent_twitch_user_data']);
+       if (storageData.eloward_persistent_twitch_user_data?.login) {
+           twitchUsername = storageData.eloward_persistent_twitch_user_data.login;
+       }
+    }
+  } catch (error) {
+    console.error("Error retrieving Twitch username for DB sync:", error);
+    // Attempt to read directly from storage as a fallback
+     try {
+       const storageData = await chrome.storage.local.get(['eloward_persistent_twitch_user_data']);
+       if (storageData.eloward_persistent_twitch_user_data?.login) {
+           twitchUsername = storageData.eloward_persistent_twitch_user_data.login;
+       } else {
+           console.warn("Cannot send rank to DB: Failed to retrieve Twitch username.");
+           return;
+       }
+     } catch (storageError) {
+        console.error("Error reading Twitch username from storage for DB sync:", storageError);
+        console.warn("Cannot send rank to DB: Failed to retrieve Twitch username.");
+        return;
+     }
+  }
+  
+  if (!twitchUsername) {
+      console.warn("Cannot send rank to DB: Twitch username is missing.");
+      return;
+  }
+
+  // 2. Extract Riot ID (gameName#tagLine)
+  const riotId = `${riotUserData.gameName}#${riotUserData.tagLine}`;
+  const riotPuuid = riotUserData.puuid;
+
+  // 3. Find LoL Solo Queue Rank from userData (assuming it might contain rankInfo)
+  // We might need to fetch it separately if userData doesn't contain it.
+  // For now, let's assume userData.rankInfo exists from RiotAuth.getUserData()
+  let rankTier = 'UNRANKED';
+  let rankDivision = null;
+  let lp = 0;
+  
+  // Check if rankInfo exists and is an array
+  if (riotUserData.rankInfo && Array.isArray(riotUserData.rankInfo)) {
+      const soloQueueRank = riotUserData.rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      if (soloQueueRank) {
+          rankTier = soloQueueRank.tier || 'UNRANKED';
+          rankDivision = soloQueueRank.rank || null; // 'rank' holds the division (I, II, III, IV)
+          lp = soloQueueRank.leaguePoints || 0;
+      }
+  } else {
+      // If rankInfo is not in userData, we might need an explicit fetch here.
+      // For now, we'll assume UNRANKED if not present. 
+      // Consider adding a fetchRankInfo call here if needed in the future.
+      console.warn("Rank info not found directly in userData during DB sync. Assuming UNRANKED.");
+  }
+
+  // 4. Construct the payload
+  const payload = {
+    twitch_username: twitchUsername.toLowerCase(),
+    riot_puuid: riotPuuid,
+    riot_id: riotId, 
+    rank_tier: rankTier.toUpperCase(), // API likely expects uppercase
+    rank_division: rankDivision, // Can be null
+    lp: lp
+  };
+
+  console.log("Sending LoL rank data to database worker:", payload);
+
+  // 5. Make the POST request
+  try {
+    const response = await fetch(`${RANK_VIEWER_API_URL}/api/ranks/lol`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log("Successfully sent LoL rank data to database:", result);
+    } else {
+      const errorText = await response.text();
+      console.error(`Error sending LoL rank data to database: ${response.status} ${response.statusText}`, errorText);
+      // Potentially throw error here if you want the caller (.catch) to know
+      // throw new Error(`API Error ${response.status}: ${errorText}`);
+    }
+  } catch (error) {
+    console.error("Network error sending LoL rank data to database:", error);
+    // Potentially re-throw error
+    // throw error;
   }
 }
 // --- END NEW --- 
