@@ -516,4 +516,11 @@ footer {
 /* Utility Classes */
 .hidden {
   display: none !important;
+}
+
+/* Disabled state for controls */
+button:disabled,
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 } 

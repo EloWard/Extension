@@ -21,6 +21,12 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('TwitchAuth module loaded:', typeof TwitchAuth !== 'undefined');
   console.log('Element check - connect-twitch button exists:', !!connectTwitchBtn);
 
+  // Helper function to disable/enable Riot controls
+  function setRiotControlsDisabled(isDisabled) {
+    connectRiotBtn.disabled = isDisabled;
+    regionSelect.disabled = isDisabled;
+  }
+
   // Initialize persistent storage
   PersistentStorage.init();
   console.log('Persistent storage initialized');
@@ -28,6 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
   dropdownArrow.textContent = '▼';
+
+  // Disable Riot controls initially
+  setRiotControlsDisabled(true);
 
   // Check authentication status
   checkAuthStatus();
@@ -297,6 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
         console.log('Twitch auth status:', isTwitchAuthenticated);
         
+        let isTwitchConnected = false;
         if (isTwitchAuthenticated) {
           // User is authenticated with Twitch, update UI
           const userData = await TwitchAuth.getUserInfo();
@@ -314,12 +324,18 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (error) {
             console.warn('Could not get Twitch user info for storage:', error);
           }
+          isTwitchConnected = true; // Mark as connected based on live check
         } else if (!persistentConnectedState.twitch) {
           // Only update UI if we haven't already displayed data from persistent storage
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Connect';
+          isTwitchConnected = false; // Mark as not connected based on live check failure
         }
+        
+        // Enable/disable Riot controls based on Twitch status
+        setRiotControlsDisabled(!isTwitchConnected);
+        
       } catch (twitchError) {
         console.error('Error checking Twitch auth status:', twitchError);
         if (!persistentConnectedState.twitch) {
@@ -327,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Connect';
+          isTwitchConnected = false; // Mark as not connected based on live check failure
         }
       }
       
@@ -357,6 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentRank.textContent = 'Unranked';
     rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
     rankBadgePreview.style.transform = 'translateY(-3px)';
+    setRiotControlsDisabled(true); // Ensure Riot controls are disabled
   }
 
   async function connectRiotAccount() {
@@ -622,6 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
         twitchConnectionStatus.textContent = 'Not Connected';
         connectTwitchBtn.textContent = 'Connect';
         twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting');
+        setRiotControlsDisabled(true); // Disable Riot controls on Twitch disconnect
       } else {
         // Connect flow
         twitchConnectionStatus.textContent = 'Connecting...';
@@ -652,6 +671,7 @@ document.addEventListener('DOMContentLoaded', () => {
               twitchConnectionStatus.classList.add('connected');
               twitchConnectionStatus.classList.remove('connecting');
               connectTwitchBtn.textContent = 'Disconnect';
+              setRiotControlsDisabled(false); // Enable Riot controls on Twitch connect
             } else {
               // Authentication succeeded but no user data
               throw new Error('Failed to retrieve user info');
@@ -663,6 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
             twitchConnectionStatus.classList.add('error');
             twitchConnectionStatus.classList.remove('connecting');
             connectTwitchBtn.textContent = 'Connect';
+            setRiotControlsDisabled(true); // Ensure Riot controls disabled on error
             
             // Keep the auth token but don't show as connected
             setTimeout(() => {
@@ -679,6 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.classList.add('error');
           twitchConnectionStatus.classList.remove('connecting');
           connectTwitchBtn.textContent = 'Connect';
+          setRiotControlsDisabled(true); // Ensure Riot controls disabled on error
           
           // Ensure the connected state is properly reset in case of error
           await PersistentStorage.updateConnectedState('twitch', false);
@@ -700,6 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Ensure connected state is reset on error
       await PersistentStorage.updateConnectedState('twitch', false);
+      setRiotControlsDisabled(true); // Ensure Riot controls disabled on error
     } finally {
       connectTwitchBtn.disabled = false;
     }
