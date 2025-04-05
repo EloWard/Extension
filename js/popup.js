@@ -587,6 +587,11 @@ document.addEventListener('DOMContentLoaded', () => {
       rankText += ` ${rankData.division}`;
     }
     
+    // Append LP information if available, matching the tooltip format
+    if (rankData.leaguePoints !== undefined && rankData.leaguePoints !== null) {
+      rankText += ` - ${rankData.leaguePoints} LP`;
+    }
+    
     currentRank.textContent = rankText;
     
     // Determine the rank badge image path
