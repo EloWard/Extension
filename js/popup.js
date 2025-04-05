@@ -508,6 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Show a loading state on the button (add a rotating animation class)
       refreshRankBtn.classList.add('refreshing');
+      refreshRankBtn.disabled = true; // Disable button while refreshing
       
       // Get stored account/summoner info first
       const accountInfo = await RiotAuth.getAccountInfo();
@@ -543,6 +544,29 @@ document.addEventListener('DOMContentLoaded', () => {
       
       console.log('Rank information successfully refreshed');
     } catch (error) {
+      // Check if it's the specific re-authentication error
+      if (error.name === "ReAuthenticationRequiredError") {
+        console.log('Re-authentication required, initiating auth flow...');
+        try {
+          // Silently trigger the RSO authentication flow
+          await RiotAuth.authenticate(regionSelect.value);
+          // Optionally: automatically re-call refreshRank after successful auth?
+          // For now, let the user click refresh again after auth completes.
+          console.log('Re-authentication flow initiated. User should try refreshing again after completion.');
+          // Keep the refreshing state until auth completes or user cancels
+          // Do NOT remove refreshing class here, let the finally block handle it only if auth isn't triggered.
+        } catch (authError) {
+          console.error('Error during re-authentication attempt:', authError);
+          // If re-auth fails, stop the spinner and maybe show a generic error
+          refreshRankBtn.classList.remove('refreshing');
+          refreshRankBtn.disabled = false;
+          showAuthError('Re-auth failed');
+        }
+        // Important: Do not fall through to general error handling if re-auth is triggered
+        return; // Exit the catch block
+      }
+      
+      // Handle other errors (e.g., network issues, data not found)
       console.error('Error refreshing rank:', error);
       
       // Show "Unranked" if there's a rank lookup error or no data found for this region
@@ -565,8 +589,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
       }
     } finally {
-      // Remove the loading state
-      refreshRankBtn.classList.remove('refreshing');
+      // The spinner is now primarily handled within the catch block
+      // Only remove here if the try block completed successfully OR
+      // if a non-ReAuthenticationRequiredError occurred and wasn't handled above.
+      // Check if the refreshing class is still present before removing/re-enabling.
+      if (refreshRankBtn.classList.contains('refreshing')) {
+        refreshRankBtn.classList.remove('refreshing');
+        refreshRankBtn.disabled = false;
+      }
     }
   }
 

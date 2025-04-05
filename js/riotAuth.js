@@ -10,6 +10,14 @@ import { PersistentStorage } from './persistentStorage.js';
  * Note: This implementation uses the public client flow which only requires a client ID.
  */
 
+// Custom error for signaling re-authentication need
+class ReAuthenticationRequiredError extends Error {
+  constructor(message = "User re-authentication is required.") {
+    super(message);
+    this.name = "ReAuthenticationRequiredError";
+  }
+}
+
 // Safe storage utilities for Chrome extension
 const safeStorage = {
   getItem: (key) => {
@@ -823,83 +831,67 @@ export const RiotAuth = {
    * @returns {Promise<Object>} - The refreshed token data
    */
   async refreshToken(refreshToken) {
+    console.log('Refreshing access token using refresh token');
+    const storedTokens = await PersistentStorage.getAuthTokens('riot');
+
+    if (!storedTokens || !storedTokens.refresh_token) {
+      console.warn('No refresh token found. Cannot refresh.');
+      // Explicitly clear just in case, although should be clear already
+      await this.clearAuthData();
+      throw new ReAuthenticationRequiredError("No refresh token available.");
+    }
+
     try {
-      console.log('Refreshing access token...');
-      
-      if (!refreshToken) {
-        // Changed from throwing error to returning null with just a warning
-        // This is a normal case when first opening the extension and will be handled by token flow
-        console.warn('No refresh token available - will need to obtain a new one');
-        return null;
-      }
-      
-      // Use the correct token refresh endpoint
-      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`;
-      console.log(`Making token refresh request to: ${requestUrl}`);
-      
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          refresh_token: refreshToken
-        })
-      });
-      
-      if (!response.ok) {
-        // Try to parse error response
-        const errorData = await response.json().catch(() => ({}));
-        
-        // Just log a warning for expected status codes (like 401/404) since we'll handle this anyway
-        if (response.status === 401 || response.status === 404) {
-          console.warn('Token refresh failed with status', response.status, '- will attempt to obtain a new token');
-          return null;
-        }
-        
-        // For unexpected errors, still log as error
-        console.error('Token refresh error:', errorData);
-        throw new Error(`Token refresh failed: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
-      }
-      
-      // Parse the refresh response
-      const refreshData = await response.json();
-      
-      if (!refreshData.access_token) {
-        console.warn('Invalid token refresh response: Missing access token - will attempt to obtain a new token');
-        return null;
-      }
-      
-      console.log('Successfully refreshed access token, expires in', refreshData.expires_in, 'seconds');
-      
-      // Calculate token expiry timestamp
-      const expiresAt = Date.now() + (refreshData.expires_in * 1000);
-      
-      // Update token data with expiry timestamp
-      const tokens = {
-        ...refreshData,
-        expires_at: expiresAt
+      const refreshTokenPayload = {
+        grant_type: 'refresh_token',
+        refresh_token: storedTokens.refresh_token
       };
       
-      // Store the refreshed tokens
-      await this._storeTokens(tokens);
-      
-      return tokens;
-    } catch (error) {
-      // For specific error messages related to refresh tokens being invalid or missing,
-      // log as warning instead of error since these are handleable conditions
-      if (error.message && (
-          error.message.includes('Missing access token') || 
-          error.message.includes('No refresh token') ||
-          error.message.includes('Token refresh failed: 401') || 
-          error.message.includes('Token refresh failed: 404'))) {
-        console.warn('Token refresh issue (non-critical):', error.message);
-        return null;
+      console.log('Refreshing access token...');
+      // Corrected endpoint: Use the standard /token endpoint for refresh
+      const tokenUrl = `${EloWardConfig.riotRSOWorkerUrl}/auth/token`; 
+      console.log('Making token refresh request to:', tokenUrl);
+
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(refreshTokenPayload),
+      });
+
+      if (!response.ok) {
+        // Handle specific errors that indicate re-auth is needed (404, 401, 403 etc.)
+        console.warn(`Token refresh failed with status ${response.status} - User needs to re-authenticate.`);
+        await this.clearAuthData(); // Clear potentially stale/invalid tokens
+        throw new ReAuthenticationRequiredError(`Token refresh failed with status ${response.status}`);
       }
-      
-      // For unexpected errors, still log as error
-      console.error('Error refreshing token:', error);
-      throw new Error(`Failed to refresh access token: ${error.message}`);
+
+      const newTokens = await response.json();
+      console.log('Token refresh successful:', newTokens);
+
+      // Update stored tokens (crucially, update refresh token if a new one is provided)
+      const updatedTokens = {
+        ...storedTokens, // Keep original id_token if not refreshed
+        access_token: newTokens.access_token,
+        expires_at: Date.now() + (newTokens.expires_in * 1000),
+        // Only update refresh token if a new one was returned
+        refresh_token: newTokens.refresh_token || storedTokens.refresh_token
+      };
+
+      await PersistentStorage.setAuthTokens('riot', updatedTokens);
+      console.log('Updated tokens stored after refresh');
+      return updatedTokens; // Return the newly obtained and stored tokens
+
+    } catch (error) {
+      // If the error is already the one we throw, just re-throw it
+      if (error instanceof ReAuthenticationRequiredError) {
+        throw error;
+      }
+      // Otherwise, log the unexpected error and signal re-auth is needed
+      console.error('Unexpected error during token refresh:', error);
+      await this.clearAuthData(); // Clear data as a precaution
+      throw new ReAuthenticationRequiredError("Error during token refresh process.");
     }
   },
   
@@ -1740,5 +1732,7 @@ export const RiotAuth = {
     }
     
     return null;
-  }
+  },
+  
+  // Additional methods and helper functions can be added here
 };
