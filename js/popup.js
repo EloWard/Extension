@@ -542,6 +542,40 @@ document.addEventListener('DOMContentLoaded', () => {
       await PersistentStorage.storeRiotUserData(userData);
       console.log('Updated persistent storage with refreshed rank information');
       
+      // Update rank in the database
+      try {
+        // Get current Twitch username
+        const twitchData = await new Promise(resolve => {
+          chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
+        });
+        
+        const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
+        
+        if (twitchUsername && userData.soloQueueRank) {
+          console.log('Uploading updated rank data to database for:', twitchUsername);
+          
+          // Import RankAPI
+          const { RankAPI } = await import('./rankAPI.js');
+          
+          // Format rank data for upload
+          const rankData = {
+            puuid: userData.puuid,
+            gameName: userData.gameName,
+            tagLine: userData.tagLine,
+            tier: userData.soloQueueRank.tier,
+            rank: userData.soloQueueRank.rank,
+            leaguePoints: userData.soloQueueRank.leaguePoints
+          };
+          
+          // Upload rank to database
+          await RankAPI.uploadRank(twitchUsername, rankData);
+          console.log('Rank data updated in database successfully');
+        }
+      } catch (dbError) {
+        console.error('Error updating rank in database:', dbError);
+        // Don't fail the entire operation if database update fails
+      }
+      
       console.log('Rank information successfully refreshed');
     } catch (error) {
       // Check if it's the specific re-authentication error
