@@ -1554,6 +1554,40 @@ export const RiotAuth = {
       // Store in persistent storage for future use
       await PersistentStorage.storeRiotUserData(userData);
       
+      // ADDED: Upload rank data to the database
+      try {
+        // Get current Twitch username from storage
+        const twitchData = await new Promise(resolve => {
+          chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
+        });
+        
+        const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
+        
+        if (twitchUsername && userData.soloQueueRank) {
+          console.log('Uploading rank data to database for:', twitchUsername);
+          
+          // Import RankAPI dynamically to avoid circular dependencies
+          const { RankAPI } = await import('./rankAPI.js');
+          
+          // Format rank data for upload
+          const rankData = {
+            puuid: userData.puuid,
+            gameName: userData.gameName,
+            tagLine: userData.tagLine,
+            tier: userData.soloQueueRank.tier,
+            rank: userData.soloQueueRank.rank,
+            leaguePoints: userData.soloQueueRank.leaguePoints
+          };
+          
+          // Upload rank to database
+          await RankAPI.uploadRank(twitchUsername, rankData);
+          console.log('Rank data uploaded successfully');
+        }
+      } catch (uploadError) {
+        console.error('Error uploading rank data to database:', uploadError);
+        // Don't fail the entire operation if upload fails
+      }
+      
       return userData;
     } catch (error) {
       console.error('Error getting user data:', error);
