@@ -2,8 +2,8 @@
 // Handles communication with the Cloudflare worker for rank data
 
 export class RankAPI {
-  // Base URL for the worker API
-  static API_BASE_URL = 'https://eloward-workers.eloward.workers.dev/api';
+  // Base URL for the rank worker API from Database.txt
+  static API_BASE_URL = 'https://eloward-viewers-api.unleashai-inquiries.workers.dev/api';
   
   // Local cache of rank data
   static #rankCache = new Map();
@@ -21,18 +21,19 @@ export class RankAPI {
       throw new Error('Missing required data for rank upload');
     }
     
-    // Format the data for the API
+    // Format the data for the API according to lol_ranks.sql schema
     const payload = {
       twitch_username: twitchUsername,
       riot_puuid: rankData.puuid || null,
+      riot_id: rankData.gameName && rankData.tagLine ? `${rankData.gameName}#${rankData.tagLine}` : null,
       rank_tier: rankData.tier || 'UNRANKED',
-      rank_division: rankData.division || null,
+      rank_division: rankData.division || rankData.rank || null,
       lp: rankData.leaguePoints || 0,
-      region: rankData.region || 'NA',
     };
     
     try {
-      const response = await fetch(`${this.API_BASE_URL}/ranks`, {
+      // Use the POST endpoint from Database.txt
+      const response = await fetch(`${this.API_BASE_URL}/ranks/lol`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,10 +51,10 @@ export class RankAPI {
       // Update the cache with the fresh data
       this.#updateCache(twitchUsername.toLowerCase(), {
         twitch_username: twitchUsername.toLowerCase(),
+        riot_id: payload.riot_id,
         rank_tier: payload.rank_tier,
         rank_division: payload.rank_division,
         lp: payload.lp,
-        region: payload.region,
         last_updated: responseData.timestamp,
       });
       
@@ -88,7 +89,8 @@ export class RankAPI {
     // Create a new promise for this request
     const requestPromise = new Promise(async (resolve, reject) => {
       try {
-        const response = await fetch(`${this.API_BASE_URL}/ranks/${username}`);
+        // Use the GET endpoint from Database.txt
+        const response = await fetch(`${this.API_BASE_URL}/ranks/lol/${username}`);
         
         if (!response.ok) {
           // 404 is expected for users without rank data
