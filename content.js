@@ -246,9 +246,6 @@ function initializeExtension() {
     // Reset state when changing channels
     isChannelSubscribed = false;
     observerInitialized = false;
-    
-    // Only log on channel change
-    console.log(`EloWard: Channel changed to ${channelName}`);
   }
   
   // Add extension styles if needed
@@ -311,8 +308,6 @@ function setupUrlChangeObserver() {
     
     // Only reinitialize if the channel actually changed
     if (currentChannel !== channelName) {
-      console.log(`EloWard: URL changed from ${channelName} to ${currentChannel}`);
-      
       // Reset state
       channelName = currentChannel;
       observerInitialized = false;
