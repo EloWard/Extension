@@ -1530,45 +1530,72 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
  * This helps ensure that ranks are up to date even if not explicitly requested
  */
 function syncUserRanks() {
-  chrome.storage.local.get(['linkedAccounts', 'selectedRegion'], (data) => {
+  chrome.storage.local.get(['linkedAccounts', 'selectedRegion', 'eloward_persistent_twitch_user_data', 'twitchUsername'], (data) => {
     const linkedAccounts = data.linkedAccounts || {};
     const selectedRegion = data.selectedRegion || 'na1';
+    const currentTwitchUsername = data.eloward_persistent_twitch_user_data?.login || data.twitchUsername;
     
     // Skip if no linked accounts
     if (Object.keys(linkedAccounts).length === 0) return;
     
     console.log('Syncing user ranks in the background');
     
-    // Update ranks for all linked accounts
-    Object.values(linkedAccounts).forEach(account => {
-      // Skip if updated recently
-      if (account.rankUpdatedAt && (Date.now() - account.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
-        return;
-      }
-      
-      // Fetch fresh rank data
-      if (account.summonerId) {
-        chrome.storage.local.get('riotAuthToken', (data) => {
-          if (!data.riotAuthToken) return;
-          
-          getRankBySummonerId(data.riotAuthToken, account.summonerId, selectedRegion)
-            .then(rankData => {
-              // Update the account with the new rank data
-              account.rankInfo = rankData;
-              account.rankUpdatedAt = Date.now();
-              
-              // Store the updated account
-              chrome.storage.local.get('linkedAccounts', (data) => {
-                const linkedAccounts = data.linkedAccounts || {};
-                linkedAccounts[account.twitchUsername.toLowerCase()] = account;
-                chrome.storage.local.set({ linkedAccounts });
+    // Import RankAPI for database updates
+    import('./js/rankAPI.js').then(({ RankAPI }) => {
+      // Update ranks for all linked accounts
+      Object.values(linkedAccounts).forEach(account => {
+        // Skip if updated recently
+        if (account.rankUpdatedAt && (Date.now() - account.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
+          return;
+        }
+        
+        // Fetch fresh rank data
+        if (account.summonerId) {
+          chrome.storage.local.get('riotAuthToken', (data) => {
+            if (!data.riotAuthToken) return;
+            
+            getRankBySummonerId(data.riotAuthToken, account.summonerId, selectedRegion)
+              .then(rankData => {
+                // Update the account with the new rank data
+                account.rankInfo = rankData;
+                account.rankUpdatedAt = Date.now();
+                
+                // Store the updated account
+                chrome.storage.local.get('linkedAccounts', (data) => {
+                  const linkedAccounts = data.linkedAccounts || {};
+                  linkedAccounts[account.twitchUsername.toLowerCase()] = account;
+                  chrome.storage.local.set({ linkedAccounts });
+                  
+                  // If this is the current user, also update the database
+                  if (currentTwitchUsername && 
+                      account.twitchUsername.toLowerCase() === currentTwitchUsername.toLowerCase() && 
+                      rankData) {
+                    
+                    // Format rank data for upload
+                    const formattedRankData = {
+                      puuid: account.puuid,
+                      gameName: account.gameName,
+                      tagLine: account.tagLine,
+                      tier: rankData.tier || 'UNRANKED',
+                      rank: rankData.rank || null,
+                      leaguePoints: rankData.leaguePoints || 0
+                    };
+                    
+                    // Upload to the database
+                    RankAPI.uploadRank(currentTwitchUsername, formattedRankData)
+                      .then(() => console.log('Rank data successfully updated in database'))
+                      .catch(error => console.error('Error updating rank in database:', error));
+                  }
+                });
+              })
+              .catch(error => {
+                console.error('Error syncing rank:', error);
               });
-            })
-            .catch(error => {
-              console.error('Error syncing rank:', error);
-            });
-        });
-      }
+          });
+        }
+      });
+    }).catch(error => {
+      console.error('Error importing RankAPI:', error);
     });
   });
 }
