@@ -1,6 +1,3 @@
-// DIRECT TEST LOG - This should always appear
-console.log("🛡️ EloWard Extension Active");
-
 // Add a debug flag at the top of the file
 const DEBUG_MODE = false; // Set to true to enable debug logging
 
@@ -272,8 +269,13 @@ function initializeExtension() {
     .then(subscribed => {
       isChannelSubscribed = subscribed;
       
-      if (isChannelSubscribed && !observerInitialized) {
-        initializeObserver();
+      if (isChannelSubscribed) {
+        // Only print the activation message when the channel is subscribed
+        console.log("🛡️ EloWard Extension Active");
+        
+        if (!observerInitialized) {
+          initializeObserver();
+        }
       } else if (!isChannelSubscribed) {
         // Clean up any existing observers
         if (window._eloward_chat_observer) {
