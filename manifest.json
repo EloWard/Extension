@@ -25,6 +25,8 @@
     "*://*.twitch.tv/*",
     "https://eloward-riotrso.unleashai-inquiries.workers.dev/*",
     "https://eloward-twitchrso.unleashai-inquiries.workers.dev/*",
+    "https://eloward-viewers-api.unleashai-inquiries.workers.dev/*",
+    "https://eloward-subscription-api.unleashai-inquiries.workers.dev/*",
     "https://www.eloward.com/*"
   ],
   "content_scripts": [
