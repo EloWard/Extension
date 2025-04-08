@@ -32,6 +32,36 @@ window.addEventListener('popstate', function() {
   initializeExtension();
 });
 
+// Clear rank cache when user closes tab or navigates away from Twitch
+window.addEventListener('beforeunload', function() {
+  clearRankCache();
+});
+
+/**
+ * Clear the rank cache but preserve the current user's rank data
+ * Called when switching streams/channels
+ */
+function clearRankCache() {
+  // Store current user's rank data if available
+  const currentUserRank = currentUser ? cachedUserMap[currentUser.toLowerCase()] : null;
+  
+  // Clear the entire cache
+  cachedUserMap = {};
+  
+  // Restore only the current user's rank data if it exists
+  if (currentUser && currentUserRank) {
+    cachedUserMap[currentUser.toLowerCase()] = currentUserRank;
+  }
+  
+  // Log cache clear event if debug mode is on
+  if (DEBUG_MODE) {
+    console.log(`EloWard: Rank cache cleared (preserved ${currentUser || 'no user'}'s data)`);
+  }
+  
+  // Also clear the processed messages set to prevent memory buildup
+  processedMessages.clear();
+}
+
 // Initialize storage and load user data
 function initializeStorage() {
   chrome.storage.local.get(null, (allData) => {
@@ -246,6 +276,9 @@ function initializeExtension() {
     // Reset state when changing channels
     isChannelSubscribed = false;
     observerInitialized = false;
+    
+    // Clear the rank cache but preserve current user's rank
+    clearRankCache();
   }
   
   // Add extension styles if needed
@@ -312,6 +345,9 @@ function setupUrlChangeObserver() {
       channelName = currentChannel;
       observerInitialized = false;
       isChannelSubscribed = false;
+      
+      // Clear rank cache but preserve current user's rank
+      clearRankCache();
       
       // Remove any existing observers
       if (window._eloward_chat_observer) {
