@@ -41,25 +41,16 @@ window.addEventListener('beforeunload', function() {
 });
 
 /**
- * Clear the rank cache but preserve the current user's rank data
- * Called when switching streams/channels
+ * Clear the rank cache.
+ * Called when switching streams/channels or unloading.
  */
 function clearRankCache() {
-  // Store current user's cache entry (rankData + frequency) if available
-  const currentUserLower = currentUser?.toLowerCase();
-  const currentUserEntry = currentUserLower ? cachedUserMap.get(currentUserLower) : null;
-  
   // Clear the entire cache
   cachedUserMap.clear();
   
-  // Restore only the current user's entry if it exists
-  if (currentUserLower && currentUserEntry) {
-    cachedUserMap.set(currentUserLower, currentUserEntry);
-  }
-  
   // Log cache clear event if debug mode is on
   if (DEBUG_MODE) {
-    console.log(`EloWard: Rank cache cleared (preserved ${currentUser || 'no user'}'s data)`);
+    console.log(`EloWard: Rank cache cleared.`);
   }
   
   // Also clear the processed messages set to prevent memory buildup
@@ -81,17 +72,12 @@ function addToCache(username, rankData) {
 
     // Check if cache exceeds size limit after adding
     if (cachedUserMap.size > MAX_CACHE_SIZE) {
-      // Find the user with the lowest frequency (excluding current user)
+      // Find the user with the lowest frequency
       let lowestFrequency = Infinity;
       let userToEvict = null;
-      const currentUserLower = currentUser?.toLowerCase();
 
+      // Iterate through all entries to find the least frequent
       for (const [key, entry] of cachedUserMap.entries()) {
-        // Skip the current user
-        if (key === currentUserLower) {
-          continue;
-        }
-        
         if (entry.frequency < lowestFrequency) {
           lowestFrequency = entry.frequency;
           userToEvict = key;
@@ -152,29 +138,23 @@ function findCurrentUser(allData) {
   return null;
 }
 
-// Process linked accounts and build rank cache
+// Process linked accounts and build rank cache (for other users)
 function processLinkedAccounts(linkedAccounts) {
+  const currentUserLower = currentUser?.toLowerCase();
   Object.keys(linkedAccounts).forEach(username => {
+    const lowerUsername = username.toLowerCase();
+    // Skip adding the current user to the chat cache
+    if (lowerUsername === currentUserLower) {
+      return; 
+    }
+    
     const account = linkedAccounts[username];
     // Ensure account and rankData exist before trying to add
     if (account && account.rankData) { 
-      const lowerUsername = username.toLowerCase();
       // addToCache will create the {rankData, frequency: 1} structure
       addToCache(lowerUsername, account.rankData); 
     }
   });
-  
-  // Also add entry for current user if not present through case-insensitive search
-  if (currentUser && !cachedUserMap.has(currentUser)) {
-    const foundKey = Object.keys(linkedAccounts).find(
-      key => key.toLowerCase() === currentUser.toLowerCase()
-    );
-    
-    if (foundKey && linkedAccounts[foundKey].rankData) {
-      // addToCache will handle the structure
-      addToCache(currentUser, linkedAccounts[foundKey].rankData);
-    }
-  }
 }
 
 /**
