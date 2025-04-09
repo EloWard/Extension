@@ -554,9 +554,6 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
   for (const message of existingMessages) {
     processNewMessage(message);
   }
-  
-  // Log successful observer setup
-  console.log(`🛡️ EloWard chat observer setup completed. Chat messages will be processed for rank display.`);
 }
 
 function processNewMessage(messageNode) {
