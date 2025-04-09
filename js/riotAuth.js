@@ -729,7 +729,7 @@ export const RiotAuth = {
         // If we have a refresh token, try to use it instead of failing
         if (refreshToken) {
           console.log('Invalid expiry but refresh token available, attempting refresh');
-          const refreshResult = await this.refreshToken(refreshToken);
+          const refreshResult = await this.refreshToken();
           
           // If refresh returns null (no error but no token), return null
           if (refreshResult === null) {
@@ -763,7 +763,7 @@ export const RiotAuth = {
         // Refresh the token
         console.log('Refreshing access token using refresh token');
         try {
-          const refreshResult = await this.refreshToken(refreshToken);
+          const refreshResult = await this.refreshToken();
           
           // If refresh returns null (no error but no token), return null
           if (refreshResult === null) {
@@ -827,28 +827,28 @@ export const RiotAuth = {
   
   /**
    * Refresh the access token using a refresh token
-   * @param {string} refreshToken - The refresh token
-   * @returns {Promise<Object>} - The refreshed token data
+   * @returns {Promise<Object>} - The refreshed token data or null if refresh fails
    */
-  async refreshToken(refreshToken) {
-    console.log('Refreshing access token using refresh token');
-    const storedTokens = await PersistentStorage.getAuthTokens('riot');
+  async refreshToken() {
+    console.log('Attempting to refresh access token');
+    
+    // Retrieve stored tokens directly using the internal helper
+    const storedData = await this._getStoredValue('riotAuth'); 
+    const refreshToken = storedData?.refresh_token; // Get refresh token from stored data
 
-    if (!storedTokens || !storedTokens.refresh_token) {
-      console.warn('No refresh token found. Cannot refresh.');
-      // Explicitly clear just in case, although should be clear already
-      await this.clearAuthData();
-      throw new ReAuthenticationRequiredError("No refresh token available.");
+    if (!refreshToken) {
+      console.warn('No refresh token found in storage. Cannot refresh.');
+      await this.logout(false); // Use logout to clear data consistently
+      throw new ReAuthenticationRequiredError("No refresh token available for refresh.");
     }
 
     try {
       const refreshTokenPayload = {
         grant_type: 'refresh_token',
-        refresh_token: storedTokens.refresh_token
+        refresh_token: refreshToken // Use the retrieved refresh token
       };
       
-      console.log('Refreshing access token...');
-      // Corrected endpoint: Use the standard /token endpoint for refresh
+      console.log('Refreshing access token via worker...');
       const tokenUrl = `${EloWardConfig.riotRSOWorkerUrl}/auth/token`; 
       console.log('Making token refresh request to:', tokenUrl);
 
@@ -861,37 +861,46 @@ export const RiotAuth = {
       });
 
       if (!response.ok) {
-        // Handle specific errors that indicate re-auth is needed (404, 401, 403 etc.)
-        console.warn(`Token refresh failed with status ${response.status} - User needs to re-authenticate.`);
-        await this.clearAuthData(); // Clear potentially stale/invalid tokens
+        console.warn(`Token refresh failed with status ${response.status}. User needs to re-authenticate.`);
+        await this.logout(false); // Clear potentially stale/invalid tokens
         throw new ReAuthenticationRequiredError(`Token refresh failed with status ${response.status}`);
       }
 
       const newTokens = await response.json();
-      console.log('Token refresh successful:', newTokens);
+      console.log('Token refresh successful, received new tokens:', newTokens);
 
-      // Update stored tokens (crucially, update refresh token if a new one is provided)
-      const updatedTokens = {
-        ...storedTokens, // Keep original id_token if not refreshed
+      // Prepare data for storage, ensuring expiry is calculated
+      const tokensToStore = {
         access_token: newTokens.access_token,
-        expires_at: Date.now() + (newTokens.expires_in * 1000),
-        // Only update refresh token if a new one was returned
-        refresh_token: newTokens.refresh_token || storedTokens.refresh_token
+        id_token: newTokens.id_token || storedData?.id_token, // Keep old id_token if not refreshed
+        refresh_token: newTokens.refresh_token || refreshToken, // IMPORTANT: Use the new refresh token if provided
+        expires_at: Date.now() + (newTokens.expires_in * 1000), // Calculate new expiry time
+        // Add other relevant fields if necessary, e.g., scope, token_type
+        scope: newTokens.scope || storedData?.scope,
+        token_type: newTokens.token_type || storedData?.token_type,
+        // Keep issued_at if it exists and wasn't part of the refresh response
+        issued_at: storedData?.issued_at 
       };
 
-      await PersistentStorage.setAuthTokens('riot', updatedTokens);
-      console.log('Updated tokens stored after refresh');
-      return updatedTokens; // Return the newly obtained and stored tokens
+      // Use the internal _storeTokens method to update storage
+      await this._storeTokens(tokensToStore); 
+      console.log('Updated tokens stored after refresh using _storeTokens');
+      
+      // Return only the necessary parts (like access token) or the whole new object as needed
+      // Returning the full stored object might be useful for consistency elsewhere
+      return tokensToStore; 
 
     } catch (error) {
-      // If the error is already the one we throw, just re-throw it
+      console.error('Error during token refresh:', error);
+      // If it's our specific re-auth error, re-throw it
       if (error instanceof ReAuthenticationRequiredError) {
         throw error;
       }
-      // Otherwise, log the unexpected error and signal re-auth is needed
-      console.error('Unexpected error during token refresh:', error);
-      await this.clearAuthData(); // Clear data as a precaution
-      throw new ReAuthenticationRequiredError("Error during token refresh process.");
+      // For other errors, log and return null or throw a generic error
+      // Depending on desired behavior, returning null might allow fallback logic
+      // Throwing ensures the failure is propagated
+      await this.logout(false); // Clear data on unexpected errors too
+      throw new Error(`Unexpected error during token refresh: ${error.message}`); // Throw a generic error for unexpected issues
     }
   },
   
