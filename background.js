@@ -442,23 +442,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Handle rank fetch requests from content script
   if (message.action === 'fetch_rank_for_username') {
-    const username = message.username;
-    const channel = message.channel;
+    const username = message.username.toLowerCase();
+    const channel = message.channel.toLowerCase();
     
     // Only log occasionally to reduce console spam - reduced to 1% of requests
     if (Math.random() < 0.01) { // Only log ~1% of requests
       console.log(`Rank request: ${username} in ${channel}`);
     }
     
-    // Ensure username is always lowercase for consistency
-    const normalizedUsername = username.toLowerCase();
-    const normalizedChannel = channel.toLowerCase();
-    
     // Check if we have a cached response
-    if (cachedRankResponses && cachedRankResponses[normalizedUsername]) {
+    if (cachedRankResponses && cachedRankResponses[username]) {
       sendResponse({
         success: true,
-        rankData: cachedRankResponses[normalizedUsername],
+        rankData: cachedRankResponses[username],
         source: 'cache'
       });
       return true; // Keep the message channel open for async response
@@ -468,7 +464,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // This helps avoid making subscription API calls for every username
     const checkSubscription = () => {
       // Never skip cache for rank-related subscription checks
-      return checkStreamerSubscription(normalizedChannel, false);
+      return checkStreamerSubscription(channel, false);
     };
     
     checkSubscription()
@@ -491,14 +487,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const linkedAccounts = data.linkedAccounts || {};
           
           // Check if we have this Twitch username mapped to a Riot ID
-          if (linkedAccounts[normalizedUsername]) {
-            const linkedAccount = linkedAccounts[normalizedUsername];
+          if (linkedAccounts[username]) {
+            const linkedAccount = linkedAccounts[username];
             
             // Get rank for the linked account
             fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
               // Cache the response
               if (!cachedRankResponses) cachedRankResponses = {};
-              cachedRankResponses[normalizedUsername] = rankData;
+              cachedRankResponses[username] = rankData;
               
               sendResponse({
                 success: true,
@@ -508,7 +504,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }).catch(error => {
               // Only log occasional errors to reduce spam
               if (Math.random() < 0.1) {
-                console.error(`Error fetching rank for ${normalizedUsername}:`, error);
+                console.error(`Error fetching rank for ${username}:`, error);
               }
               sendResponse({
                 success: false,
@@ -518,7 +514,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } else {
             // Only log no-linked-account messages occasionally to reduce spam
             if (Math.random() < 0.01) {
-              console.log(`No linked account: ${normalizedUsername}`);
+              console.log(`No linked account: ${username}`);
             }
             
             // No linked account found, return not found response
@@ -530,7 +526,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error(`Error checking subscription for ${normalizedChannel}:`, error);
+        console.error(`Error checking subscription for ${channel}:`, error);
         sendResponse({
           success: false,
           error: 'Error checking channel subscription'
