@@ -468,7 +468,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // This helps avoid making subscription API calls for every username
     const checkSubscription = () => {
       // Never skip cache for rank-related subscription checks
-      return checkStreamerSubscription(channel, false);
+      return checkStreamerSubscription(normalizedChannel, false);
     };
     
     checkSubscription()
@@ -530,7 +530,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error(`Error checking subscription for ${channel}:`, error);
+        console.error(`Error checking subscription for ${normalizedChannel}:`, error);
         sendResponse({
           success: false,
           error: 'Error checking channel subscription'
@@ -817,7 +817,7 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     
     // Only log the result for explicit checks
     if (skipCache) {
-      console.log(`Subscription API result for ${channelName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+      console.log(`Subscription API result for ${normalizedName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
     }
     
     // Store in cache
@@ -829,7 +829,7 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     
     // Only log status changes (important diagnostic information)
     if (previousSubscriptionStatus[normalizedName] !== isSubscribed) {
-      console.log(`Subscription status CHANGED for ${channelName}: ${isSubscribed ? 'Active' : 'Inactive'}`);
+      console.log(`Subscription status CHANGED for ${normalizedName}: ${isSubscribed ? 'Active' : 'Inactive'}`);
     }
     previousSubscriptionStatus[normalizedName] = isSubscribed;
     
@@ -838,8 +838,8 @@ function checkStreamerSubscription(channelName, skipCache = false) {
   .catch(error => {
     // Only log errors for explicit checks
     if (skipCache) {
-      console.error(`Error checking subscription for ${channelName}:`, error);
-      console.log(`Error in subscription check, defaulting ${channelName} to not subscribed`);
+      console.error(`Error checking subscription for ${normalizedName}:`, error);
+      console.log(`Error in subscription check, defaulting ${normalizedName} to not subscribed`);
     }
     return false;
   });
@@ -1393,43 +1393,45 @@ function getUserLinkedAccount(twitchUsername) {
       
       // If the current user is viewing their own account
       chrome.storage.local.get(['twitchUsername', 'riotAccountInfo'], currentUserData => {
-        if (currentUserData.twitchUsername && 
-            currentUserData.twitchUsername.toLowerCase() === normalizedTwitchUsername &&
-            currentUserData.riotAccountInfo) {
+        if (currentUserData.twitchUsername) {
+          const currentNormalizedUsername = currentUserData.twitchUsername.toLowerCase();
           
-          // Add the current user to the linkedAccounts cache if not already there
-          if (!linkedAccounts[normalizedTwitchUsername]) {
-            linkedAccounts[normalizedTwitchUsername] = {
-              ...currentUserData.riotAccountInfo,
-              twitchUsername: currentUserData.twitchUsername,
-              normalizedTwitchUsername: normalizedTwitchUsername,
-              linkedAt: Date.now(),
-              lastUpdated: Date.now()
-            };
-            
-            chrome.storage.local.set({ linkedAccounts });
-          }
-          
-          resolve(currentUserData.riotAccountInfo);
-        } else {
-          // No case-sensitive match, try a case-insensitive scan of all accounts
-          const keys = Object.keys(linkedAccounts);
-          for (const key of keys) {
-            const account = linkedAccounts[key];
-            // Check all possible variations of the username
-            if (account.twitchUsername && 
-                (account.twitchUsername.toLowerCase() === normalizedTwitchUsername ||
-                 (account.normalizedTwitchUsername && 
-                  account.normalizedTwitchUsername === normalizedTwitchUsername))) {
+          if (currentNormalizedUsername === normalizedTwitchUsername && currentUserData.riotAccountInfo) {
+            // Add the current user to the linkedAccounts cache if not already there
+            if (!linkedAccounts[normalizedTwitchUsername]) {
+              linkedAccounts[normalizedTwitchUsername] = {
+                ...currentUserData.riotAccountInfo,
+                twitchUsername: currentUserData.twitchUsername,
+                normalizedTwitchUsername: normalizedTwitchUsername,
+                linkedAt: Date.now(),
+                lastUpdated: Date.now()
+              };
               
-              resolve(account);
-              return;
+              chrome.storage.local.set({ linkedAccounts });
             }
+            
+            resolve(currentUserData.riotAccountInfo);
+            return;
           }
-          
-          // No linked account found after trying all methods
-          resolve(null);
         }
+        
+        // No case-sensitive match, try a case-insensitive scan of all accounts
+        const keys = Object.keys(linkedAccounts);
+        for (const key of keys) {
+          const account = linkedAccounts[key];
+          // Check all possible variations of the username
+          if (account.twitchUsername && 
+              (account.twitchUsername.toLowerCase() === normalizedTwitchUsername ||
+               (account.normalizedTwitchUsername && 
+                account.normalizedTwitchUsername === normalizedTwitchUsername))) {
+            
+            resolve(account);
+            return;
+          }
+        }
+        
+        // No linked account found after trying all methods
+        resolve(null);
       });
     });
   });
@@ -1520,7 +1522,7 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
     };
     
     chrome.storage.local.set({ linkedAccounts }, () => {
-      console.log(`EloWard: Added/updated linked account for ${twitchUsername} (normalized: ${normalizedTwitchUsername})`);
+      console.log(`EloWard: Added/updated linked account for ${twitchUsername}`);
     });
   });
 }
@@ -1904,9 +1906,9 @@ setInterval(() => {
 function recordCacheAccess(channelName) {
   if (!channelName) return;
   
-  const normalizedName = channelName.toLowerCase();
-  if (subscriptionCache[normalizedName]) {
-    subscriptionCache[normalizedName].lastAccessed = Date.now();
+  // Assume channelName is already normalized (lowercase)
+  if (subscriptionCache[channelName]) {
+    subscriptionCache[channelName].lastAccessed = Date.now();
   }
 }
 
