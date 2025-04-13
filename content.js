@@ -6,12 +6,8 @@ let isChannelSubscribed = false;
 let channelName = '';
 let processedMessages = new Set();
 let observerInitialized = false;
-let cachedUserMap = new Map(); // Use Map for LRU cache
 let tooltipElement = null; // Global tooltip element
 let currentUser = null; // Current user's Twitch username
-
-// Define cache size limit
-const MAX_CACHE_SIZE = 500;
 
 // Add a small delay before showing the tooltip to avoid flickering
 let tooltipShowTimeout = null;
@@ -37,6 +33,7 @@ window.addEventListener('popstate', function() {
 
 // Clear rank cache when user closes tab or navigates away from Twitch
 window.addEventListener('beforeunload', function() {
+  console.log('👋 UserRankCache: Cleared on page unload/navigation');
   clearRankCache();
 });
 
@@ -45,67 +42,16 @@ window.addEventListener('beforeunload', function() {
  * Called when switching streams/channels
  */
 function clearRankCache() {
-  // Store current user's cache entry (rankData + frequency) if available
-  const currentUserLower = currentUser?.toLowerCase();
-  const currentUserEntry = currentUserLower ? cachedUserMap.get(currentUserLower) : null;
-  
-  // Clear the entire cache
-  cachedUserMap.clear();
-  
-  // Restore only the current user's entry if it exists
-  if (currentUserLower && currentUserEntry) {
-    cachedUserMap.set(currentUserLower, currentUserEntry);
-  }
-  
-  // Log cache clear event if debug mode is on
-  if (DEBUG_MODE) {
-    console.log(`EloWard: Rank cache cleared (preserved ${currentUser || 'no user'}'s data)`);
-  }
+  // Ask background script to clear the cache
+  chrome.runtime.sendMessage({
+    action: 'clear_rank_cache'
+  });
   
   // Also clear the processed messages set to prevent memory buildup
   processedMessages.clear();
-}
-
-// Helper function to add to the LFU cache
-function addToCache(username, rankData) {
-  let cacheEntry = cachedUserMap.get(username);
-
-  if (cacheEntry) {
-    // User exists, update rank data and increment frequency
-    cacheEntry.rankData = rankData;
-    cacheEntry.frequency = (cacheEntry.frequency || 0) + 1;
-  } else {
-    // New user, add with frequency 1
-    cacheEntry = { rankData: rankData, frequency: 1 };
-    cachedUserMap.set(username, cacheEntry);
-
-    // Check if cache exceeds size limit after adding
-    if (cachedUserMap.size > MAX_CACHE_SIZE) {
-      // Find the user with the lowest frequency (excluding current user)
-      let lowestFrequency = Infinity;
-      let userToEvict = null;
-      const currentUserLower = currentUser?.toLowerCase();
-
-      for (const [key, entry] of cachedUserMap.entries()) {
-        // Skip the current user
-        if (key === currentUserLower) {
-          continue;
-        }
-        
-        if (entry.frequency < lowestFrequency) {
-          lowestFrequency = entry.frequency;
-          userToEvict = key;
-        }
-      }
-
-      // Evict the least frequent user if found
-      if (userToEvict) {
-        cachedUserMap.delete(userToEvict);
-        if (DEBUG_MODE) {
-          console.log(`EloWard: Cache full. Evicted LFU user: ${userToEvict} (freq: ${lowestFrequency})`);
-        }
-      }
-    }
+  
+  if (DEBUG_MODE) {
+    console.log(`EloWard: Rank cache cleared (preserved ${currentUser || 'no user'}'s data)`);
   }
 }
 
@@ -115,9 +61,12 @@ function initializeStorage() {
     // Find current user in storage using consolidated logic
     currentUser = findCurrentUser(allData);
     
-    // Process rank data from linked accounts
-    if (allData.linkedAccounts) {
-      processLinkedAccounts(allData.linkedAccounts);
+    // Send current user to background script to protect from cache eviction
+    if (currentUser) {
+      chrome.runtime.sendMessage({
+        action: 'set_current_user',
+        username: currentUser
+      });
     }
   });
 }
@@ -150,31 +99,6 @@ function findCurrentUser(allData) {
   }
   
   return null;
-}
-
-// Process linked accounts and build rank cache
-function processLinkedAccounts(linkedAccounts) {
-  Object.keys(linkedAccounts).forEach(username => {
-    const account = linkedAccounts[username];
-    // Ensure account and rankData exist before trying to add
-    if (account && account.rankData) { 
-      const lowerUsername = username.toLowerCase();
-      // addToCache will create the {rankData, frequency: 1} structure
-      addToCache(lowerUsername, account.rankData); 
-    }
-  });
-  
-  // Also add entry for current user if not present through case-insensitive search
-  if (currentUser && !cachedUserMap.has(currentUser)) {
-    const foundKey = Object.keys(linkedAccounts).find(
-      key => key.toLowerCase() === currentUser.toLowerCase()
-    );
-    
-    if (foundKey && linkedAccounts[foundKey].rankData) {
-      // addToCache will handle the structure
-      addToCache(currentUser, linkedAccounts[foundKey].rankData);
-    }
-  }
 }
 
 /**
@@ -320,6 +244,13 @@ function initializeExtension() {
   // Check if we've changed channels
   const channelChanged = newChannelName !== channelName;
   if (channelChanged) {
+    // Notify background about channel switch
+    chrome.runtime.sendMessage({
+      action: 'channel_switched',
+      oldChannel: channelName,
+      newChannel: newChannelName
+    });
+    
     // Update the channel name
     channelName = newChannelName;
     
@@ -587,16 +518,6 @@ function processNewMessage(messageNode) {
   // Get lowercase username for case-insensitive matching
   const username = usernameElement.textContent.trim().toLowerCase();
   
-  // Check if this user has a cached rank
-  const cacheEntry = cachedUserMap.get(username);
-  
-  if (cacheEntry) {
-    // Cache hit: Increment frequency and display badge
-    cacheEntry.frequency = (cacheEntry.frequency || 0) + 1; 
-    addBadgeToMessage(usernameElement, cacheEntry.rankData);
-    return;
-  }
-  
   // Check if this is the current user
   if (currentUser && username === currentUser.toLowerCase()) {
     // Get user's actual rank from Riot data
@@ -612,15 +533,21 @@ function processNewMessage(messageNode) {
           summonerName: riotData.gameName
         };
         
-        // Add to cache and display
-        addToCache(username, userRankData);
+        // Update the background cache
+        chrome.runtime.sendMessage({
+          action: 'set_rank_data',
+          username: username,
+          rankData: userRankData
+        });
+        
+        // Display the badge immediately
         addBadgeToMessage(usernameElement, userRankData);
       }
     });
     return;
   }
   
-  // For other users, fetch rank from background script (cache miss)
+  // For other users, fetch rank from background script
   fetchRankFromBackground(username, usernameElement);
 }
 
@@ -636,15 +563,8 @@ function fetchRankFromBackground(username, usernameElement) {
         if (chrome.runtime.lastError) return;
         
         if (response?.success && response.rankData) {
-          // Add the newly fetched rank data to cache (frequency will be set to 1 by addToCache)
-          addToCache(username, response.rankData);
-          
           // Add the badge to the message
-          // Retrieve the entry we just added to get the rankData object
-          const addedEntry = cachedUserMap.get(username);
-          if (addedEntry) {
-             addBadgeToMessage(usernameElement, addedEntry.rankData);
-          }
+          addBadgeToMessage(usernameElement, response.rankData);
         }
       }
     );

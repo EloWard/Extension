@@ -9,6 +9,7 @@ const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; 
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const SUBSCRIPTION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache for subscription status
+const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -30,9 +31,116 @@ const PLATFORM_ROUTING = {
   'vn2': { region: 'sea', name: 'Vietnam' }
 };
 
-// Caches to improve performance and reduce API calls
-let cachedRankResponses = {};
-let previousSubscriptionStatus = {}; // Only kept for logging status changes
+// LFU Cache for user ranks - shared implementation with content.js
+class UserRankCache {
+  constructor(maxSize = MAX_RANK_CACHE_SIZE) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.currentUser = null;
+  }
+  
+  // Set current user to protect from eviction
+  setCurrentUser(username) {
+    if (username) {
+      this.currentUser = username.toLowerCase();
+    }
+  }
+  
+  // Get entry from cache
+  get(username) {
+    if (!username) return null;
+    const normalizedUsername = username.toLowerCase();
+    const entry = this.cache.get(normalizedUsername);
+    
+    if (entry) {
+      // Increment frequency on access
+      entry.frequency = (entry.frequency || 0) + 1;
+      return entry.rankData;
+    }
+    
+    return null;
+  }
+  
+  // Add or update entry in cache
+  set(username, rankData) {
+    if (!username || !rankData) return;
+    
+    const normalizedUsername = username.toLowerCase();
+    let entry = this.cache.get(normalizedUsername);
+    
+    if (entry) {
+      // Update existing entry
+      entry.rankData = rankData;
+      entry.frequency = (entry.frequency || 0) + 1;
+    } else {
+      // Add new entry
+      entry = { rankData, frequency: 1 };
+      this.cache.set(normalizedUsername, entry);
+      
+      // Check if we need to evict
+      if (this.cache.size > this.maxSize) {
+        this.evictLFU();
+      }
+    }
+  }
+  
+  // Clear cache but preserve current user's data
+  clear() {
+    // Store current user's entry if exists
+    const currentUserEntry = this.currentUser ? this.cache.get(this.currentUser) : null;
+    const previousSize = this.cache.size;
+    
+    // Clear the cache
+    this.cache.clear();
+    
+    // Restore current user's entry if it exists
+    if (this.currentUser && currentUserEntry) {
+      this.cache.set(this.currentUser, currentUserEntry);
+      console.log(`UserRankCache: Cleared ${previousSize-1} entries, preserved user: ${this.currentUser}`);
+    } else {
+      console.log(`UserRankCache: Cleared all ${previousSize} entries`);
+    }
+  }
+  
+  // Evict the least frequently used entry (not current user)
+  evictLFU() {
+    let lowestFrequency = Infinity;
+    let userToEvict = null;
+    
+    for (const [key, entry] of this.cache.entries()) {
+      // Skip current user
+      if (key === this.currentUser) {
+        continue;
+      }
+      
+      if (entry.frequency < lowestFrequency) {
+        lowestFrequency = entry.frequency;
+        userToEvict = key;
+      }
+    }
+    
+    // Evict if found
+    if (userToEvict) {
+      this.cache.delete(userToEvict);
+    }
+  }
+  
+  // Check if cache has a username
+  has(username) {
+    if (!username) return false;
+    return this.cache.has(username.toLowerCase());
+  }
+  
+  // Get cache size
+  get size() {
+    return this.cache.size;
+  }
+}
+
+// Create the global rank cache instance
+const userRankCache = new UserRankCache();
+
+// Replace previous simple cache
 let subscriptionCache = {}; // Cache for subscription status
 
 /* Track any open auth windows */
@@ -133,7 +241,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Skip logging for frequent message types to reduce console spam
-  const frequentActions = ['fetch_rank_for_username', 'check_streamer_subscription'];
+  const frequentActions = ['fetch_rank_for_username', 'check_streamer_subscription', 'set_rank_data', 'set_current_user'];
   if (!frequentActions.includes(message.action)) {
     if (message?.type) {
       console.log('Message received:', message.type, message?.action || '');
@@ -442,94 +550,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Handle rank fetch requests from content script
   if (message.action === 'fetch_rank_for_username') {
-    const username = message.username.toLowerCase();
-    const channel = message.channel.toLowerCase();
+    const username = message.username;
+    const channelName = message.channel;
     
-    // Only log occasionally to reduce console spam - reduced to 1% of requests
-    if (Math.random() < 0.01) { // Only log ~1% of requests
-      console.log(`Rank request: ${username} in ${channel}`);
+    if (!username) {
+      sendResponse({ success: false, error: 'No username provided' });
+      return true;
     }
     
-    // Check if we have a cached response
-    if (cachedRankResponses && cachedRankResponses[username]) {
+    // Check if the rank is in our cache
+    const cachedRankData = userRankCache.get(username);
+    if (cachedRankData) {
       sendResponse({
         success: true,
-        rankData: cachedRankResponses[username],
+        rankData: cachedRankData,
         source: 'cache'
       });
-      return true; // Keep the message channel open for async response
+      
+      // Check subscription in the background
+      if (channelName) {
+        const checkSubscription = () => {
+          return checkStreamerSubscription(channelName, false);
+        };
+        checkSubscription();
+      }
+      
+      return true;
     }
     
-    // Use cached subscription status if available and valid
-    // This helps avoid making subscription API calls for every username
-    const checkSubscription = () => {
-      // Never skip cache for rank-related subscription checks
-      return checkStreamerSubscription(channel, false);
-    };
+    // Query the database API for the rank
+    const platform = "na1"; // Default platform
     
-    checkSubscription()
-      .then(isSubscribed => {
-        // If the channel is not subscribed, return early
-        if (!isSubscribed) {
-          // No need to log every failed request
-          sendResponse({ 
-            success: false, 
-            error: 'Channel not subscribed' 
-          });
-          return;
+    fetchRankByTwitchUsername(username, platform)
+      .then(rankData => {
+        // Store in cache 
+        if (rankData) {
+          userRankCache.set(username, rankData);
         }
         
-        // Get the user's selected region from storage
-        chrome.storage.local.get(['selectedRegion', 'linkedAccounts'], (data) => {
-          const selectedRegion = data.selectedRegion || 'na1';
-          
-          // Try to find a linked account for this username
-          const linkedAccounts = data.linkedAccounts || {};
-          
-          // Check if we have this Twitch username mapped to a Riot ID
-          if (linkedAccounts[username]) {
-            const linkedAccount = linkedAccounts[username];
-            
-            // Get rank for the linked account
-            fetchRankForLinkedAccount(linkedAccount, selectedRegion).then(rankData => {
-              // Cache the response
-              if (!cachedRankResponses) cachedRankResponses = {};
-              cachedRankResponses[username] = rankData;
-              
-              sendResponse({
-                success: true,
-                rankData: rankData,
-                source: 'linked_account'
-              });
-            }).catch(error => {
-              // Only log occasional errors to reduce spam
-              if (Math.random() < 0.1) {
-                console.error(`Error fetching rank for ${username}:`, error);
-              }
-              sendResponse({
-                success: false,
-                error: error.message
-              });
-            });
-          } else {
-            // Only log no-linked-account messages occasionally to reduce spam
-            if (Math.random() < 0.01) {
-              console.log(`No linked account: ${username}`);
-            }
-            
-            // No linked account found, return not found response
-            sendResponse({
-              success: false,
-              error: 'No linked account found'
-            });
-          }
+        // Send response
+        sendResponse({
+          success: true,
+          rankData: rankData,
+          source: 'api'
         });
       })
       .catch(error => {
-        console.error(`Error checking subscription for ${channel}:`, error);
-        sendResponse({
-          success: false,
-          error: 'Error checking channel subscription'
+        console.error(`Error fetching rank for ${username}:`, error);
+        sendResponse({ 
+          success: false, 
+          error: error.message || 'Error fetching rank data' 
         });
       });
     
@@ -611,6 +681,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  // SET CURRENT USER
+  if (message.action === 'set_current_user') {
+    userRankCache.setCurrentUser(message.username);
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // CLEAR RANK CACHE
+  if (message.action === 'clear_rank_cache') {
+    userRankCache.clear();
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // SET RANK DATA
+  if (message.action === 'set_rank_data') {
+    if (message.username && message.rankData) {
+      userRankCache.set(message.username, message.rankData);
+      sendResponse({ success: true });
+    } else {
+      sendResponse({ success: false, error: 'Missing username or rank data' });
+    }
+    return true;
+  }
+  
+  // CHANNEL SWITCHED
+  if (message.action === 'channel_switched') {
+    handleChannelSwitch(message.oldChannel, message.newChannel);
+    sendResponse({ success: true });
+    return true;
+  }
+  
   // If no handlers matched, send an error response
   sendResponse({ error: 'Unknown action', action: message.action });
   return true;
@@ -677,7 +779,6 @@ chrome.runtime.onInstalled.addListener((details) => {
 chrome.runtime.onStartup.addListener(() => {
   console.log('EloWard extension starting up, clearing subscription data');
   // Reset subscription-related state
-  previousSubscriptionStatus = {};
   subscriptionCache = {};
 });
 
@@ -824,10 +925,14 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     };
     
     // Only log status changes (important diagnostic information)
-    if (previousSubscriptionStatus[normalizedName] !== isSubscribed) {
+    if (subscriptionCache[normalizedName] !== isSubscribed) {
       console.log(`Subscription status CHANGED for ${normalizedName}: ${isSubscribed ? 'Active' : 'Inactive'}`);
     }
-    previousSubscriptionStatus[normalizedName] = isSubscribed;
+    subscriptionCache[normalizedName] = {
+      subscribed: isSubscribed,
+      timestamp: Date.now(),
+      lastAccessed: Date.now()
+    };
     
     return isSubscribed;
   })
@@ -1891,10 +1996,9 @@ setInterval(() => {
 
 // Clear the rank cache periodically
 setInterval(() => {
-  // Reinitialize cache
-  cachedRankResponses = {};
-  // Only log if development logging is enabled
-  console.log('Rank data cache cleared (periodic)');
+  const cacheSize = userRankCache.size;
+  userRankCache.clear();
+  console.log(`⏱️ UserRankCache: Cleared periodically (${cacheSize} entries removed, current user preserved)`);
 }, 30 * 60 * 1000); // Every 30 minutes
 
 // Add access timestamps to subscription cache entries
@@ -1928,4 +2032,17 @@ setInterval(() => {
   if (removedCount > 0) {
     console.log(`Removed ${removedCount} inactive subscription cache entries`);
   }
-}, 15 * 60 * 1000); // Check every 15 minutes 
+}, 15 * 60 * 1000); // Check every 15 minutes
+
+// Function to handle when users switch channels
+function handleChannelSwitch(oldChannel, newChannel) {
+  // Clear the rank cache but preserve current user
+  userRankCache.clear();
+  
+  // Also clear some subscription cache entries
+  if (oldChannel && subscriptionCache[oldChannel.toLowerCase()]) {
+    delete subscriptionCache[oldChannel.toLowerCase()];
+  }
+  
+  console.log(`🔄 UserRankCache: Cleared on channel switch from ${oldChannel || 'unknown'} to ${newChannel} (current user preserved)`);
+} 
