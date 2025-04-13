@@ -114,30 +114,6 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
   // Normalize channel name
   const normalizedChannel = channelName.toLowerCase();
   
-  // Subscription cache is maintained in content script with a 5-minute TTL
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  
-  // Check session storage for cached subscription status
-  const cacheKey = `eloward_subscription_${normalizedChannel}`;
-  const cachedData = sessionStorage.getItem(cacheKey);
-  
-  // If we have cached data and not forcing a check, use it
-  if (!forceCheck && cachedData) {
-    try {
-      const parsedCache = JSON.parse(cachedData);
-      // Check if cache is still valid
-      if (Date.now() - parsedCache.timestamp < CACHE_TTL) {
-        // Only log when changing channels or force checking
-        if (forceCheck) {
-          console.log(`EloWard: Using cached subscription for ${channelName}: ${parsedCache.subscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
-        }
-        return parsedCache.subscribed;
-      }
-    } catch (error) {
-      // Silent error - no need to log parsing errors
-    }
-  }
-  
   try {
     return new Promise((resolve) => {
       // Send message to background script to check subscription
@@ -145,8 +121,8 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
         { 
           action: 'check_streamer_subscription', 
           streamer: channelName,
-          // Only skip background cache on forced checks
-          skipCache: forceCheck 
+          // No need for cache at this level since we only check on channel load/change
+          skipCache: true
         },
         (response) => {
           if (chrome.runtime.lastError) {
@@ -157,18 +133,8 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
           // Extract the boolean value with casting to ensure it's a boolean
           const isSubscribed = response && response.subscribed === true;
           
-          // Log subscription status (only for new checks, not every message)
+          // Log subscription status
           console.log(`EloWard: ${channelName} is ${isSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
-          
-          // Cache the result in session storage
-          try {
-            sessionStorage.setItem(cacheKey, JSON.stringify({
-              subscribed: isSubscribed,
-              timestamp: Date.now()
-            }));
-          } catch (error) {
-            // Silent error - no need to log storage errors
-          }
           
           resolve(isSubscribed);
         }

@@ -8,7 +8,6 @@ const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
-const SUBSCRIPTION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache for subscription status
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 
 // Platform routing values for Riot API
@@ -139,9 +138,6 @@ class UserRankCache {
 
 // Create the global rank cache instance
 const userRankCache = new UserRankCache();
-
-// Replace previous simple cache
-let subscriptionCache = {}; // Cache for subscription status
 
 /* Track any open auth windows */
 let authWindows = {};
@@ -775,13 +771,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   loadConfiguration();
 });
 
-// Also clear subscription cache on browser startup
-chrome.runtime.onStartup.addListener(() => {
-  console.log('EloWard extension starting up, clearing subscription data');
-  // Reset subscription-related state
-  subscriptionCache = {};
-});
-
 /**
  * Clear all stored authentication and user data
  */
@@ -849,10 +838,10 @@ function clearAllStoredData() {
 
 /**
  * Check if a streamer has an active subscription to the extension
- * Uses caching to reduce API calls for the same channel
+ * Makes direct API calls without caching since this is only called when switching channels
  * 
  * @param {string} channelName - Twitch channel name to check
- * @param {boolean} skipCache - Whether to bypass cache and force a fresh check
+ * @param {boolean} skipCache - Parameter kept for backward compatibility but no longer used
  * @returns {Promise<boolean>} - Whether the streamer has an active subscription
  */
 function checkStreamerSubscription(channelName, skipCache = false) {
@@ -872,27 +861,7 @@ function checkStreamerSubscription(channelName, skipCache = false) {
   // Normalize the channel name to lowercase for consistency
   const normalizedName = channelName.toLowerCase();
   
-  // Check if we have a valid cached result
-  if (!skipCache && subscriptionCache[normalizedName]) {
-    const cachedResult = subscriptionCache[normalizedName];
-    // Check if the cache entry is still valid
-    if (Date.now() - cachedResult.timestamp < SUBSCRIPTION_CACHE_TTL) {
-      // Only log if explicitly requested to skip cache (important checks)
-      if (skipCache) {
-        console.log(`Using cached subscription status for ${normalizedName}: ${cachedResult.subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
-      }
-      
-      // Record this access to track active channels
-      recordCacheAccess(normalizedName);
-      
-      return Promise.resolve(cachedResult.subscribed);
-    }
-  }
-  
-  // Only log API calls for explicit checks (not background rank fetches)
-  if (skipCache) {
-    console.log(`Performing subscription check API call for ${normalizedName}`);
-  }
+  console.log(`Performing subscription check API call for ${normalizedName}`);
   
   // Call the subscription API to check subscription status
   return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
@@ -912,36 +881,13 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     // Get the boolean subscription status
     const isSubscribed = !!data.subscribed;
     
-    // Only log the result for explicit checks
-    if (skipCache) {
-      console.log(`Subscription API result for ${normalizedName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
-    }
-    
-    // Store in cache
-    subscriptionCache[normalizedName] = {
-      subscribed: isSubscribed,
-      timestamp: Date.now(),
-      lastAccessed: Date.now()
-    };
-    
-    // Only log status changes (important diagnostic information)
-    if (subscriptionCache[normalizedName] !== isSubscribed) {
-      console.log(`Subscription status CHANGED for ${normalizedName}: ${isSubscribed ? 'Active' : 'Inactive'}`);
-    }
-    subscriptionCache[normalizedName] = {
-      subscribed: isSubscribed,
-      timestamp: Date.now(),
-      lastAccessed: Date.now()
-    };
+    console.log(`Subscription API result for ${normalizedName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
     
     return isSubscribed;
   })
   .catch(error => {
-    // Only log errors for explicit checks
-    if (skipCache) {
-      console.error(`Error checking subscription for ${normalizedName}:`, error);
-      console.log(`Error in subscription check, defaulting ${normalizedName} to not subscribed`);
-    }
+    console.error(`Error checking subscription for ${normalizedName}:`, error);
+    console.log(`Error in subscription check, defaulting ${normalizedName} to not subscribed`);
     return false;
   });
 }
@@ -1269,6 +1215,7 @@ async function signOutUser() {
       'eloward_riot_refresh_token',
       'eloward_riot_token_expiry',
       'eloward_riot_account_info',
+      'eloward_riot_summoner_info',
       'eloward_riot_rank_info'
     ]);
     
@@ -1951,69 +1898,10 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
   }
 }
 
-// Clean up subscription cache entries that haven't been accessed recently
-// This prevents the cache from growing too large with inactive channels
-setInterval(() => {
-  const now = Date.now();
-  const UNUSED_THRESHOLD = 30 * 60 * 1000; // 30 minutes of no access
-  let removedCount = 0;
-  
-  Object.keys(subscriptionCache).forEach(channel => {
-    const entry = subscriptionCache[channel];
-    // If entry hasn't been accessed recently, remove it
-    if (entry.lastAccessed && now - entry.lastAccessed > UNUSED_THRESHOLD) {
-      delete subscriptionCache[channel];
-      removedCount++;
-    }
-  });
-  
-  // Only log if we actually removed something
-  if (removedCount > 0) {
-    console.log(`Removed ${removedCount} inactive subscription cache entries`);
-  }
-}, 15 * 60 * 1000); // Check every 15 minutes
-
-// Add a function to periodically clean the subscription cache
-setInterval(() => {
-  const now = Date.now();
-  let expiredCount = 0;
-  
-  // Check each cache entry
-  Object.keys(subscriptionCache).forEach(channel => {
-    const entry = subscriptionCache[channel];
-    // Remove entries older than the TTL
-    if (now - entry.timestamp > SUBSCRIPTION_CACHE_TTL) {
-      delete subscriptionCache[channel];
-      expiredCount++;
-    }
-  });
-  
-  // Only log if we actually removed something
-  if (expiredCount > 0) {
-    console.log(`Cleaned ${expiredCount} expired subscription cache entries`);
-  }
-}, SUBSCRIPTION_CACHE_TTL); // Run cleanup at the TTL interval
-
-// Add access timestamps to subscription cache entries
-// This helps remove rarely-used channels from the cache
-function recordCacheAccess(channelName) {
-  if (!channelName) return;
-  
-  // Assume channelName is already normalized (lowercase)
-  if (subscriptionCache[channelName]) {
-    subscriptionCache[channelName].lastAccessed = Date.now();
-  }
-}
-
 // Function to handle when users switch channels
 function handleChannelSwitch(oldChannel, newChannel) {
   // Clear the rank cache but preserve current user
   userRankCache.clear();
-  
-  // Also clear some subscription cache entries
-  if (oldChannel && subscriptionCache[oldChannel.toLowerCase()]) {
-    delete subscriptionCache[oldChannel.toLowerCase()];
-  }
   
   console.log(`🔄 UserRankCache: Cleared on channel switch from ${oldChannel || 'unknown'} to ${newChannel} (current user preserved)`);
 } 
