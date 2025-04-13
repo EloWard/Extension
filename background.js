@@ -563,14 +563,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         source: 'cache'
       });
       
-      // Check subscription in the background
-      if (channelName) {
-        const checkSubscription = () => {
-          return checkStreamerSubscription(channelName, false);
-        };
-        checkSubscription();
-      }
-      
       return true;
     }
     
