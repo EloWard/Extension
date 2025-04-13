@@ -1994,13 +1994,6 @@ setInterval(() => {
   }
 }, SUBSCRIPTION_CACHE_TTL); // Run cleanup at the TTL interval
 
-// Clear the rank cache periodically
-setInterval(() => {
-  const cacheSize = userRankCache.size;
-  userRankCache.clear();
-  console.log(`⏱️ UserRankCache: Cleared periodically (${cacheSize} entries removed, current user preserved)`);
-}, 30 * 60 * 1000); // Every 30 minutes
-
 // Add access timestamps to subscription cache entries
 // This helps remove rarely-used channels from the cache
 function recordCacheAccess(channelName) {
@@ -2011,28 +2004,6 @@ function recordCacheAccess(channelName) {
     subscriptionCache[channelName].lastAccessed = Date.now();
   }
 }
-
-// Clean up subscription cache entries that haven't been accessed recently
-// This prevents the cache from growing too large with inactive channels
-setInterval(() => {
-  const now = Date.now();
-  const UNUSED_THRESHOLD = 30 * 60 * 1000; // 30 minutes of no access
-  let removedCount = 0;
-  
-  Object.keys(subscriptionCache).forEach(channel => {
-    const entry = subscriptionCache[channel];
-    // If entry hasn't been accessed recently, remove it
-    if (entry.lastAccessed && now - entry.lastAccessed > UNUSED_THRESHOLD) {
-      delete subscriptionCache[channel];
-      removedCount++;
-    }
-  });
-  
-  // Only log if we actually removed something
-  if (removedCount > 0) {
-    console.log(`Removed ${removedCount} inactive subscription cache entries`);
-  }
-}, 15 * 60 * 1000); // Check every 15 minutes
 
 // Function to handle when users switch channels
 function handleChannelSwitch(oldChannel, newChannel) {
