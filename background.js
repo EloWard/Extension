@@ -554,9 +554,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
+    // Increment db_read counter regardless of cache hit/miss
+    if (channelName) {
+      incrementDbReadCounter(channelName).catch(error => {
+        console.error(`Error incrementing db_read for ${channelName}:`, error);
+      });
+    }
+    
     // Check if the rank is in our cache
     const cachedRankData = userRankCache.get(username);
     if (cachedRankData) {
+      // If we got a successful result from cache, increment successful_lookups
+      if (channelName && cachedRankData?.tier) {
+        incrementSuccessfulLookupCounter(channelName).catch(error => {
+          console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+        });
+      }
+      
       sendResponse({
         success: true,
         rankData: cachedRankData,
@@ -574,6 +588,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Store in cache 
         if (rankData) {
           userRankCache.set(username, rankData);
+          
+          // If we got a successful result from API, increment successful_lookups
+          if (channelName && rankData?.tier) {
+            incrementSuccessfulLookupCounter(channelName).catch(error => {
+              console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+            });
+          }
         }
         
         // Send response
@@ -838,20 +859,17 @@ function clearAllStoredData() {
  */
 function checkStreamerSubscription(channelName, skipCache = false) {
   if (!channelName) {
-    return Promise.resolve(false);
-  }
-  
-  // Skip validation for obviously non-channel paths
-  if (channelName === 'oauth2' || 
-      channelName === 'oauth' || 
-      channelName === 'authorize' || 
-      channelName.includes('auth/callback') ||
-      channelName.includes('auth/redirect')) {
+    console.error('Cannot check subscription: No channel name provided');
     return Promise.resolve(false);
   }
   
   // Normalize the channel name to lowercase for consistency
   const normalizedName = channelName.toLowerCase();
+  
+  // Increment db_read counter for subscription checks too
+  incrementDbReadCounter(normalizedName).catch(error => {
+    console.error(`Error incrementing db_read for ${normalizedName} during subscription check:`, error);
+  });
   
   console.log(`Performing subscription check API call for ${normalizedName}`);
   
@@ -1896,4 +1914,76 @@ function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();
   
   console.log(`🔄 UserRankCache: Cleared on channel switch from ${oldChannel || 'unknown'} to ${newChannel} (current user preserved)`);
+}
+
+/**
+ * Increments the db_read counter for a channel via the subscription API
+ * @param {string} channelName - The channel name to increment the counter for
+ * @returns {Promise<boolean>} - Whether the operation was successful
+ */
+async function incrementDbReadCounter(channelName) {
+  if (!channelName) {
+    console.error('Cannot increment db_read: No channel name provided');
+    return false;
+  }
+  
+  try {
+    const normalizedName = channelName.toLowerCase();
+    
+    // Call the subscription API metrics endpoint
+    const response = await fetch(`${SUBSCRIPTION_API_URL}/metrics/db_read`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ channel_name: normalizedName })
+    });
+    
+    if (!response.ok) {
+      console.error(`Error incrementing db_read for ${normalizedName}: ${response.status}`);
+      return false;
+    }
+    
+    const data = await response.json();
+    return !!data.success;
+  } catch (error) {
+    console.error(`Failed to increment db_read for ${channelName}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Increments the successful_lookups counter for a channel via the subscription API
+ * @param {string} channelName - The channel name to increment the counter for
+ * @returns {Promise<boolean>} - Whether the operation was successful
+ */
+async function incrementSuccessfulLookupCounter(channelName) {
+  if (!channelName) {
+    console.error('Cannot increment successful_lookups: No channel name provided');
+    return false;
+  }
+  
+  try {
+    const normalizedName = channelName.toLowerCase();
+    
+    // Call the subscription API metrics endpoint
+    const response = await fetch(`${SUBSCRIPTION_API_URL}/metrics/successful_lookup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ channel_name: normalizedName })
+    });
+    
+    if (!response.ok) {
+      console.error(`Error incrementing successful_lookups for ${normalizedName}: ${response.status}`);
+      return false;
+    }
+    
+    const data = await response.json();
+    return !!data.success;
+  } catch (error) {
+    console.error(`Failed to increment successful_lookups for ${channelName}:`, error);
+    return false;
+  }
 } 
