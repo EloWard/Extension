@@ -47,7 +47,7 @@ header {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-bottom: 8px;
+  padding: 8px 0;
 }
 
 .logo-container {
