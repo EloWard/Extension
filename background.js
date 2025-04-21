@@ -5,7 +5,7 @@ import { PersistentStorage } from './js/persistentStorage.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const API_BASE_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
+const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
@@ -434,7 +434,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Request auth URL from our backend
     const region = message.region || 'na1';
-    const url = `${API_BASE_URL}/auth/init?state=${state}&region=${region}`;
+    const url = `${RIOT_AUTH_URL}/auth/init?state=${state}&region=${region}`;
     
     fetch(url)
       .then(response => {
@@ -938,7 +938,7 @@ function fetchRankFromBackend(username, platform) {
  */
 function getRankBySummonerId(token, summonerId, platform) {
   return new Promise((resolve, reject) => {
-    fetch(`${API_BASE_URL}/riot/league/entries?platform=${platform}&summonerId=${summonerId}`, {
+    fetch(`${RIOT_AUTH_URL}/riot/league/entries?platform=${platform}&summonerId=${summonerId}`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -1102,7 +1102,7 @@ async function initiateRiotAuth(region) {
     console.log('Initiating Riot authentication for region:', region);
     
     // Request auth URL from our backend proxy
-    const response = await fetch(`${API_BASE_URL}/auth/init?state=${state}&region=${region}`, {
+    const response = await fetch(`${RIOT_AUTH_URL}/auth/init?state=${state}&region=${region}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -1153,7 +1153,7 @@ async function handleAuthCallbackFromRedirect(code, state) {
     console.log('State validated, exchanging code for tokens');
     
     // Exchange code for tokens via our backend proxy
-    const response = await fetch(`${API_BASE_URL}/auth/riot/token`, {
+    const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1304,7 +1304,7 @@ async function getUserProfile() {
 // Fetch account info from Riot API using access token
 async function fetchRiotAccountInfo(accessToken, region) {
   try {
-    const response = await fetch(`${API_BASE_URL}/riot/account/${region}`, {
+    const response = await fetch(`${RIOT_AUTH_URL}/riot/account/${region}`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`
       }
@@ -1332,7 +1332,7 @@ async function fetchRiotAccountInfo(accessToken, region) {
 // Fetch summoner info from Riot API using PUUID
 async function fetchSummonerInfo(puuid, region) {
   try {
-    const response = await fetch(`${API_BASE_URL}/riot/summoner/${region}/${puuid}`);
+    const response = await fetch(`${RIOT_AUTH_URL}/riot/summoner/${region}/${puuid}`);
     
     if (!response.ok) {
       const errorData = await response.json();
@@ -1358,7 +1358,7 @@ async function fetchSummonerInfo(puuid, region) {
 // Fetch rank info from Riot API using summoner ID
 async function fetchRankInfo(summonerId, platform) {
   try {
-    const response = await fetch(`${API_BASE_URL}/riot/league/${platform}/${summonerId}`);
+    const response = await fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${summonerId}`);
     
     if (!response.ok) {
       const errorData = await response.json();
@@ -1385,7 +1385,7 @@ async function refreshAccessToken(refreshToken) {
     }
     
     // Use the Riot RSO proxy to refresh the token
-    const response = await fetch(`${API_BASE_URL}/auth/riot/refresh`, {
+    const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/refresh`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1778,7 +1778,7 @@ async function fetchRankFromDatabase(twitchUsername) {
     const normalizedUsername = twitchUsername.toLowerCase();
     
     // Use the Rank Worker API to fetch the rank directly from database
-    const response = await fetch(`${API_BASE_URL}/api/ranks/lol/${normalizedUsername}`);
+    const response = await fetch(`${RIOT_AUTH_URL}/api/ranks/lol/${normalizedUsername}`);
     
     if (!response.ok) {
       if (response.status === 404) {
