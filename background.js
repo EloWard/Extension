@@ -6,6 +6,7 @@ import { PersistentStorage } from './js/persistentStorage.js';
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
+const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai-inquiries.workers.dev'; // Rank Worker API endpoint
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
@@ -1778,7 +1779,7 @@ async function fetchRankFromDatabase(twitchUsername) {
     const normalizedUsername = twitchUsername.toLowerCase();
     
     // Use the Rank Worker API to fetch the rank directly from database
-    const response = await fetch(`${RIOT_AUTH_URL}/api/ranks/lol/${normalizedUsername}`);
+    const response = await fetch(`${RANK_WORKER_API_URL}/api/ranks/lol/${normalizedUsername}`);
     
     if (!response.ok) {
       if (response.status === 404) {
