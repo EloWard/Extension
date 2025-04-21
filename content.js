@@ -531,6 +531,12 @@ function fetchRankFromBackground(username, usernameElement) {
         if (response?.success && response.rankData) {
           // Add the badge to the message
           addBadgeToMessage(usernameElement, response.rankData);
+          
+          // Log cache hits vs misses for performance monitoring
+          if (DEBUG_MODE) {
+            const source = response.source || 'unknown';
+            console.log(`EloWard: Rank data for ${username} from ${source}`);
+          }
         }
       }
     );

@@ -1766,7 +1766,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
- * Fetch rank data using Twitch username directly
+ * Fetches rank data directly from the database using the Rank Worker API
+ * @param {string} twitchUsername - The Twitch username to look up
+ * @returns {Promise<object|null>} - Resolves with rank data or null if not found
+ */
+async function fetchRankFromDatabase(twitchUsername) {
+  if (!twitchUsername) return null;
+  
+  try {
+    console.log(`Fetching rank from database for Twitch user: ${twitchUsername}`);
+    const normalizedUsername = twitchUsername.toLowerCase();
+    
+    // Use the Rank Worker API to fetch the rank directly from database
+    const response = await fetch(`${API_BASE_URL}/api/ranks/lol/${normalizedUsername}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(`No rank found in database for ${twitchUsername}`);
+        return null;
+      }
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const rankData = await response.json();
+    
+    // Convert API response format to the format expected by the content script
+    return {
+      tier: rankData.rank_tier,
+      division: rankData.rank_division,
+      leaguePoints: rankData.lp,
+      summonerName: rankData.riot_id
+    };
+  } catch (error) {
+    console.error(`Error fetching rank from database for ${twitchUsername}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Fetches rank data for a Twitch username
  * @param {string} twitchUsername - The Twitch username
  * @param {string} platform - The platform code (e.g., 'na1')
  * @returns {Promise} - Resolves with the rank data or null if not found
@@ -1789,12 +1827,34 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
             })
             .catch(error => {
               console.error(`Error getting rank for linked account ${twitchUsername}:`, error);
-              resolve(null);
+              
+              // Try fetching from database as fallback
+              fetchRankFromDatabase(twitchUsername)
+                .then(dbRankData => {
+                  if (dbRankData) {
+                    console.log(`Got rank data from database for ${twitchUsername}`);
+                    resolve(dbRankData);
+                  } else {
+                    resolve(null);
+                  }
+                })
+                .catch(() => resolve(null));
             });
         } else {
-          // No linked account found
-          console.log(`No linked account found for Twitch user ${twitchUsername}`);
-          resolve(null);
+          // No linked account found, try to fetch directly from database
+          console.log(`No linked account found for Twitch user ${twitchUsername}, trying database lookup`);
+          
+          fetchRankFromDatabase(twitchUsername)
+            .then(rankData => {
+              if (rankData) {
+                console.log(`Got rank data from database for ${twitchUsername}`);
+                resolve(rankData);
+              } else {
+                console.log(`No rank data found in database for ${twitchUsername}`);
+                resolve(null);
+              }
+            })
+            .catch(() => resolve(null));
         }
       });
   });
