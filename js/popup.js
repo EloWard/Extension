@@ -1,5 +1,3 @@
-// EloWard Popup Script
-import { EloWardConfig } from './config.js';
 import { RiotAuth } from './riotAuth.js';
 import { TwitchAuth } from './twitchAuth.js';
 import { PersistentStorage } from './persistentStorage.js';
