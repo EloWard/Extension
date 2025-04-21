@@ -1,5 +1,4 @@
-// Add a debug flag at the top of the file
-const DEBUG_MODE = false; // Set to true to enable debug logging
+const DEBUG_MODE = true; // Set to true to enable debug logging
 
 // Global state
 let isChannelSubscribed = false;
