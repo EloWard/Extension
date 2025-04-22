@@ -238,13 +238,35 @@ async function initiateTokenExchange(authData, service = 'riot') {
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Skip logging for frequent message types to reduce console spam
-  const frequentActions = ['fetch_rank_for_username', 'check_streamer_subscription', 'set_rank_data', 'set_current_user'];
+  const frequentActions = [
+    'fetch_rank_for_username', 
+    'check_streamer_subscription', 
+    'set_rank_data', 
+    'set_current_user',
+    'increment_db_reads',
+    'increment_successful_lookups'
+  ];
   if (!frequentActions.includes(message.action)) {
     if (message?.type) {
       console.log('Message received:', message.type, message?.action || '');
     } else {
       console.log('Message received:', message.action || 'unknown');
     }
+  }
+  
+  // METRICS TRACKING
+  if (message.action === 'increment_db_reads' && message.channel) {
+    incrementDbReadCounter(message.channel)
+      .then(success => sendResponse({ success }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep the message channel open for async response
+  }
+  
+  if (message.action === 'increment_successful_lookups' && message.channel) {
+    incrementSuccessfulLookupCounter(message.channel)
+      .then(success => sendResponse({ success }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep the message channel open for async response
   }
   
   // TWITCH AUTH CALLBACK HANDLING

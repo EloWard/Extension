@@ -505,6 +505,21 @@ function processNewMessage(messageNode) {
           rankData: userRankData
         });
         
+        // Increment metrics for the current channel
+        if (channelName) {
+          // Increment db_reads counter
+          chrome.runtime.sendMessage({
+            action: 'increment_db_reads',
+            channel: channelName
+          });
+          
+          // Increment successful_lookups counter
+          chrome.runtime.sendMessage({
+            action: 'increment_successful_lookups',
+            channel: channelName
+          });
+        }
+        
         // Display the badge immediately
         addBadgeToMessage(usernameElement, userRankData);
       }
