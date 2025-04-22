@@ -160,9 +160,11 @@ export const RiotAuth = {
       this._openAuthWindow(authUrl);
       
       // Wait for the authentication callback
+      console.log('Waiting for user to complete authentication...');
       const authResult = await this._waitForAuthCallback();
       
       if (!authResult || !authResult.code) {
+        console.log('Authentication process completed without a valid code');
         throw new Error('Authentication cancelled or failed');
       }
       
@@ -292,10 +294,21 @@ export const RiotAuth = {
     
     try {
       // Try to open directly with window.open
-      this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
+      // Use a larger window size to ensure the login form is fully visible
+      this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=600,height=800,resizable=yes,scrollbars=yes');
       
       if (this.authWindow) {
         console.log('Auth window opened with window.open');
+        
+        // Add a load event listener to detect navigation events
+        try {
+          this.authWindow.addEventListener('load', () => {
+            console.log('Auth window loaded a page');
+          });
+        } catch (e) {
+          // Cross-origin restrictions might prevent this
+          console.log('Could not add load listener to auth window due to cross-origin restrictions');
+        }
       } else {
         // If window.open failed (likely due to popup blocker), try using the background script
         console.log('window.open failed, trying chrome.runtime.sendMessage');
@@ -330,14 +343,14 @@ export const RiotAuth = {
     console.log('Waiting for authentication callback...');
     
     return new Promise(resolve => {
-      const maxWaitTime = 300000; // 5 minutes
+      const maxWaitTime = 600000; // 10 minutes
       const checkInterval = 1000; // 1 second
       let elapsedTime = 0;
-      let intervalId; // Declare intervalId variable here
+      let intervalId;
       
-      // Function to check for auth callback data
+      // Function to check for auth callback data in all possible storage locations
       const checkForCallback = async () => {
-        // Check chrome.storage for callback data
+        // 1. Check chrome.storage for callback data
         const data = await new Promise(r => {
           chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
         });
@@ -365,19 +378,43 @@ export const RiotAuth = {
           return true;
         }
         
-        // Check if auth window was closed by user
-        if (this.authWindow && this.authWindow.closed) {
-          console.log('Auth window was closed by user');
-          clearInterval(intervalId);
-          resolve(null); // User cancelled
-          return true;
+        // 2. Check localStorage as a fallback
+        try {
+          const localStorageData = localStorage.getItem('eloward_auth_callback');
+          if (localStorageData) {
+            const localCallback = JSON.parse(localStorageData);
+            if (localCallback && localCallback.code) {
+              console.log('Auth callback found in localStorage');
+              clearInterval(intervalId);
+              
+              // Clear the localStorage data after use
+              localStorage.removeItem('eloward_auth_callback');
+              
+              resolve(localCallback);
+              return true;
+            }
+          }
+        } catch (e) {
+          // Non-fatal: localStorage might not be available or might fail
+          console.warn('Error checking localStorage for callback:', e);
         }
         
-        // Check if we've waited too long
+        // Update elapsed time and check for timeout
         elapsedTime += checkInterval;
         if (elapsedTime >= maxWaitTime) {
-          console.log('Auth callback wait timeout');
+          console.log(`Auth callback wait timeout after ${maxWaitTime/1000} seconds`);
           clearInterval(intervalId);
+          
+          // Close the auth window if it still exists
+          try {
+            if (this.authWindow && !this.authWindow.closed) {
+              this.authWindow.close();
+              console.log('Closed auth window after timeout');
+            }
+          } catch (e) {
+            console.warn('Error closing auth window:', e);
+          }
+          
           resolve(null); // Timeout
           return true;
         }
@@ -393,26 +430,79 @@ export const RiotAuth = {
         }
       });
       
-      // Also add a message listener for direct window messages
+      // Listen for direct window messages (most reliable method)
       const messageListener = event => {
+        // Check if it's an auth callback message from our redirect page
         if (event.data && 
             ((event.data.type === 'auth_callback' && event.data.code) || 
              (event.data.source === 'eloward_auth' && event.data.code))) {
           
-          console.log('Auth callback received via window message');
+          console.log('Auth callback received via window message with code length:', 
+                    event.data.code.length);
+          
+          // Remove the listener to avoid duplicate processing
           window.removeEventListener('message', messageListener);
           
-          // Store in chrome.storage for consistency
+          // Store in chrome.storage for consistency with other code paths
           chrome.storage.local.set({
             'auth_callback': event.data,
             'eloward_auth_callback': event.data
+          }, () => {
+            console.log('Stored auth callback from window message in chrome.storage');
           });
           
+          // Clear any interval to stop checking
+          clearInterval(intervalId);
+          
+          // Resolve the promise with the callback data
           resolve(event.data);
         }
       };
       
+      // Add the message listener
       window.addEventListener('message', messageListener);
+      
+      // Add a cleanup function for the auth window
+      if (this.authWindow) {
+        try {
+          // This creates a polling mechanism to detect when authentication is complete
+          // by checking for a specific element in the final redirect page
+          const pollRedirectPage = () => {
+            try {
+              // Only proceed if the window is defined and accessible
+              if (this.authWindow && !this.authWindow.closed) {
+                const currentUrl = this.authWindow.location.href;
+                
+                // If we're on the redirect page (eloward.com/riot/auth/redirect)
+                if (currentUrl && currentUrl.indexOf('eloward.com/riot/auth/redirect') > -1) {
+                  console.log('Detected redirect to completion page');
+                  
+                  // Wait a moment to ensure the page has time to send its message
+                  setTimeout(() => {
+                    // If we're still waiting for authentication after the redirect,
+                    // then something might have gone wrong with the postMessage
+                    // Check localStorage and chrome.storage as fallbacks
+                    checkForCallback();
+                  }, 1000);
+                }
+              }
+            } catch (e) {
+              // Cross-origin errors are expected and can be ignored
+              // This happens when the window is navigating between domains
+            }
+          };
+          
+          // Poll the redirect page every second
+          const redirectCheckInterval = setInterval(pollRedirectPage, 1000);
+          
+          // Cleanup the interval after maxWaitTime
+          setTimeout(() => {
+            clearInterval(redirectCheckInterval);
+          }, maxWaitTime);
+        } catch (e) {
+          console.warn('Error setting up auth window polling:', e);
+        }
+      }
     });
   },
   
