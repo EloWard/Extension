@@ -160,11 +160,9 @@ export const RiotAuth = {
       this._openAuthWindow(authUrl);
       
       // Wait for the authentication callback
-      console.log('Waiting for user to complete authentication...');
       const authResult = await this._waitForAuthCallback();
       
       if (!authResult || !authResult.code) {
-        console.log('Authentication process completed without a valid code');
         throw new Error('Authentication cancelled or failed');
       }
       
@@ -332,12 +330,10 @@ export const RiotAuth = {
     console.log('Waiting for authentication callback...');
     
     return new Promise(resolve => {
-      const maxWaitTime = 600000; // 10 minutes - extended to give users more time
+      const maxWaitTime = 300000; // 5 minutes
       const checkInterval = 1000; // 1 second
       let elapsedTime = 0;
-      let intervalId;
-      let windowClosedTime = null;
-      const graceAfterClosedWindow = 5000; // 5 seconds grace period after window closes
+      let intervalId; // Declare intervalId variable here
       
       // Function to check for auth callback data
       const checkForCallback = async () => {
@@ -369,34 +365,9 @@ export const RiotAuth = {
           return true;
         }
         
-        // Store when window was first detected as closed
-        const isWindowClosed = this.authWindow && this.authWindow.closed;
-        if (isWindowClosed && windowClosedTime === null) {
-          windowClosedTime = elapsedTime;
-          console.log('Auth window appears to be closed, waiting for callback data for a grace period...');
-        }
-        
-        // If window has been closed for longer than the grace period, consider it user cancelled
-        // But only if no valid callback has been received
-        if (windowClosedTime !== null && (elapsedTime - windowClosedTime) > graceAfterClosedWindow) {
-          // Check local storage as a last resort for callback data
-          try {
-            const localStorageData = localStorage.getItem('eloward_auth_callback');
-            if (localStorageData) {
-              const localCallback = JSON.parse(localStorageData);
-              if (localCallback && localCallback.code) {
-                console.log('Auth callback found in localStorage after window closed');
-                clearInterval(intervalId);
-                resolve(localCallback);
-                return true;
-              }
-            }
-          } catch (e) {
-            console.warn('Error checking localStorage for callback:', e);
-          }
-          
-          // If we're here, the window is closed and no callback data found
-          console.log('Auth window closed by user without receiving callback data');
+        // Check if auth window was closed by user
+        if (this.authWindow && this.authWindow.closed) {
+          console.log('Auth window was closed by user');
           clearInterval(intervalId);
           resolve(null); // User cancelled
           return true;
@@ -405,7 +376,7 @@ export const RiotAuth = {
         // Check if we've waited too long
         elapsedTime += checkInterval;
         if (elapsedTime >= maxWaitTime) {
-          console.log('Auth callback wait timeout after ' + (maxWaitTime/1000) + ' seconds');
+          console.log('Auth callback wait timeout');
           clearInterval(intervalId);
           resolve(null); // Timeout
           return true;
