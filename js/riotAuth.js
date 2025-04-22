@@ -337,52 +337,106 @@ export const RiotAuth = {
       
       // Function to check for auth callback data
       const checkForCallback = async () => {
-        // Check chrome.storage for callback data
-        const data = await new Promise(r => {
-          chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
-        });
-        
-        const callback = data.auth_callback || data.eloward_auth_callback;
-        
-        if (callback && callback.code) {
-          console.log('Auth callback found in chrome.storage:', {
-            hasCode: !!callback.code,
-            codeLength: callback.code ? callback.code.length : 0,
-            hasState: !!callback.state
-          });
-          clearInterval(intervalId);
+        try {
+          // Check localStorage first - this is most reliable method
+          let callback = null;
           
-          // Clear the callback data from storage to prevent reuse
           try {
-            chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], () => {
-              console.log('Auth callback cleared from chrome.storage after use');
-            });
+            const storedData = localStorage.getItem('eloward_auth_callback');
+            if (storedData) {
+              const parsedData = JSON.parse(storedData);
+              if (parsedData.service === 'riot' && parsedData.code) {
+                console.log('Auth callback found in localStorage');
+                callback = parsedData;
+                // Clear from localStorage
+                localStorage.removeItem('eloward_auth_callback');
+              }
+            }
           } catch (e) {
-            console.warn('Error clearing auth callback after use:', e);
+            console.warn('Error checking localStorage for auth callback:', e);
           }
           
-          resolve(callback);
-          return true;
+          // If not found in localStorage, check chrome.storage
+          if (!callback) {
+            const data = await new Promise(r => {
+              chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
+            });
+            
+            callback = data.auth_callback || data.eloward_auth_callback;
+          }
+          
+          if (callback && callback.code) {
+            console.log('Auth callback found:', {
+              hasCode: !!callback.code,
+              codeLength: callback.code ? callback.code.length : 0,
+              hasState: !!callback.state
+            });
+            clearInterval(intervalId);
+            
+            // Clear the callback data from storage to prevent reuse
+            try {
+              chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], () => {
+                console.log('Auth callback cleared from chrome.storage after use');
+              });
+              localStorage.removeItem('eloward_auth_callback');
+            } catch (e) {
+              console.warn('Error clearing auth callback after use:', e);
+            }
+            
+            resolve(callback);
+            return true;
+          }
+          
+          // Check if auth window was closed by user
+          if (this.authWindow && this.authWindow.closed) {
+            console.log('Auth window was closed by user');
+            clearInterval(intervalId);
+            
+            // Check storage one last time before resolving null
+            // Sometimes the window is closed after completing authentication
+            const finalCheck = await new Promise(r => {
+              chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
+            });
+            
+            const finalCallback = finalCheck.auth_callback || finalCheck.eloward_auth_callback;
+            if (finalCallback && finalCallback.code) {
+              console.log('Found auth callback during final check after window closed');
+              resolve(finalCallback);
+              return true;
+            }
+            
+            try {
+              const storedData = localStorage.getItem('eloward_auth_callback');
+              if (storedData) {
+                const parsedData = JSON.parse(storedData);
+                if (parsedData.service === 'riot' && parsedData.code) {
+                  console.log('Found auth callback in localStorage during final check');
+                  resolve(parsedData);
+                  return true;
+                }
+              }
+            } catch (e) {
+              console.warn('Error in final localStorage check:', e);
+            }
+            
+            resolve(null); // User cancelled
+            return true;
+          }
+          
+          // Check if we've waited too long
+          elapsedTime += checkInterval;
+          if (elapsedTime >= maxWaitTime) {
+            console.log('Auth callback wait timeout');
+            clearInterval(intervalId);
+            resolve(null); // Timeout
+            return true;
+          }
+          
+          return false;
+        } catch (error) {
+          console.error('Error checking for auth callback:', error);
+          return false;
         }
-        
-        // Check if auth window was closed by user
-        if (this.authWindow && this.authWindow.closed) {
-          console.log('Auth window was closed by user');
-          clearInterval(intervalId);
-          resolve(null); // User cancelled
-          return true;
-        }
-        
-        // Check if we've waited too long
-        elapsedTime += checkInterval;
-        if (elapsedTime >= maxWaitTime) {
-          console.log('Auth callback wait timeout');
-          clearInterval(intervalId);
-          resolve(null); // Timeout
-          return true;
-        }
-        
-        return false;
       };
       
       // Check immediately first
