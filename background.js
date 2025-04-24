@@ -10,6 +10,7 @@ const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai-inquiries.wor
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
+const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -53,6 +54,12 @@ class UserRankCache {
     const entry = this.cache.get(normalizedUsername);
     
     if (entry) {
+      // Check if entry has expired
+      if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
+        this.cache.delete(normalizedUsername);
+        return null;
+      }
+      
       // Increment frequency on access
       entry.frequency = (entry.frequency || 0) + 1;
       return entry.rankData;
@@ -72,9 +79,14 @@ class UserRankCache {
       // Update existing entry
       entry.rankData = rankData;
       entry.frequency = (entry.frequency || 0) + 1;
+      entry.timestamp = Date.now();
     } else {
       // Add new entry
-      entry = { rankData, frequency: 1 };
+      entry = { 
+        rankData, 
+        frequency: 1,
+        timestamp: Date.now()
+      };
       this.cache.set(normalizedUsername, entry);
       
       // Check if we need to evict
@@ -113,6 +125,12 @@ class UserRankCache {
         continue;
       }
       
+      // Check for expired entries first
+      if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
+        this.cache.delete(key);
+        return; // Successfully evicted an expired entry
+      }
+      
       if (entry.frequency < lowestFrequency) {
         lowestFrequency = entry.frequency;
         userToEvict = key;
@@ -128,7 +146,16 @@ class UserRankCache {
   // Check if cache has a username
   has(username) {
     if (!username) return false;
-    return this.cache.has(username.toLowerCase());
+    const normalizedUsername = username.toLowerCase();
+    
+    // Check if entry exists and is not expired
+    const entry = this.cache.get(normalizedUsername);
+    if (entry && entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
+      this.cache.delete(normalizedUsername);
+      return false;
+    }
+    
+    return this.cache.has(normalizedUsername);
   }
   
   // Get cache size
@@ -996,47 +1023,6 @@ function getRankBySummonerId(token, summonerId, platform) {
       reject(error);
     });
   });
-}
-
-// Generate mock rank data for testing
-function generateMockRankData(username, region) {
-  console.log(`Background: Generating mock rank data for ${username} in ${region}`);
-  
-  // For MVP, we'll generate consistent mock data based on username
-  // In a real implementation, this would call the Riot API
-  
-  // Use username to deterministically generate a rank
-  const hash = Array.from(username).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
-  const tiers = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger'];
-  const divisions = ['IV', 'III', 'II', 'I'];
-  
-  // Determine tier based on hash
-  let tierIndex = hash % tiers.length;
-  
-  // Determine division for tiers that have divisions
-  let division = null;
-  if (tierIndex < 7) { // Iron through Diamond have divisions
-    const divisionIndex = Math.floor((hash / 10) % 4);
-    division = divisions[divisionIndex];
-  }
-  
-  // Determine LP
-  const lp = hash % 100;
-  
-  // Create rank data object
-  const rankData = {
-    tier: tiers[tierIndex],
-    division: division,
-    leaguePoints: lp,
-    wins: 100 + (hash % 200),
-    losses: 50 + (hash % 150),
-    summonerName: username + '_LoL' // Add a mock summoner name
-  };
-  
-  console.log(`Background: Generated mock rank: ${rankData.tier} ${rankData.division || ''} ${rankData.leaguePoints} LP`);
-  
-  return rankData;
 }
 
 // Helper function to get rank icon URL
