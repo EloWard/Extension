@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EloWard",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "League of Legends rank badges for Twitch chat",
   "icons": {
     "16": "images/logo/icon16.png",
