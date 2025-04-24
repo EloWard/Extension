@@ -1,4 +1,4 @@
-const DEBUG_MODE = false; // Set to true to enable debug logging
+const DEBUG_MODE = false; // Set to false for production release
 
 // Global state
 let isChannelSubscribed = false;

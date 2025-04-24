@@ -11,6 +11,7 @@ const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiri
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
+const DEBUG_MODE = false; // Set to false for production release
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -54,7 +55,8 @@ class UserRankCache {
     const entry = this.cache.get(normalizedUsername);
     
     if (entry) {
-      // Check if entry has expired
+      // Check if entry has expired based on timestamp
+      // RANK_CACHE_EXPIRY is set to 1 hour in milliseconds
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(normalizedUsername);
         return null;
@@ -125,12 +127,14 @@ class UserRankCache {
         continue;
       }
       
-      // Check for expired entries first
+      // Check for expired entries first (time-based eviction)
+      // This ensures time-expired entries are removed before frequency-based eviction
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(key);
         return; // Successfully evicted an expired entry
       }
       
+      // If no expired entries, use frequency-based eviction
       if (entry.frequency < lowestFrequency) {
         lowestFrequency = entry.frequency;
         userToEvict = key;
@@ -607,7 +611,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Increment db_read counter regardless of cache hit/miss
     if (channelName) {
       incrementDbReadCounter(channelName).catch(error => {
-        console.error(`Error incrementing db_read for ${channelName}:`, error);
+        if (DEBUG_MODE) {
+          console.error(`Error incrementing db_read for ${channelName}:`, error);
+        }
       });
     }
     
@@ -617,7 +623,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // If we got a successful result from cache, increment successful_lookups
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(error => {
-          console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+          if (DEBUG_MODE) {
+            console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+          }
         });
       }
       
@@ -642,7 +650,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // If we got a successful result from API, increment successful_lookups
           if (channelName && rankData?.tier) {
             incrementSuccessfulLookupCounter(channelName).catch(error => {
-              console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+              if (DEBUG_MODE) {
+                console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+              }
             });
           }
         }
@@ -655,7 +665,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error(`Error fetching rank for ${username}:`, error);
+        if (DEBUG_MODE) {
+          console.error(`Error fetching rank for ${username}:`, error);
+        }
         sendResponse({ 
           success: false, 
           error: error.message || 'Error fetching rank data' 
@@ -1925,16 +1937,6 @@ function preloadLinkedAccounts() {
 
 // Call preload on extension startup
 preloadLinkedAccounts();
-
-// Also call it whenever user data changes
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local') {
-    if (changes.riotAccountInfo || changes.twitchUsername) {
-      // Don't log every automatic update
-      preloadLinkedAccounts();
-    }
-  }
-});
 
 // Listen for storage changes to update linked accounts
 chrome.storage.onChanged.addListener((changes, area) => {
