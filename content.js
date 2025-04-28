@@ -639,7 +639,7 @@ function addBadgeToMessage(usernameElement, rankData) {
                              usernameContainer.querySelector('.chat-badge-container');
       
       if (badgesContainer) {
-        // Insert at the end of badges container
+        // Append to the badge container (makes it rightmost)
         badgesContainer.appendChild(badgeContainer);
       } else {
         // Find the username span and insert before it (typical 7TV structure)
@@ -656,7 +656,7 @@ function addBadgeToMessage(usernameElement, rankData) {
       const badgesContainer = usernameContainer.querySelector('.chat-badge-container, .bttv-badges-container');
       
       if (badgesContainer) {
-        // Add to the end of badges container
+        // Add to the end of badges container (makes it rightmost)
         badgesContainer.appendChild(badgeContainer);
       } else {
         // Find the username span that follows the badges 
@@ -666,11 +666,18 @@ function addBadgeToMessage(usernameElement, rankData) {
       }
     } else {
       // Standard Twitch insertion
-      // Find the username span that follows the badges
-      const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
+      const badgesContainer = usernameContainer.querySelector('.chat-badge-container');
       
-      // Insert the badge right before the username span (making it the rightmost badge)
-      usernameContainer.insertBefore(badgeContainer, usernameSpan);
+      if (badgesContainer) {
+        // Add to the end of badges container (makes it rightmost)
+        badgesContainer.appendChild(badgeContainer);
+      } else {
+        // Find the username span that follows the badges
+        const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
+        
+        // Insert the badge right before the username span (making it the rightmost badge)
+        usernameContainer.insertBefore(badgeContainer, usernameSpan);
+      }
     }
   } else {
     // Fallback
