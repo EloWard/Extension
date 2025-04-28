@@ -39,6 +39,19 @@ class UserRankCache {
     this.cache = new Map();
     this.maxSize = maxSize;
     this.currentUser = null;
+    
+    // Store the cache state for debugging
+    this._updateStorage();
+  }
+  
+  _updateStorage() {
+    // Store a serialized version of the cache in local storage for debugging
+    const cacheData = {};
+    this.cache.forEach((value, key) => {
+      cacheData[key] = value;
+    });
+    
+    chrome.storage.local.set({ 'UserRankCache': cacheData });
   }
   
   // Set current user to protect from eviction
@@ -46,6 +59,7 @@ class UserRankCache {
     if (username) {
       this.currentUser = username.toLowerCase();
     }
+    this._updateStorage();
   }
   
   // Get entry from cache
@@ -59,11 +73,13 @@ class UserRankCache {
       // RANK_CACHE_EXPIRY is set to 1 hour in milliseconds
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(normalizedUsername);
+        this._updateStorage();
         return null;
       }
       
       // Increment frequency on access
       entry.frequency = (entry.frequency || 0) + 1;
+      this._updateStorage();
       return entry.rankData;
     }
     
@@ -96,6 +112,8 @@ class UserRankCache {
         this.evictLFU();
       }
     }
+    
+    this._updateStorage();
   }
   
   // Clear cache but preserve current user's data
@@ -114,6 +132,8 @@ class UserRankCache {
     } else {
       console.log(`UserRankCache: Cleared all ${previousSize} entries`);
     }
+    
+    this._updateStorage();
   }
   
   // Evict the least frequently used entry (not current user)
@@ -131,6 +151,7 @@ class UserRankCache {
       // This ensures time-expired entries are removed before frequency-based eviction
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(key);
+        this._updateStorage();
         return; // Successfully evicted an expired entry
       }
       
@@ -144,6 +165,7 @@ class UserRankCache {
     // Evict if found
     if (userToEvict) {
       this.cache.delete(userToEvict);
+      this._updateStorage();
     }
   }
   
@@ -156,6 +178,7 @@ class UserRankCache {
     const entry = this.cache.get(normalizedUsername);
     if (entry && entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
       this.cache.delete(normalizedUsername);
+      this._updateStorage();
       return false;
     }
     
@@ -1981,10 +2004,15 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
 
 // Function to handle when users switch channels
 function handleChannelSwitch(oldChannel, newChannel) {
-  // Clear the rank cache but preserve current user
+  console.log(`Channel switched from ${oldChannel || 'unknown'} to ${newChannel}`);
+  
+  // Clear user rank cache when changing channels
   userRankCache.clear();
   
   console.log(`🔄 UserRankCache: Cleared on channel switch from ${oldChannel || 'unknown'} to ${newChannel} (current user preserved)`);
+  
+  // Remove the redundant legacy region key if it exists
+  chrome.storage.local.remove('connected_region');
 }
 
 /**

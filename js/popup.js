@@ -256,10 +256,10 @@ document.addEventListener('DOMContentLoaded', () => {
           refreshRankBtn.classList.remove('hidden'); // Show refresh button
           
           // Get the connected region from storage and update the selector
-          chrome.storage.local.get(['connected_region'], (result) => {
-            if (result.connected_region) {
-              console.log('Setting region selector to connected region:', result.connected_region);
-              regionSelect.value = result.connected_region;
+          chrome.storage.local.get(['selectedRegion'], (result) => {
+            if (result.selectedRegion) {
+              console.log('Setting region selector to connected region:', result.selectedRegion);
+              regionSelect.value = result.selectedRegion;
             }
           });
         }
@@ -458,8 +458,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateUserInterface(userData);
         
         // Store the connected region in storage and ensure the region selector reflects the current region
-        await chrome.storage.local.set({ connected_region: region });
-        console.log('Stored connected region in storage:', region);
+        await chrome.storage.local.set({ selectedRegion: region });
+        console.log('Stored region in storage:', region);
       } catch (error) {
         console.error('Error in connectRiotAccount:', error);
         
@@ -515,10 +515,9 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error('Account information not available');
       }
       
-      // Get the current selected region and update the connected_region
+      // Get the current selected region
       const selectedRegion = regionSelect.value;
-      await chrome.storage.local.set({ connected_region: selectedRegion });
-      console.log('Updated connected_region to match selected region during refresh:', selectedRegion);
+      console.log('Using selected region during refresh:', selectedRegion);
       
       // Get summoner info using the puuid
       const summonerInfo = await RiotAuth.getSummonerInfo(accountInfo.puuid);
@@ -799,4 +798,15 @@ document.addEventListener('DOMContentLoaded', () => {
       connectTwitchBtn.disabled = false;
     }
   }
+
+  // Get references to all stored regions
+  chrome.storage.local.get(['selectedRegion'], (result) => {
+    // First clean up any old key that might exist
+    chrome.storage.local.remove('connected_region');
+    
+    // Set the region selector value
+    if (result.selectedRegion) {
+      regionSelect.value = result.selectedRegion;
+    }
+  });
 }); 
