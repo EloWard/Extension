@@ -1,159 +1,123 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-echo ======================================================
-echo   EloWard Rank Badges for OBS - Windows Installer
-echo ======================================================
-echo.
-echo This script will install the EloWard Rank Badges plugin for OBS Studio.
+echo EloWard Rank Badges Installer for OBS Studio
+echo =============================================
 echo.
 
-:: Check if running with admin privileges
-NET SESSION >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] This script requires administrative privileges.
-    echo Please right-click the script and select "Run as administrator".
-    echo.
-    pause
-    exit /b 1
-)
+:: Find OBS installation path
+SET "OBS_INSTALL_PATH="
+SET "PLUGIN_NAME=eloward-rank-badges"
 
-:: Check if OBS is running
-tasklist /FI "IMAGENAME eq obs64.exe" 2>NUL | find /I /N "obs64.exe">NUL
-if "%ERRORLEVEL%"=="0" (
-    echo [ERROR] OBS Studio is currently running.
-    echo Please close OBS Studio before continuing.
-    echo.
-    pause
-    exit /b 1
-)
-
-:: Define variables
-set "DOWNLOAD_URL=https://github.com/yourusername/eloward-rank-badges/releases/latest/download/eloward-rank-badges-windows.zip"
-set "TEMP_DIR=%TEMP%\eloward_installer"
-set "TEMP_ZIP=%TEMP_DIR%\eloward-rank-badges.zip"
-
-:: Try to find OBS Studio installation paths
-set "DEFAULT_OBS_PATH_64=%ProgramFiles%\obs-studio"
-set "DEFAULT_OBS_PATH_32=%ProgramFiles(x86)%\obs-studio"
-set "DEFAULT_OBS_USER_PATH=%APPDATA%\obs-studio"
-
-set "OBS_FOUND=0"
-set "OBS_PATH="
-
-if exist "%DEFAULT_OBS_PATH_64%" (
-    set "OBS_PATH=%DEFAULT_OBS_PATH_64%"
-    set "OBS_FOUND=1"
-) else if exist "%DEFAULT_OBS_PATH_32%" (
-    set "OBS_PATH=%DEFAULT_OBS_PATH_32%"
-    set "OBS_FOUND=1"
-)
-
-:: Check if OBS is installed
-if "%OBS_FOUND%"=="0" (
-    echo [WARNING] Couldn't detect OBS Studio installation folder automatically.
-    echo.
-    
-    :: Ask for manual path
-    set /p "MANUAL_PATH=Please enter the path to your OBS Studio installation (or press Enter to exit): "
-    
-    if "!MANUAL_PATH!"=="" (
-        echo Installation canceled.
-        pause
-        exit /b 1
-    ) else (
-        if exist "!MANUAL_PATH!" (
-            set "OBS_PATH=!MANUAL_PATH!"
-            set "OBS_FOUND=1"
-        ) else (
-            echo [ERROR] The specified path does not exist.
-            pause
-            exit /b 1
-        )
+:: Check common installation locations
+IF EXIST "%ProgramFiles%\obs-studio" (
+    SET "OBS_INSTALL_PATH=%ProgramFiles%\obs-studio"
+) ELSE (
+    IF EXIST "%ProgramFiles(x86)%\obs-studio" (
+        SET "OBS_INSTALL_PATH=%ProgramFiles(x86)%\obs-studio"
     )
 )
 
-:: Verify OBS path contains the plugins folder structure
-if not exist "%OBS_PATH%\obs-plugins\64bit" (
-    echo [ERROR] The OBS plugin directory was not found in the specified path.
-    echo Expected: %OBS_PATH%\obs-plugins\64bit
-    echo.
-    pause
-    exit /b 1
-)
-
-:: Create temp directory
-if not exist "%TEMP_DIR%" mkdir "%TEMP_DIR%"
-
-echo [1/4] Downloading EloWard Rank Badges plugin...
-echo.
-
-:: Download the plugin using PowerShell
-powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%DOWNLOAD_URL%' -OutFile '%TEMP_ZIP%'}"
-
-if not exist "%TEMP_ZIP%" (
-    echo [ERROR] Download failed. Please check your internet connection and try again.
-    rmdir /S /Q "%TEMP_DIR%" 2>nul
-    pause
-    exit /b 1
-)
-
-echo [2/4] Extracting files...
-echo.
-
-:: Create PowerShell script to extract the ZIP file
-echo Add-Type -AssemblyName System.IO.Compression.FileSystem > "%TEMP_DIR%\extract.ps1"
-echo [System.IO.Compression.ZipFile]::ExtractToDirectory('%TEMP_ZIP%', '%TEMP_DIR%\extracted') >> "%TEMP_DIR%\extract.ps1"
-
-:: Run the extraction script
-powershell -ExecutionPolicy Bypass -File "%TEMP_DIR%\extract.ps1"
-
-if not exist "%TEMP_DIR%\extracted" (
-    echo [ERROR] Extraction failed.
-    rmdir /S /Q "%TEMP_DIR%" 2>nul
-    pause
-    exit /b 1
-)
-
-echo [3/4] Installing plugin files...
-echo.
-
-:: Copy plugin files to OBS directory
-xcopy /E /I /Y "%TEMP_DIR%\extracted\obs-plugins\64bit\*" "%OBS_PATH%\obs-plugins\64bit\"
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Failed to copy plugin files to OBS directory.
-    rmdir /S /Q "%TEMP_DIR%" 2>nul
-    pause
-    exit /b 1
-)
-
-:: Copy data files to OBS directory
-if exist "%TEMP_DIR%\extracted\data" (
-    if not exist "%OBS_PATH%\data\obs-plugins\eloward-rank-badges" mkdir "%OBS_PATH%\data\obs-plugins\eloward-rank-badges"
-    xcopy /E /I /Y "%TEMP_DIR%\extracted\data\*" "%OBS_PATH%\data\obs-plugins\eloward-rank-badges\"
-    if %ERRORLEVEL% NEQ 0 (
-        echo [WARNING] Failed to copy data files. Plugin may not work correctly.
+:: If not found in Program Files, try appdata
+IF "!OBS_INSTALL_PATH!" == "" (
+    IF EXIST "%APPDATA%\obs-studio" (
+        SET "OBS_INSTALL_PATH=%APPDATA%\obs-studio"
     )
 )
 
-echo [4/4] Cleaning up...
-echo.
+:: Handle case where OBS is not detected
+IF "!OBS_INSTALL_PATH!" == "" (
+    echo Error: OBS Studio installation not found.
+    echo Please make sure OBS is installed.
+    echo.
+    echo Press any key to exit...
+    pause > nul
+    exit /b 1
+)
 
-:: Clean up
-rmdir /S /Q "%TEMP_DIR%" 2>nul
+echo Found OBS Studio at: !OBS_INSTALL_PATH!
 
-echo ======================================================
-echo Installation Complete!
-echo ======================================================
+:: Extension images source
+SET "EXTENSION_IMAGES_DIR=%~dp0..\ext\images\ranks"
+IF NOT EXIST "!EXTENSION_IMAGES_DIR!" (
+    SET "EXTENSION_IMAGES_DIR=%UserProfile%\Desktop\EloWardApp\ext\images\ranks"
+)
+
+:: Setup directories
+SET "PLUGIN_PATH=!OBS_INSTALL_PATH!\plugins\!PLUGIN_NAME!"
+SET "DATA_PATH=!PLUGIN_PATH!\data"
+SET "IMAGES_PATH=!DATA_PATH!\images\ranks"
+
+:: Create directories
+echo Creating directories...
+IF NOT EXIST "!PLUGIN_PATH!" mkdir "!PLUGIN_PATH!"
+IF NOT EXIST "!DATA_PATH!" mkdir "!DATA_PATH!"
+IF NOT EXIST "!IMAGES_PATH!" mkdir "!IMAGES_PATH!"
+
+:: Copy files
+echo Copying plugin files...
+copy "%~dp0eloward-rank-badges.c" "!PLUGIN_PATH!"
+copy "%~dp0eloward-rank-badges.js" "!DATA_PATH!"
+xcopy /E /Y "%~dp0data\locale" "!DATA_PATH!\locale\"
+
+:: Copy rank images
+echo Copying rank badge images...
+IF EXIST "!EXTENSION_IMAGES_DIR!" (
+    xcopy /Y "!EXTENSION_IMAGES_DIR!\*.png" "!IMAGES_PATH!\"
+    echo Successfully copied rank badge images.
+) ELSE (
+    echo Warning: Extension images directory not found at !EXTENSION_IMAGES_DIR!
+    echo You will need to manually copy the rank images to: !IMAGES_PATH!
+)
+
+:: Create a CMakeLists.txt file
+echo Creating CMakeLists.txt...
+(
+    echo cmake_minimum_required^(VERSION 3.16^)
+    echo.
+    echo project^(eloward-rank-badges VERSION 1.0.0^)
+    echo.
+    echo set^(CMAKE_CXX_STANDARD 17^)
+    echo set^(CMAKE_CXX_STANDARD_REQUIRED ON^)
+    echo.
+    echo find_package^(libobs REQUIRED^)
+    echo find_package^(obs-frontend-api REQUIRED^)
+    echo find_package^(jansson REQUIRED^)
+    echo find_package^(CURL REQUIRED^)
+    echo.
+    echo set^(eloward-rank-badges_SOURCES
+    echo     eloward-rank-badges.c^)
+    echo.
+    echo add_library^(eloward-rank-badges MODULE
+    echo     ${eloward-rank-badges_SOURCES}^)
+    echo.
+    echo target_link_libraries^(eloward-rank-badges
+    echo     libobs
+    echo     obs-frontend-api
+    echo     jansson
+    echo     CURL::libcurl^)
+    echo.
+    echo configure_file^(eloward-rank-badges.js "${CMAKE_BINARY_DIR}/data/eloward-rank-badges.js" COPYONLY^)
+    echo.
+    echo if^(OS_WINDOWS^)
+    echo     set_target_properties^(eloward-rank-badges PROPERTIES
+    echo         PREFIX ""
+    echo         SUFFIX ".dll"^)
+    echo endif^(^)
+    echo.
+    echo setup_plugin_target^(eloward-rank-badges^)
+) > "!PLUGIN_PATH!\CMakeLists.txt"
+
 echo.
-echo The EloWard Rank Badges plugin has been successfully installed.
+echo Installation complete!
 echo.
-echo To use the plugin:
-echo 1. Launch OBS Studio
-echo 2. Add "EloWard Rank Badges" source to any scene
-echo 3. Make sure you have a Browser Source with Twitch chat in the same scene
-echo 4. Enter your Twitch username in the plugin properties if not automatically detected
+echo To finish installation:
+echo 1. Restart OBS Studio
+echo 2. Add a 'EloWard Rank Badges' source to your scene
+echo 3. Enter your Twitch channel name if not automatically detected
 echo.
-echo Need help? Visit: https://eloward.com/support
+echo Support: https://eloward.com/support
 echo.
-pause 
+echo Press any key to exit...
+pause > nul
+exit /b 0 

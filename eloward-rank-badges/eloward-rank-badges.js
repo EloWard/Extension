@@ -38,7 +38,26 @@
         syncMetrics();
     }, 30000); // Sync every 30 seconds
     
-    // Rank tier colors matching the extension
+    // Define resources path for accessing images
+    const RESOURCES_PATH = (function() {
+        // Try to detect the resources path based on the environment
+        const scriptElement = document.currentScript;
+        if (scriptElement && scriptElement.src) {
+            const scriptPath = scriptElement.src;
+            // Extract the base path from the script URL
+            return scriptPath.substring(0, scriptPath.lastIndexOf('/') + 1) + 'images/ranks/';
+        }
+        // Fallback: assume a relative path
+        return 'images/ranks/';
+    })();
+    
+    // Rank tier mapping for image names
+    const RANK_TIERS = [
+        'IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM',
+        'EMERALD', 'DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER', 'UNRANKED'
+    ];
+    
+    // Rank tier colors as fallback
     const RANK_COLORS = {
         'IRON': '#565556',
         'BRONZE': '#795649',
@@ -117,14 +136,16 @@
         style.id = 'eloward-styles';
         style.textContent = `
             .${BADGE_CLASS} {
-                display: inline-block;
+                display: inline-flex;
+                align-items: center;
                 margin-left: 5px;
-                padding: 1px 4px;
-                border-radius: 3px;
-                font-size: 11px;
-                font-weight: bold;
-                color: white;
                 vertical-align: middle;
+            }
+            
+            .${BADGE_CLASS} img {
+                width: 18px;
+                height: 18px;
+                margin-right: 2px;
             }
             
             .${BADGE_CLASS}:hover {
@@ -152,6 +173,14 @@
             .eloward-tooltip-rank {
                 font-weight: bold;
                 margin-bottom: 3px;
+                display: flex;
+                align-items: center;
+            }
+            
+            .eloward-tooltip-rank img {
+                margin-right: 5px;
+                width: 24px;
+                height: 24px;
             }
             
             .eloward-tooltip-stats {
@@ -179,9 +208,28 @@
         return division ? `${tier} ${division}` : tier;
     }
     
-    // Get color for rank tier
+    // Get the rank image URL based on tier
+    function getRankImageUrl(tier) {
+        if (!tier) return null;
+        
+        // Normalize tier name
+        const normalizedTier = tier.toLowerCase();
+        
+        // First try 36px version (higher quality for tooltips)
+        return `${RESOURCES_PATH}${normalizedTier}36.png`;
+    }
+    
+    // Fallback to get color for rank tier
     function getRankColor(tier) {
         return RANK_COLORS[tier] || '#000000';
+    }
+    
+    // Preload rank images for better performance
+    function preloadRankImages() {
+        RANK_TIERS.forEach(tier => {
+            const img = new Image();
+            img.src = getRankImageUrl(tier);
+        });
     }
     
     // Create and show tooltip
@@ -197,11 +245,25 @@
         const content = document.createElement('div');
         content.className = 'eloward-tooltip-content';
         
-        // Add rank info
+        // Add rank info with image
         const rankText = document.createElement('div');
         rankText.className = 'eloward-tooltip-rank';
-        rankText.textContent = formatRank(rankData);
-        rankText.style.color = getRankColor(rankData.rank_tier);
+        
+        // Add rank image in tooltip
+        const rankImg = document.createElement('img');
+        rankImg.src = getRankImageUrl(rankData.rank_tier);
+        rankImg.alt = rankData.rank_tier;
+        rankImg.onerror = () => {
+            rankImg.style.display = 'none';
+            rankText.style.color = getRankColor(rankData.rank_tier);
+        };
+        rankText.appendChild(rankImg);
+        
+        // Add rank text
+        const rankTextSpan = document.createElement('span');
+        rankTextSpan.textContent = formatRank(rankData);
+        rankText.appendChild(rankTextSpan);
+        
         content.appendChild(rankText);
         
         // Add LP/winrate if available
@@ -221,6 +283,14 @@
             }
             
             content.appendChild(stats);
+        }
+        
+        // Add summoner name if available
+        if (rankData.summonerName) {
+            const summonerInfo = document.createElement('div');
+            summonerInfo.className = 'eloward-tooltip-stats';
+            summonerInfo.textContent = rankData.summonerName;
+            content.appendChild(summonerInfo);
         }
         
         tooltip.appendChild(content);
@@ -310,8 +380,33 @@
         // Create badge element
         const badgeElement = document.createElement('span');
         badgeElement.className = BADGE_CLASS;
-        badgeElement.textContent = formatRank(rankData);
-        badgeElement.style.backgroundColor = getRankColor(rankData.rank_tier);
+        badgeElement.dataset.rankText = formatRank(rankData);
+        
+        // Create the rank image
+        const rankImg = document.createElement('img');
+        rankImg.alt = rankData.rank_tier;
+        rankImg.src = getRankImageUrl(rankData.rank_tier);
+        
+        // Handle image load error - fallback to color badge with text
+        rankImg.onerror = () => {
+            rankImg.style.display = 'none';
+            badgeElement.textContent = formatRank(rankData);
+            badgeElement.style.backgroundColor = getRankColor(rankData.rank_tier);
+            badgeElement.style.padding = '1px 4px';
+            badgeElement.style.borderRadius = '3px';
+            badgeElement.style.fontSize = '11px';
+            badgeElement.style.fontWeight = 'bold';
+            badgeElement.style.color = 'white';
+        };
+        
+        // Add the image to the badge
+        badgeElement.appendChild(rankImg);
+        
+        // Store rank data for tooltip
+        badgeElement.dataset.rank = rankData.rank_tier;
+        badgeElement.dataset.division = rankData.rank_division || '';
+        badgeElement.dataset.lp = rankData.lp !== undefined ? rankData.lp.toString() : '';
+        badgeElement.dataset.username = rankData.summonerName || '';
         
         // Add tooltip events
         badgeElement.addEventListener('mouseenter', (e) => showTooltip(e, rankData));
@@ -327,6 +422,9 @@
     function initChatObserver() {
         // Add styles
         addRankStyles();
+        
+        // Preload images
+        preloadRankImages();
         
         // Find the chat container based on common Twitch chat layouts
         const containerSelectors = [

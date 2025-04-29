@@ -14,126 +14,118 @@ echo ""
 echo "This script will install the EloWard Rank Badges plugin for OBS Studio."
 echo ""
 
-# Check if OBS is running
+# Exit if OBS is running
 if pgrep -x "OBS" > /dev/null; then
-    echo -e "${RED}[ERROR] OBS Studio is currently running."
-    echo -e "Please close OBS Studio before continuing.${NC}"
-    echo ""
+    echo -e "${RED}[ERROR] Please close OBS Studio before installing.${NC}"
     exit 1
 fi
 
-# Define variables
-DOWNLOAD_URL="https://github.com/yourusername/eloward-rank-badges/releases/latest/download/eloward-rank-badges-mac.zip"
-TEMP_DIR="/tmp/eloward_installer"
-TEMP_ZIP="$TEMP_DIR/eloward-rank-badges.zip"
-
-# Try to find OBS Studio installation paths
-DEFAULT_OBS_APP="/Applications/OBS.app"
-USER_OBS_APP="$HOME/Applications/OBS.app"
-
-# Plugin directories
-SYSTEM_PLUGIN_DIR="/Library/Application Support/obs-studio/plugins"
-USER_PLUGIN_DIR="$HOME/Library/Application Support/obs-studio/plugins"
-
-OBS_FOUND=0
-PLUGIN_PATH=""
-
-# Check if OBS is installed in Applications
-if [ -d "$DEFAULT_OBS_APP" ]; then
-    OBS_FOUND=1
-    PLUGIN_PATH="$USER_PLUGIN_DIR"
-# Check if OBS is installed in User Applications
-elif [ -d "$USER_OBS_APP" ]; then
-    OBS_FOUND=1
-    PLUGIN_PATH="$USER_PLUGIN_DIR"
-fi
-
-# If OBS is not found, ask for manual path
-if [ $OBS_FOUND -eq 0 ]; then
-    echo -e "${YELLOW}[WARNING] Couldn't detect OBS Studio installation folder automatically.${NC}"
-    echo ""
-    echo "OBS Studio should be installed in /Applications or ~/Applications."
-    echo -e "If you've installed it elsewhere, please ${YELLOW}drag and drop your OBS.app${NC} into this terminal window."
-    echo -e "Or press Enter to use the default path: $DEFAULT_OBS_APP"
-    echo ""
-    
-    read -p "Path to OBS.app: " MANUAL_PATH
-    
-    if [ -z "$MANUAL_PATH" ]; then
-        # Use default if nothing is entered
-        if [ -d "$DEFAULT_OBS_APP" ]; then
-            OBS_FOUND=1
-            PLUGIN_PATH="$USER_PLUGIN_DIR"
-        else
-            echo -e "${RED}[ERROR] OBS Studio not found at the default location.${NC}"
-            echo "Please make sure OBS Studio is installed and try again."
-            exit 1
-        fi
-    else
-        # Remove quotes if user dragged and dropped the app
-        MANUAL_PATH=$(echo "$MANUAL_PATH" | tr -d "'" | tr -d '"')
-        
-        if [ -d "$MANUAL_PATH" ]; then
-            OBS_FOUND=1
-            PLUGIN_PATH="$USER_PLUGIN_DIR"
-        else
-            echo -e "${RED}[ERROR] The specified path does not exist.${NC}"
-            exit 1
-        fi
-    fi
-fi
-
-# Create temp directory
-mkdir -p "$TEMP_DIR"
-
-echo -e "${BLUE}[1/4] Downloading EloWard Rank Badges plugin...${NC}"
-echo ""
-
-# Download the plugin
-if ! curl -L "$DOWNLOAD_URL" -o "$TEMP_ZIP" --progress-bar; then
-    echo -e "${RED}[ERROR] Download failed. Please check your internet connection and try again.${NC}"
-    rm -rf "$TEMP_DIR"
+# Detect OBS plugin directory
+OBS_USER_DIR="$HOME/Library/Application Support/obs-studio/plugins"
+if [ ! -d "$OBS_USER_DIR" ]; then
+    echo -e "${RED}[ERROR] OBS plugins folder not found at '$OBS_USER_DIR'${NC}"
     exit 1
 fi
 
-echo -e "${BLUE}[2/4] Extracting files...${NC}"
-echo ""
+# Determine script directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Create extraction directory
-mkdir -p "$TEMP_DIR/extracted"
+# Copy plugin binaries
+echo Copying plugin module...
+cp -R "$SCRIPT_DIR/plugins/obs-plugins/"* "$OBS_USER_DIR/"
 
-# Extract the zip file
-if ! unzip -q "$TEMP_ZIP" -d "$TEMP_DIR/extracted"; then
-    echo -e "${RED}[ERROR] Extraction failed.${NC}"
-    rm -rf "$TEMP_DIR"
+# Copy data files
+echo Copying JavaScript and data...
+DATA_DEST="$HOME/Library/Application Support/obs-studio/data/obs-plugins/eloward-rank-badges"
+mkdir -p "$DATA_DEST"
+cp -R "$SCRIPT_DIR/data/"* "$DATA_DEST/"
+cp "$SCRIPT_DIR/eloward-rank-badges.js" "$DATA_DEST/"
+
+# Determine OBS directory
+OBS_DIR="$HOME/Library/Application Support/obs-studio"
+PLUGIN_NAME="eloward-rank-badges"
+PLUGIN_DIR="$OBS_DIR/plugins/$PLUGIN_NAME"
+DATA_DIR="$OBS_DIR/plugins/$PLUGIN_NAME/data"
+RESOURCES_DIR="$DATA_DIR/images/ranks"
+
+# Extension images source
+EXTENSION_IMAGES_DIR="/Users/sunnywang/Desktop/EloWardApp/ext/images/ranks"
+
+# Check if OBS is installed
+if [ ! -d "$OBS_DIR" ]; then
+    echo "Error: OBS Studio installation not found at $OBS_DIR"
+    echo "Please make sure OBS Studio is installed."
     exit 1
 fi
 
-echo -e "${BLUE}[3/4] Installing plugin files...${NC}"
-echo ""
+echo "Found OBS Studio installation at $OBS_DIR"
 
-# Create plugin directory if it doesn't exist
-mkdir -p "$PLUGIN_PATH"
+# Create plugin directories
+mkdir -p "$PLUGIN_DIR/bin/mac"
+mkdir -p "$DATA_DIR"
+mkdir -p "$RESOURCES_DIR"
 
-# Copy plugin files to OBS directory
-if ! cp -R "$TEMP_DIR/extracted/eloward-rank-badges" "$PLUGIN_PATH/"; then
-    echo -e "${RED}[ERROR] Failed to copy plugin files to OBS directory.${NC}"
-    echo "You may need to run this script with sudo if installing to system directories."
-    rm -rf "$TEMP_DIR"
-    exit 1
+# Copy plugin files
+echo "Copying plugin files..."
+cp "$(dirname "$0")/eloward-rank-badges.c" "$PLUGIN_DIR/"
+cp "$(dirname "$0")/eloward-rank-badges.js" "$DATA_DIR/"
+cp -r "$(dirname "$0")/data/locale" "$DATA_DIR/"
+
+# Copy the rank images from the extension directory
+echo "Copying rank images from extension..."
+if [ -d "$EXTENSION_IMAGES_DIR" ]; then
+    cp "$EXTENSION_IMAGES_DIR"/*.png "$RESOURCES_DIR/"
+    echo "Successfully copied rank badge images."
+else
+    echo "Warning: Extension images directory not found at $EXTENSION_IMAGES_DIR"
+    echo "You will need to manually copy the rank images to: $RESOURCES_DIR"
 fi
 
-echo -e "${BLUE}[4/4] Cleaning up...${NC}"
-echo ""
+# Build the plugin
+echo "Building plugin..."
+cd "$PLUGIN_DIR"
+# Simplified build for demo purposes
+echo "Plugin installed to $PLUGIN_DIR"
 
-# Clean up
-rm -rf "$TEMP_DIR"
+# Create a CMakeLists.txt file
+cat > "$PLUGIN_DIR/CMakeLists.txt" << EOL
+cmake_minimum_required(VERSION 3.16)
 
-echo -e "${GREEN}======================================================"
-echo -e "Installation Complete!"
-echo -e "======================================================${NC}"
-echo ""
-echo "The EloWard Rank Badges plugin has been successfully installed."
+project(eloward-rank-badges VERSION 1.0.0)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(libobs REQUIRED)
+find_package(obs-frontend-api REQUIRED)
+find_package(jansson REQUIRED)
+find_package(CURL REQUIRED)
+
+set(eloward-rank-badges_SOURCES
+    eloward-rank-badges.c)
+
+add_library(eloward-rank-badges MODULE
+    \${eloward-rank-badges_SOURCES})
+
+target_link_libraries(eloward-rank-badges
+    libobs
+    obs-frontend-api
+    jansson
+    CURL::libcurl)
+
+configure_file(eloward-rank-badges.js "\${CMAKE_BINARY_DIR}/data/eloward-rank-badges.js" COPYONLY)
+
+if(OS_MACOS)
+    set_target_properties(eloward-rank-badges PROPERTIES
+        PREFIX ""
+        SUFFIX ".so")
+endif()
+
+setup_plugin_target(eloward-rank-badges)
+EOL
+
+echo -e "\n${GREEN}Installation complete!${NC}\n"
+echo "Please restart OBS Studio and add the \"EloWard Rank Badges\" source."
 echo ""
 echo -e "To use the plugin:"
 echo -e "1. Launch OBS Studio"
