@@ -135,7 +135,7 @@ echo 1. Restart OBS Studio
 echo 2. Add a 'EloWard Rank Badges' source to your scene
 echo 3. Enter your Twitch channel name if not automatically detected
 echo.
-echo Support: https://eloward.com/support
+echo Need help? Visit https://eloward.com/feedback or email unleashai.inquiries@gmail.com
 echo.
 echo Press any key to exit...
 pause > nul

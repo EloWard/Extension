@@ -12,44 +12,48 @@ This OBS plugin integrates with the EloWard service to display rank badges for v
 
 ## Easy Installation
 
+**Important:** Close OBS Studio completely before running the installer.
+
 ### Windows Users
-1. Close OBS Studio if it's running
-2. Right-click on `install_windows.bat` and select "Run as administrator"
-3. Follow the on-screen instructions
+1. Right-click on `install_windows.bat` and select "Run as administrator"
+2. Follow the on-screen instructions
 
 ### Mac Users
-1. Close OBS Studio if it's running
-2. Open Terminal (from Applications > Utilities)
-3. Drag the `install_mac.sh` file into the Terminal window
-4. Press Enter
-5. If prompted, enter your password
+1. Open **Terminal** (you can find it in Applications > Utilities, or search using Spotlight).
+2. Type the command `bash ` into the Terminal window (make sure to include the space after `bash`). **Do not press Enter yet.**
+3. Drag the `install_mac.sh` file from your download location onto the Terminal window. The path to the file will appear after `bash `.
+4. Press **Enter** in the Terminal window.
+5. Follow any instructions shown in the Terminal.
 
 The installer will automatically:
-- Find your OBS installation
-- Install all required files
+- Find your OBS installation (in your user Library folder)
+- Install all required plugin files
 - Provide usage instructions
 
 ## Usage
 
 1. After installing, restart OBS Studio
-2. Add the "EloWard Rank Badges" source to any scene with Twitch chat
-3. Make sure your Twitch chat Browser Source has "chat", "Chat", "twitch", or "Twitch" in its name
-4. Enter your Twitch username in the plugin properties if it's not automatically detected
+2. Add the "EloWard Rank Badges" source to any scene that contains your Twitch chat browser source.
+3. Make sure your Twitch chat Browser Source has a name containing "chat", "Chat", "twitch", or "Twitch" (case-insensitive) so the plugin can find it.
+4. Enter your Twitch username in the plugin properties if it's not automatically detected.
 
 ## Troubleshooting
 
 - **Badges not appearing?**
-  - Make sure your Twitch chat browser source has "chat", "Chat", "twitch", or "Twitch" in its name
-  - Verify your streamer name is correctly set in the plugin properties
-  - Confirm that your EloWard subscription is active
+  - Ensure OBS was fully closed during installation.
+  - Restart OBS after installation.
+  - Double-check that the "EloWard Rank Badges" source is added to the *same scene* as your chat browser source.
+  - Verify your chat browser source name includes "chat" or "twitch".
+  - Verify your streamer name is correctly set in the plugin properties.
+  - Confirm that your EloWard subscription is active.
 
 - **Can't find the plugin in OBS?**
-  - Make sure OBS is completely closed when running the installer
-  - Try running the installer script again with administrator privileges
-  - Restart OBS after installation
+  - Make sure OBS was completely closed when running the installer.
+  - Try running the installer script again.
+  - Restart OBS after installation.
 
 - **Need more help?**
-  - Visit [eloward.com/support](https://eloward.com/support)
+  - Visit [eloward.com/feedback](https://eloward.com/feedback) or email unleashai.inquiries@gmail.com
 
 ## Technical Details
 
