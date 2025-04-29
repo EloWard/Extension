@@ -24,6 +24,7 @@ fi
 OBS_DIR="$HOME/Library/Application Support/obs-studio"
 PLUGIN_NAME="eloward-rank-badges"
 PLUGIN_DIR="$OBS_DIR/plugins/$PLUGIN_NAME"
+PLUGIN_BIN_DIR="$PLUGIN_DIR/bin/mac"
 DATA_DIR="$PLUGIN_DIR/data"
 RESOURCES_DIR="$DATA_DIR/images/ranks"
 
@@ -38,20 +39,28 @@ echo -e "${GREEN}Found OBS Studio installation at $OBS_DIR${NC}"
 
 # Determine script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+COMPILED_PLUGIN_FILE="$SCRIPT_DIR/eloward-rank-badges.so" # Assumes .so file is in the same dir as the script
+
+# Check if compiled plugin exists
+if [ ! -f "$COMPILED_PLUGIN_FILE" ]; then
+    echo -e "${RED}[ERROR] Compiled plugin file (eloward-rank-badges.so) not found in the package.${NC}"
+    echo "Please ensure the package is complete."
+    exit 1
+fi
 
 # Create plugin directories
 echo "Creating plugin directories..."
-mkdir -p "$PLUGIN_DIR/bin/mac"
+mkdir -p "$PLUGIN_BIN_DIR"
 mkdir -p "$DATA_DIR/images/ranks"
 mkdir -p "$DATA_DIR/locale"
 
-# Copy plugin files
-echo "Copying plugin files..."
-cp "$SCRIPT_DIR/eloward-rank-badges.c" "$PLUGIN_DIR/"
+# Copy compiled plugin binary
+echo "Copying plugin module..."
+cp "$COMPILED_PLUGIN_FILE" "$PLUGIN_BIN_DIR/"
+
+# Copy data files (JS, images, locale)
+echo "Copying data files..."
 cp "$SCRIPT_DIR/eloward-rank-badges.js" "$DATA_DIR/"
-if [ -f "$SCRIPT_DIR/CMakeLists.txt" ]; then
-    cp "$SCRIPT_DIR/CMakeLists.txt" "$PLUGIN_DIR/"
-fi
 
 # Copy locale data if it exists
 if [ -d "$SCRIPT_DIR/data/locale" ]; then
@@ -68,54 +77,16 @@ else
     echo "The plugin may not display rank badges correctly."
 fi
 
-# Create a CMakeLists.txt file if it doesn't exist
-if [ ! -f "$PLUGIN_DIR/CMakeLists.txt" ]; then
-    echo "Creating CMakeLists.txt..."
-    cat > "$PLUGIN_DIR/CMakeLists.txt" << EOL
-cmake_minimum_required(VERSION 3.16)
-
-project(eloward-rank-badges VERSION 1.0.0)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-find_package(libobs REQUIRED)
-find_package(obs-frontend-api REQUIRED)
-find_package(jansson REQUIRED)
-find_package(CURL REQUIRED)
-
-set(eloward-rank-badges_SOURCES
-    eloward-rank-badges.c)
-
-add_library(eloward-rank-badges MODULE
-    \${eloward-rank-badges_SOURCES})
-
-target_link_libraries(eloward-rank-badges
-    libobs
-    obs-frontend-api
-    jansson
-    CURL::libcurl)
-
-configure_file(eloward-rank-badges.js "\${CMAKE_BINARY_DIR}/data/eloward-rank-badges.js" COPYONLY)
-
-if(OS_MACOS)
-    set_target_properties(eloward-rank-badges PROPERTIES
-        PREFIX ""
-        SUFFIX ".so")
-endif()
-
-setup_plugin_target(eloward-rank-badges)
-EOL
-fi
-
 echo -e "\n${GREEN}Installation complete!${NC}\n"
-echo "Please restart OBS Studio and add the \"EloWard Rank Badges\" source."
+echo "Please restart OBS Studio to load the plugin."
 echo ""
-echo -e "To use the plugin:"
-echo -e "1. Launch OBS Studio"
-echo -e "2. Add ${YELLOW}\"EloWard Rank Badges\"${NC} source to any scene"
-echo -e "3. Make sure you have a Browser Source with Twitch chat in the same scene"
-echo -e "4. Enter your Twitch username in the plugin properties if not automatically detected"
+echo -e "${YELLOW}Next Steps:${NC}"
+echo -e "1. Launch OBS Studio."
+echo -e "2. Go to the scene containing your Twitch chat (Browser Source)."
+echo -e "3. Add a new source by clicking the '+' button under 'Sources'."
+echo -e "4. Select ${YELLOW}\"EloWard Rank Badges\"${NC} from the list."
+echo -e "5. Click 'OK'. The plugin will now work in that scene."
+echo -e "6. If your Twitch name isn't detected, open the source properties and enter it."
 echo ""
 echo -e "Need help? Visit ${BLUE}https://eloward.com/feedback${NC} or email ${YELLOW}unleashai.inquiries@gmail.com${NC}"
 echo ""
