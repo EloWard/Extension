@@ -7,18 +7,18 @@ An OBS Studio plugin that displays League of Legends rank badges next to usernam
 This OBS plugin integrates with the EloWard service to display rank badges for viewers in Twitch chat. It follows the same workflow as the EloWard browser extension, but operates directly within OBS:
 
 1. Checks if the streamer is subscribed to EloWard
-2. If subscribed, displays rank badges next to viewer usernames in the chat browser source
-3. Tracks usage metrics similar to the browser extension
+2. If subscribed, displays rank badges next to viewer usernames in the OBS chat window
+3. If not subscribed, performs no operations for maximum efficiency
 
 ## Features
 
 - Automatically checks streamer subscription status
 - Displays League of Legends rank badges next to viewer usernames
 - Shows tooltips with detailed rank information on hover
-- Tracks database reads and successful lookups for metrics
 - No caching of rank data on disk (all in-memory)
-- Simple integration with existing OBS Twitch chat browser sources
+- Simple integration with existing OBS Twitch chat window
 - Multiple methods to detect the streamer name
+- Zero resource consumption when not subscribed
 
 ## Installation
 
@@ -76,12 +76,9 @@ This OBS plugin integrates with the EloWard service to display rank badges for v
 
 4. The plugin will automatically:
    - Check if you're subscribed to EloWard
-   - If subscribed, inject the badge display code into the chat browser source
+   - If subscribed, inject the badge display code into the chat window
    - Display rank badges next to usernames in chat
-
-5. You can monitor metrics from the plugin properties:
-   - Database Reads: Number of API calls made to fetch rank data
-   - Successful Lookups: Number of successful rank retrievals
+   - If not subscribed, the plugin will remain dormant and consume no resources
 
 ## Streamer Name Detection
 
@@ -94,21 +91,12 @@ The plugin attempts to determine your Twitch username in the following order:
 
 If none of these methods work, you should manually set your Twitch username in the plugin properties.
 
-## Metrics Tracking
-
-The plugin tracks the following metrics similar to the browser extension:
-
-- **Database Reads**: Each time the plugin makes an API call to fetch rank data
-- **Successful Lookups**: Each time a rank is successfully retrieved and displayed
-
-These metrics are displayed in the plugin properties and are also sent to the EloWard service to track usage.
-
 ## Troubleshooting
 
 - If rank badges aren't appearing:
-  - Check the "Subscription Status" in the plugin properties to see if you're subscribed
   - Make sure your Twitch chat browser source has "chat", "Chat", "twitch", or "Twitch" in its name
   - Verify your streamer name is correctly set in the plugin properties
+  - Confirm that your EloWard subscription is active
   - Check the OBS log file for any error messages
 
 - If your streamer name isn't being detected:
@@ -118,6 +106,7 @@ These metrics are displayed in the plugin properties and are also sent to the El
 ## Technical Notes
 
 - This plugin uses the same API endpoints as the EloWard browser extension
-- The plugin injects JavaScript into the browser source to display the badges
-- Metrics are tracked both locally and on the EloWard server
-- The plugin caches rank data in memory to reduce API calls 
+- The plugin injects JavaScript into the OBS chat window to display the badges
+- Metrics are tracked on the EloWard server only when subscribed
+- The plugin caches rank data in memory to reduce API calls
+- When not subscribed, the plugin remains completely dormant for zero performance impact 

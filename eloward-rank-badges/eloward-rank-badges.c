@@ -373,14 +373,13 @@ static bool inject_js_to_browser_source(obs_source_t *browser_source) {
 
 // Find and inject into browser sources that might be showing chat
 static void inject_into_chat_sources() {
-    if (!plugin_data->js_code && !load_js_file()) {
-        blog(LOG_ERROR, "EloWard Ranks: Failed to load JavaScript file");
+    // Fast exit if not subscribed
+    if (!plugin_data || !plugin_data->streamer_subscribed) {
         return;
     }
     
-    // Only proceed if streamer is subscribed
-    if (!plugin_data->streamer_subscribed) {
-        blog(LOG_INFO, "EloWard Ranks: Streamer is not subscribed, not injecting");
+    if (!plugin_data->js_code && !load_js_file()) {
+        blog(LOG_ERROR, "EloWard Ranks: Failed to load JavaScript file");
         return;
     }
     
@@ -495,59 +494,11 @@ static obs_properties_t *rank_badges_get_properties(void *data) {
     
     obs_properties_t *props = obs_properties_create();
     
-    // Add streamer name input
+    // Add streamer name input only
     obs_properties_add_text(props, "streamer_name", 
                             obs_module_text("Streamer Name"), OBS_TEXT_DEFAULT);
     
-    // Add status info
-    obs_properties_add_text(props, "subscription_status", 
-                            obs_module_text("Subscription Status"), OBS_TEXT_INFO);
-    
-    // Add DB read counter info
-    obs_properties_add_text(props, "db_reads_info", 
-                            obs_module_text("Database Reads"), OBS_TEXT_INFO);
-    
-    // Add successful reads counter info
-    obs_properties_add_text(props, "successful_reads_info", 
-                            obs_module_text("Successful Lookups"), OBS_TEXT_INFO);
-    
     return props;
-}
-
-static void rank_badges_show_properties(void *data, bool visible) {
-    UNUSED_PARAMETER(data);
-    UNUSED_PARAMETER(visible);
-    
-    // Update property values if visible
-    if (visible && plugin_data) {
-        obs_source_t *source = obs_get_source_by_name("EloWard Rank Badges");
-        if (source) {
-            obs_data_t *settings = obs_source_get_settings(source);
-            
-            // Update subscription status
-            char status_text[128];
-            snprintf(status_text, sizeof(status_text), 
-                     "%s %s", 
-                     plugin_data->current_streamer,
-                     plugin_data->streamer_subscribed ? "(Subscribed)" : "(Not Subscribed)");
-            obs_data_set_string(settings, "subscription_status", status_text);
-            
-            // Update counter values
-            char db_reads_text[64];
-            snprintf(db_reads_text, sizeof(db_reads_text), 
-                     "DB Reads: %u", plugin_data->db_reads);
-            obs_data_set_string(settings, "db_reads_info", db_reads_text);
-            
-            char successful_reads_text[64];
-            snprintf(successful_reads_text, sizeof(successful_reads_text), 
-                     "Successful Lookups: %u", plugin_data->successful_reads);
-            obs_data_set_string(settings, "successful_reads_info", successful_reads_text);
-            
-            obs_source_update(source, settings);
-            obs_data_release(settings);
-            obs_source_release(source);
-        }
-    }
 }
 
 static struct obs_source_info rank_badges_source_info = {
@@ -559,8 +510,7 @@ static struct obs_source_info rank_badges_source_info = {
     .destroy = rank_badges_destroy,
     .get_defaults = rank_badges_get_defaults,
     .get_properties = rank_badges_get_properties,
-    .update = rank_badges_update,
-    .show_properties = rank_badges_show_properties
+    .update = rank_badges_update
 };
 
 // Handle frontend events

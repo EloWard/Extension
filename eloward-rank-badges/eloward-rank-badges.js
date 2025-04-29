@@ -1,7 +1,7 @@
 /**
  * EloWard Rank Badges - OBS Plugin
  * 
- * This script is injected into the browser source showing Twitch chat
+ * This script is injected into the OBS chat window
  * to display rank badges for viewers.
  */
 
@@ -15,6 +15,11 @@
             subscription: 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'
         }
     };
+    
+    // Exit immediately if not subscribed
+    if (!CONFIG.streamerName || !CONFIG.isSubscribed) {
+        return;
+    }
     
     // Constants
     const BADGE_CLASS = 'eloward-rank-badge';
@@ -57,8 +62,6 @@
      * Increment the db_read counter
      */
     async function incrementDbReadCounter() {
-        if (!CONFIG.streamerName) return;
-        
         localDbReadCount++;
         
         try {
@@ -80,8 +83,6 @@
      * Increment the successful_lookup counter
      */
     async function incrementSuccessfulLookupCounter() {
-        if (!CONFIG.streamerName) return;
-        
         localSuccessfulLookupCount++;
         
         try {
@@ -243,12 +244,7 @@
     }
     
     // Fetch rank data from API
-    async function fetchRank(username) {
-        if (!CONFIG.isSubscribed) {
-            if (DEBUG) console.log(`EloWard: Streamer ${CONFIG.streamerName} is not subscribed, skipping rank fetch`);
-            return null;
-        }
-        
+    async function fetchRank(username) {        
         try {
             // Check cache first
             if (rankCache.has(username)) {
@@ -296,8 +292,6 @@
     
     // Add badge to chat message
     async function addBadgeToMessage(chatLine) {
-        if (!CONFIG.isSubscribed) return;
-        
         // Find the username element (supports multiple Twitch chat formats)
         const usernameElement = chatLine.querySelector('.chat-author__display-name, .chat-line__username, .chat-line__username-container, .username');
         if (!usernameElement) return;
@@ -333,12 +327,6 @@
     function initChatObserver() {
         // Add styles
         addRankStyles();
-        
-        // Only proceed if subscribed
-        if (!CONFIG.isSubscribed) {
-            if (DEBUG) console.log(`EloWard: Streamer ${CONFIG.streamerName} is not subscribed, skipping observer setup`);
-            return;
-        }
         
         // Find the chat container based on common Twitch chat layouts
         const containerSelectors = [
@@ -415,13 +403,6 @@
     function initialize() {
         if (DEBUG) {
             console.log('EloWard: Initializing rank badges');
-            console.log(`EloWard: Streamer: ${CONFIG.streamerName}, Subscribed: ${CONFIG.isSubscribed}`);
-        }
-        
-        // Exit early if not subscribed
-        if (!CONFIG.streamerName || !CONFIG.isSubscribed) {
-            if (DEBUG) console.log('EloWard: Not subscribed, initialization aborted');
-            return;
         }
         
         // Initialize observer and start monitoring chat
