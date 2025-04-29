@@ -54,7 +54,3 @@ The installer will automatically:
 
 - **Need more help?**
   - Visit [eloward.com/feedback](https://eloward.com/feedback) or email unleashai.inquiries@gmail.com
-
-## Technical Details
-
-For more technical information, see the [project GitHub page](https://github.com/yourusername/eloward-rank-badges). 
