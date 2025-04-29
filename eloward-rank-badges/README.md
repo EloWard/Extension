@@ -4,20 +4,23 @@ An OBS Studio plugin that displays League of Legends rank badges next to usernam
 
 ## Overview
 
-This plugin connects to the EloWard API service to retrieve player rank data and displays it next to viewer usernames in the Twitch chat OBS source. This allows streamers to easily see the ranks of their viewers directly in their OBS chat source.
+This OBS plugin integrates with the EloWard service to display rank badges for viewers in Twitch chat. It follows the same workflow as the EloWard browser extension, but operates directly within OBS:
+
+1. Checks if the streamer is subscribed to EloWard
+2. If subscribed, displays rank badges next to viewer usernames in the chat browser source
 
 ## Features
 
-- Displays League of Legends rank badges next to usernames in Twitch chat
-- Automatically fetches rank data from the EloWard API
+- Automatically checks streamer subscription status
+- Displays League of Legends rank badges next to viewer usernames
+- No caching of rank data on disk (all in-memory)
 - Simple integration with existing OBS Twitch chat browser sources
-- No authentication or configuration needed
 
 ## Installation
 
 ### Pre-built Binaries
 
-1. Download the latest release zip file for your platform (Windows/Mac/Linux) from the releases page
+1. Download the latest release zip file for your platform (Windows/Mac/Linux)
 2. Extract the zip file to your OBS plugins directory:
    - Windows: `C:\Program Files\obs-studio\obs-plugins\64bit\`
    - macOS: `~/Library/Application Support/obs-studio/plugins/`
@@ -61,23 +64,22 @@ This plugin connects to the EloWard API service to retrieve player rank data and
 
 ## Usage
 
-1. After installing the plugin, restart OBS Studio
-2. Add the "EloWard Rank Badges" source to any scene where you're displaying Twitch chat
-3. Make sure you also have a Browser Source displaying your Twitch chat in the same scene
-4. The plugin will automatically find your chat browser source and add rank badges next to usernames
-
-## Technical Notes
-
-- This plugin uses the EloWard API to fetch rank data
-- No caching is performed to keep memory usage low
-- The plugin detects chat sources by looking for browser sources with "chat" in their name
+1. After installing the plugin and restarting OBS Studio, add the "EloWard Rank Badges" source to any scene where you're displaying Twitch chat
+2. Make sure you have a Browser Source showing your Twitch chat in the same scene (the name should contain "chat" or "Chat")
+3. The plugin will automatically:
+   - Check if you're subscribed to EloWard
+   - If subscribed, inject the badge display code into the chat browser source
+   - Display rank badges next to usernames in chat
 
 ## Troubleshooting
 
-- If rank badges aren't appearing, make sure your chat browser source has "chat" in its name
-- Check the OBS log file for any error messages from the plugin
-- Verify that your internet connection is working properly
+- If rank badges aren't appearing:
+  - Make sure your Twitch chat browser source has "chat" in its name
+  - Check if you're subscribed to EloWard using the "Check Subscription" button in the plugin properties
+  - Check the OBS log file for any error messages
 
-## License
+## Technical Notes
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+- This plugin uses the same API endpoints as the EloWard browser extension
+- The plugin injects JavaScript into the browser source to display the badges
+- Only the essential functionality is included to keep the plugin simple and focused 

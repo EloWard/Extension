@@ -1,19 +1,21 @@
 /**
- * EloWard Rank Badges - JavaScript Injector
+ * EloWard Rank Badges - OBS Plugin
  * 
- * This script is used to inject badge display functionality into a browser source
- * showing Twitch chat. This is only necessary if the C plugin cannot directly 
- * access the browser source content.
+ * This script is injected into the browser source showing Twitch chat
+ * to display rank badges for viewers.
  */
 
 (function() {
-    // Constants
+    // Constants for API URLs
     const RANK_API_URL = 'https://eloward-viewers-api.unleashai-inquiries.workers.dev/api/ranks/lol';
-    const BADGE_UPDATE_INTERVAL = 5000; // 5 seconds
     const BADGE_CLASS = 'eloward-rank-badge';
     const DEBUG = false;
     
-    // Rank tier colors
+    // Track processed usernames to avoid duplicates
+    const processedUsernames = new Set();
+    const rankCache = new Map();
+    
+    // Rank tier colors matching the extension
     const RANK_COLORS = {
         'IRON': '#565556',
         'BRONZE': '#795649',
@@ -28,17 +30,12 @@
         'UNRANKED': '#000000'
     };
     
-    // Track processed messages to avoid duplicates
-    const processedUsernames = new Set();
-    const rankCache = new Map();
-    
-    // Add custom CSS for badges
-    function addBadgeStyles() {
-        const styleId = 'eloward-rank-badge-styles';
-        if (document.getElementById(styleId)) return;
+    // Add styles for rank badges
+    function addRankStyles() {
+        if (document.getElementById('eloward-styles')) return;
         
         const style = document.createElement('style');
-        style.id = styleId;
+        style.id = 'eloward-styles';
         style.textContent = `
             .${BADGE_CLASS} {
                 display: inline-block;
@@ -52,9 +49,10 @@
             }
         `;
         document.head.appendChild(style);
+        if (DEBUG) console.log('EloWard: Added rank badge styles');
     }
     
-    // Format the rank display (e.g., "DIAMOND III")
+    // Format rank for display (e.g. "DIAMOND III")
     function formatRank(rankData) {
         if (!rankData || !rankData.rank_tier || rankData.rank_tier === 'UNRANKED') {
             return 'UNRANKED';
@@ -70,13 +68,13 @@
         return division ? `${tier} ${division}` : tier;
     }
     
-    // Get color for a rank tier
+    // Get color for rank tier
     function getRankColor(tier) {
         return RANK_COLORS[tier] || '#000000';
     }
     
-    // Fetch rank data from the API
-    async function fetchRankData(username) {
+    // Fetch rank data from API
+    async function fetchRank(username) {
         try {
             // Check cache first
             if (rankCache.has(username)) {
@@ -105,20 +103,21 @@
         }
     }
     
-    // Add a rank badge to a chat message
-    async function addRankBadge(chatLine) {
-        // Find the username element
-        const usernameElement = chatLine.querySelector('.chat-author__display-name, .chat-line__username');
+    // Add badge to chat message
+    async function addBadgeToMessage(chatLine) {
+        // Find the username element (supports multiple Twitch chat formats)
+        const usernameElement = chatLine.querySelector('.chat-author__display-name, .chat-line__username, .chat-line__username-container, .username');
         if (!usernameElement) return;
         
+        // Extract username
         const username = usernameElement.textContent.trim().toLowerCase();
         
-        // Skip if we've already processed this username in this session
+        // Skip if already processed (avoid duplicates)
         if (processedUsernames.has(username)) return;
         processedUsernames.add(username);
         
         // Fetch rank data
-        const rankData = await fetchRankData(username);
+        const rankData = await fetchRank(username);
         if (!rankData) return;
         
         // Create badge element
@@ -127,38 +126,70 @@
         badgeElement.textContent = formatRank(rankData);
         badgeElement.style.backgroundColor = getRankColor(rankData.rank_tier);
         
-        // Add the badge after the username
-        usernameElement.parentNode.insertBefore(badgeElement, usernameElement.nextSibling);
+        // Add badge after username
+        usernameElement.insertAdjacentElement('afterend', badgeElement);
         
         if (DEBUG) console.log(`Added badge for ${username}: ${formatRank(rankData)}`);
     }
     
-    // Initialize the observer to watch for new chat messages
+    // Initialize chat observer
     function initChatObserver() {
-        // Add badge styles
-        addBadgeStyles();
+        // Add styles
+        addRankStyles();
         
-        // Find the chat container
-        const chatContainer = document.querySelector('.chat-scrollable-area__message-container, .chat-list');
+        // Find the chat container based on common Twitch chat layouts
+        const containerSelectors = [
+            '.chat-scrollable-area__message-container',  // Standard Twitch
+            '.chat-list',                                // Alternate Twitch
+            '.stream-chat',                              // OBS browser source
+            '.live-chat-container'                       // Other common formats
+        ];
+        
+        let chatContainer = null;
+        for (const selector of containerSelectors) {
+            chatContainer = document.querySelector(selector);
+            if (chatContainer) break;
+        }
+        
         if (!chatContainer) {
-            if (DEBUG) console.log('Chat container not found, will retry');
+            if (DEBUG) console.log('EloWard: Chat container not found, will retry');
             setTimeout(initChatObserver, 1000);
             return;
         }
         
         // Process existing messages
-        const existingMessages = chatContainer.querySelectorAll('.chat-line__message, .chat-line');
-        existingMessages.forEach(addRankBadge);
+        const messageSelectors = [
+            '.chat-line__message',
+            '.chat-line',
+            '.message',
+            '.chat-message'
+        ];
+        
+        let existingMessages = [];
+        for (const selector of messageSelectors) {
+            const messages = chatContainer.querySelectorAll(selector);
+            if (messages.length > 0) {
+                existingMessages = messages;
+                break;
+            }
+        }
+        
+        // Add badges to existing messages
+        existingMessages.forEach(addBadgeToMessage);
         
         // Watch for new messages
         const observer = new MutationObserver(mutations => {
             mutations.forEach(mutation => {
                 if (mutation.type === 'childList') {
                     mutation.addedNodes.forEach(node => {
-                        if (node.nodeType === Node.ELEMENT_NODE &&
-                            (node.classList.contains('chat-line__message') || 
-                             node.classList.contains('chat-line'))) {
-                            addRankBadge(node);
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            // Check all potential message classes
+                            if (node.classList.contains('chat-line__message') || 
+                                node.classList.contains('chat-line') ||
+                                node.classList.contains('message') ||
+                                node.classList.contains('chat-message')) {
+                                addBadgeToMessage(node);
+                            }
                         }
                     });
                 }
@@ -166,27 +197,28 @@
         });
         
         observer.observe(chatContainer, { childList: true });
-        if (DEBUG) console.log('EloWard rank badge observer initialized');
+        if (DEBUG) console.log('EloWard: Chat observer initialized');
     }
     
-    // Start the script
+    // Start the plugin
     function initialize() {
-        if (DEBUG) console.log('Initializing EloWard rank badges script');
+        if (DEBUG) console.log('EloWard: Initializing rank badges');
+        
+        // Initialize observer and start monitoring chat
         initChatObserver();
         
-        // Periodically clean up cache to avoid memory issues
+        // Clean up cache periodically
         setInterval(() => {
             if (rankCache.size > 100) {
-                // Keep only the 50 most recent entries
-                const entries = Array.from(rankCache.entries());
-                const toKeep = entries.slice(-50);
+                const entries = Array.from(rankCache.entries()).slice(-50);
                 rankCache.clear();
-                toKeep.forEach(([key, value]) => rankCache.set(key, value));
+                entries.forEach(([key, value]) => rankCache.set(key, value));
+                if (DEBUG) console.log(`EloWard: Trimmed rank cache to 50 entries`);
             }
         }, 60000); // Clean every minute
     }
     
-    // Start the plugin when the page is loaded
+    // Run the plugin
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initialize);
     } else {

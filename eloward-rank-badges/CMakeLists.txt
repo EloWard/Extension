@@ -13,12 +13,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Set plugin sources
 set(PLUGIN_SOURCES
     eloward-rank-badges.c
-    rank-badge-injector.c
-)
-
-# Set plugin headers
-set(PLUGIN_HEADERS
-    # Add any headers here
 )
 
 # Add resource files
@@ -33,7 +27,6 @@ set(PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/plugins/eloward-rank-badges")
 # Add the plugin module
 add_library(${PROJECT_NAME} MODULE
     ${PLUGIN_SOURCES}
-    ${PLUGIN_HEADERS}
 )
 
 # Include directories
