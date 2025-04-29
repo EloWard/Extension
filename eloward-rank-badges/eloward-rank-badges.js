@@ -6,14 +6,32 @@
  */
 
 (function() {
-    // Constants for API URLs
-    const RANK_API_URL = 'https://eloward-viewers-api.unleashai-inquiries.workers.dev/api/ranks/lol';
+    // Configuration (provided by OBS plugin during injection)
+    const CONFIG = window.ELOWARD_CONFIG || {
+        streamerName: '',
+        isSubscribed: false,
+        apiUrls: {
+            rank: 'https://eloward-viewers-api.unleashai-inquiries.workers.dev/api/ranks/lol',
+            subscription: 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'
+        }
+    };
+    
+    // Constants
     const BADGE_CLASS = 'eloward-rank-badge';
     const DEBUG = false;
     
     // Track processed usernames to avoid duplicates
     const processedUsernames = new Set();
     const rankCache = new Map();
+    
+    // Track metrics
+    let localDbReadCount = 0;
+    let localSuccessfulLookupCount = 0;
+    
+    // Add periodic sync for metrics
+    setInterval(() => {
+        syncMetrics();
+    }, 30000); // Sync every 30 seconds
     
     // Rank tier colors matching the extension
     const RANK_COLORS = {
@@ -29,6 +47,66 @@
         'CHALLENGER': '#e9ddaa',
         'UNRANKED': '#000000'
     };
+    
+    // Log initialization with config
+    if (DEBUG) {
+        console.log('EloWard Config:', CONFIG);
+    }
+    
+    /**
+     * Increment the db_read counter
+     */
+    async function incrementDbReadCounter() {
+        if (!CONFIG.streamerName) return;
+        
+        localDbReadCount++;
+        
+        try {
+            const response = await fetch(`${CONFIG.apiUrls.subscription}/metrics/db_read`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_name: CONFIG.streamerName })
+            });
+            
+            if (DEBUG && !response.ok) {
+                console.error(`Failed to increment db_read: ${response.status}`);
+            }
+        } catch (error) {
+            if (DEBUG) console.error('Error incrementing db_read counter:', error);
+        }
+    }
+    
+    /**
+     * Increment the successful_lookup counter
+     */
+    async function incrementSuccessfulLookupCounter() {
+        if (!CONFIG.streamerName) return;
+        
+        localSuccessfulLookupCount++;
+        
+        try {
+            const response = await fetch(`${CONFIG.apiUrls.subscription}/metrics/successful_lookup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_name: CONFIG.streamerName })
+            });
+            
+            if (DEBUG && !response.ok) {
+                console.error(`Failed to increment successful_lookup: ${response.status}`);
+            }
+        } catch (error) {
+            if (DEBUG) console.error('Error incrementing successful_lookup counter:', error);
+        }
+    }
+    
+    /**
+     * Sync locally tracked metrics with the OBS plugin
+     */
+    function syncMetrics() {
+        if (DEBUG) {
+            console.log(`EloWard Metrics: ${localDbReadCount} DB reads, ${localSuccessfulLookupCount} successful lookups`);
+        }
+    }
     
     // Add styles for rank badges
     function addRankStyles() {
@@ -46,6 +124,38 @@
                 font-weight: bold;
                 color: white;
                 vertical-align: middle;
+            }
+            
+            .${BADGE_CLASS}:hover {
+                opacity: 0.9;
+            }
+            
+            .eloward-tooltip {
+                position: absolute;
+                background: rgba(0,0,0,0.85);
+                color: white;
+                border-radius: 4px;
+                padding: 6px 10px;
+                font-size: 12px;
+                z-index: 9999;
+                pointer-events: none;
+                max-width: 200px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            }
+            
+            .eloward-tooltip-content {
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .eloward-tooltip-rank {
+                font-weight: bold;
+                margin-bottom: 3px;
+            }
+            
+            .eloward-tooltip-stats {
+                font-size: 11px;
+                opacity: 0.9;
             }
         `;
         document.head.appendChild(style);
@@ -73,15 +183,82 @@
         return RANK_COLORS[tier] || '#000000';
     }
     
+    // Create and show tooltip
+    function showTooltip(event, rankData) {
+        // Remove any existing tooltip
+        hideTooltip();
+        
+        // Create tooltip
+        const tooltip = document.createElement('div');
+        tooltip.className = 'eloward-tooltip';
+        
+        // Create content
+        const content = document.createElement('div');
+        content.className = 'eloward-tooltip-content';
+        
+        // Add rank info
+        const rankText = document.createElement('div');
+        rankText.className = 'eloward-tooltip-rank';
+        rankText.textContent = formatRank(rankData);
+        rankText.style.color = getRankColor(rankData.rank_tier);
+        content.appendChild(rankText);
+        
+        // Add LP/winrate if available
+        if (rankData.lp !== undefined || rankData.wins !== undefined) {
+            const stats = document.createElement('div');
+            stats.className = 'eloward-tooltip-stats';
+            
+            if (rankData.lp !== undefined) {
+                stats.textContent = `${rankData.lp} LP`;
+            }
+            
+            if (rankData.wins !== undefined && rankData.losses !== undefined) {
+                const total = rankData.wins + rankData.losses;
+                const winrate = total > 0 ? Math.round((rankData.wins / total) * 100) : 0;
+                stats.textContent += stats.textContent ? ` • ` : '';
+                stats.textContent += `${rankData.wins}W ${rankData.losses}L (${winrate}%)`;
+            }
+            
+            content.appendChild(stats);
+        }
+        
+        tooltip.appendChild(content);
+        document.body.appendChild(tooltip);
+        
+        // Position tooltip
+        const rect = event.target.getBoundingClientRect();
+        tooltip.style.left = `${rect.left + window.scrollX}px`;
+        tooltip.style.top = `${rect.top + window.scrollY - tooltip.offsetHeight - 8}px`;
+        
+        // Save reference to tooltip
+        window.elowardTooltip = tooltip;
+    }
+    
+    // Hide tooltip
+    function hideTooltip() {
+        if (window.elowardTooltip) {
+            window.elowardTooltip.remove();
+            window.elowardTooltip = null;
+        }
+    }
+    
     // Fetch rank data from API
     async function fetchRank(username) {
+        if (!CONFIG.isSubscribed) {
+            if (DEBUG) console.log(`EloWard: Streamer ${CONFIG.streamerName} is not subscribed, skipping rank fetch`);
+            return null;
+        }
+        
         try {
             // Check cache first
             if (rankCache.has(username)) {
                 return rankCache.get(username);
             }
             
-            const response = await fetch(`${RANK_API_URL}/${username}`);
+            // Increment db_read counter
+            await incrementDbReadCounter();
+            
+            const response = await fetch(`${CONFIG.apiUrls.rank}/${username}`);
             
             if (response.status === 404) {
                 // User not found, cache as unranked
@@ -95,8 +272,22 @@
             }
             
             const data = await response.json();
-            rankCache.set(username, data);
-            return data;
+            
+            // Increment successful lookup counter
+            await incrementSuccessfulLookupCounter();
+            
+            // Normalize data format to ensure consistent property names
+            const normalizedData = {
+                rank_tier: data.rank_tier || data.tier || 'UNRANKED',
+                rank_division: data.rank_division || data.division,
+                lp: data.lp || data.leaguePoints,
+                wins: data.wins,
+                losses: data.losses,
+                summonerName: data.riot_id || data.summonerName
+            };
+            
+            rankCache.set(username, normalizedData);
+            return normalizedData;
         } catch (err) {
             if (DEBUG) console.error(`Error fetching rank for ${username}:`, err);
             return null;
@@ -105,6 +296,8 @@
     
     // Add badge to chat message
     async function addBadgeToMessage(chatLine) {
+        if (!CONFIG.isSubscribed) return;
+        
         // Find the username element (supports multiple Twitch chat formats)
         const usernameElement = chatLine.querySelector('.chat-author__display-name, .chat-line__username, .chat-line__username-container, .username');
         if (!usernameElement) return;
@@ -126,6 +319,10 @@
         badgeElement.textContent = formatRank(rankData);
         badgeElement.style.backgroundColor = getRankColor(rankData.rank_tier);
         
+        // Add tooltip events
+        badgeElement.addEventListener('mouseenter', (e) => showTooltip(e, rankData));
+        badgeElement.addEventListener('mouseleave', hideTooltip);
+        
         // Add badge after username
         usernameElement.insertAdjacentElement('afterend', badgeElement);
         
@@ -137,12 +334,22 @@
         // Add styles
         addRankStyles();
         
+        // Only proceed if subscribed
+        if (!CONFIG.isSubscribed) {
+            if (DEBUG) console.log(`EloWard: Streamer ${CONFIG.streamerName} is not subscribed, skipping observer setup`);
+            return;
+        }
+        
         // Find the chat container based on common Twitch chat layouts
         const containerSelectors = [
             '.chat-scrollable-area__message-container',  // Standard Twitch
             '.chat-list',                                // Alternate Twitch
             '.stream-chat',                              // OBS browser source
-            '.live-chat-container'                       // Other common formats
+            '.live-chat-container',                      // Other common formats
+            '.chat-room__content',                       // Twitch popout chat
+            '.chat-container',                           // Generic chat container
+            '.video-chat',                               // Video chat layout
+            '[data-test-selector="chat-scrollable-area__message-container"]'  // Data attribute selector
         ];
         
         let chatContainer = null;
@@ -162,7 +369,9 @@
             '.chat-line__message',
             '.chat-line',
             '.message',
-            '.chat-message'
+            '.chat-message',
+            '.chat-line-message',
+            '.chat-entry'
         ];
         
         let existingMessages = [];
@@ -187,7 +396,9 @@
                             if (node.classList.contains('chat-line__message') || 
                                 node.classList.contains('chat-line') ||
                                 node.classList.contains('message') ||
-                                node.classList.contains('chat-message')) {
+                                node.classList.contains('chat-message') ||
+                                node.classList.contains('chat-line-message') ||
+                                node.classList.contains('chat-entry')) {
                                 addBadgeToMessage(node);
                             }
                         }
@@ -202,7 +413,16 @@
     
     // Start the plugin
     function initialize() {
-        if (DEBUG) console.log('EloWard: Initializing rank badges');
+        if (DEBUG) {
+            console.log('EloWard: Initializing rank badges');
+            console.log(`EloWard: Streamer: ${CONFIG.streamerName}, Subscribed: ${CONFIG.isSubscribed}`);
+        }
+        
+        // Exit early if not subscribed
+        if (!CONFIG.streamerName || !CONFIG.isSubscribed) {
+            if (DEBUG) console.log('EloWard: Not subscribed, initialization aborted');
+            return;
+        }
         
         // Initialize observer and start monitoring chat
         initChatObserver();
