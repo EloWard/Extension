@@ -28,6 +28,7 @@ typedef struct {
     bool streamer_subscribed;
     unsigned int db_reads;
     unsigned int successful_reads;
+    char *plugin_path;
 } eloward_data_t;
 
 static eloward_data_t *plugin_data = NULL;
@@ -365,6 +366,40 @@ static bool inject_js_to_browser_source(obs_source_t *browser_source) {
     
     if (result) {
         blog(LOG_INFO, "EloWard Ranks: %s", result);
+        
+        // Inject the resources path for images
+        char resource_path_script[1024];
+        
+#ifdef _WIN32
+        // Windows path
+        snprintf(resource_path_script, sizeof(resource_path_script),
+                 "window.ELOWARD_RESOURCES_PATH = 'file:///%s/data/images/ranks/';",
+                 plugin_data->plugin_path);
+#else
+        // macOS/Linux path
+        snprintf(resource_path_script, sizeof(resource_path_script),
+                 "window.ELOWARD_RESOURCES_PATH = 'file://%s/data/images/ranks/';",
+                 plugin_data->plugin_path);
+#endif
+        
+        // Inject the resources path script
+        obs_source_t *browser = obs_source_get_filter_by_name(browser_source, "Browser Source");
+        if (browser) {
+            if (!obs_source_get_proc_handler(browser)) {
+                obs_source_release(browser);
+                return false;
+            }
+            
+            proc_handler_t *ph = obs_source_get_proc_handler(browser);
+            calldata_t cd;
+            calldata_init(&cd);
+            calldata_set_string(&cd, "script", resource_path_script);
+            proc_handler_call(ph, "eval_js", &cd);
+            calldata_free(&cd);
+            
+            obs_source_release(browser);
+        }
+        
         return true;
     }
     
@@ -561,8 +596,17 @@ bool obs_module_load(void) {
     plugin_data->db_reads = 0;
     plugin_data->successful_reads = 0;
     
+    // Get the plugin path
+    char *module_path = os_get_config_path_ptr("obs-studio/plugins/eloward-rank-badges");
+    if (module_path) {
+        plugin_data->plugin_path = bstrdup(module_path);
+        bfree(module_path);
+    } else {
+        plugin_data->plugin_path = bstrdup("");
+    }
+    
     // Create stop event for the polling thread
-    os_event_init(&plugin_data->stop_event, OS_EVENT_TYPE_MANUAL);
+    plugin_data->stop_event = os_event_create("EloWardRankBadgesStopEvent", OS_EVENT_TYPE_MANUAL);
     
     // Register the OBS source
     obs_register_source(&rank_badges_source_info);
@@ -607,12 +651,20 @@ void obs_module_unload(void) {
         }
         
         // Clean up stop event
-        os_event_destroy(plugin_data->stop_event);
+        if (plugin_data->stop_event) {
+            os_event_destroy(plugin_data->stop_event);
+        }
         
         // Free JS code
         if (plugin_data->js_code) {
             bfree(plugin_data->js_code);
             plugin_data->js_code = NULL;
+        }
+        
+        // Free plugin path
+        if (plugin_data->plugin_path) {
+            bfree(plugin_data->plugin_path);
+            plugin_data->plugin_path = NULL;
         }
         
         // Free plugin data

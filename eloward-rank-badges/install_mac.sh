@@ -20,75 +20,58 @@ if pgrep -x "OBS" > /dev/null; then
     exit 1
 fi
 
-# Detect OBS plugin directory
-OBS_USER_DIR="$HOME/Library/Application Support/obs-studio/plugins"
-if [ ! -d "$OBS_USER_DIR" ]; then
-    echo -e "${RED}[ERROR] OBS plugins folder not found at '$OBS_USER_DIR'${NC}"
-    exit 1
-fi
-
-# Determine script directory
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Copy plugin binaries
-echo Copying plugin module...
-cp -R "$SCRIPT_DIR/plugins/obs-plugins/"* "$OBS_USER_DIR/"
-
-# Copy data files
-echo Copying JavaScript and data...
-DATA_DEST="$HOME/Library/Application Support/obs-studio/data/obs-plugins/eloward-rank-badges"
-mkdir -p "$DATA_DEST"
-cp -R "$SCRIPT_DIR/data/"* "$DATA_DEST/"
-cp "$SCRIPT_DIR/eloward-rank-badges.js" "$DATA_DEST/"
-
-# Determine OBS directory
+# Determine OBS directories
 OBS_DIR="$HOME/Library/Application Support/obs-studio"
 PLUGIN_NAME="eloward-rank-badges"
 PLUGIN_DIR="$OBS_DIR/plugins/$PLUGIN_NAME"
-DATA_DIR="$OBS_DIR/plugins/$PLUGIN_NAME/data"
+DATA_DIR="$PLUGIN_DIR/data"
 RESOURCES_DIR="$DATA_DIR/images/ranks"
-
-# Extension images source
-EXTENSION_IMAGES_DIR="/Users/sunnywang/Desktop/EloWardApp/ext/images/ranks"
 
 # Check if OBS is installed
 if [ ! -d "$OBS_DIR" ]; then
-    echo "Error: OBS Studio installation not found at $OBS_DIR"
+    echo -e "${RED}[ERROR] OBS Studio installation not found at '$OBS_DIR'${NC}"
     echo "Please make sure OBS Studio is installed."
     exit 1
 fi
 
-echo "Found OBS Studio installation at $OBS_DIR"
+echo -e "${GREEN}Found OBS Studio installation at $OBS_DIR${NC}"
+
+# Determine script directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Create plugin directories
+echo "Creating plugin directories..."
 mkdir -p "$PLUGIN_DIR/bin/mac"
-mkdir -p "$DATA_DIR"
-mkdir -p "$RESOURCES_DIR"
+mkdir -p "$DATA_DIR/images/ranks"
+mkdir -p "$DATA_DIR/locale"
 
 # Copy plugin files
 echo "Copying plugin files..."
-cp "$(dirname "$0")/eloward-rank-badges.c" "$PLUGIN_DIR/"
-cp "$(dirname "$0")/eloward-rank-badges.js" "$DATA_DIR/"
-cp -r "$(dirname "$0")/data/locale" "$DATA_DIR/"
-
-# Copy the rank images from the extension directory
-echo "Copying rank images from extension..."
-if [ -d "$EXTENSION_IMAGES_DIR" ]; then
-    cp "$EXTENSION_IMAGES_DIR"/*.png "$RESOURCES_DIR/"
-    echo "Successfully copied rank badge images."
-else
-    echo "Warning: Extension images directory not found at $EXTENSION_IMAGES_DIR"
-    echo "You will need to manually copy the rank images to: $RESOURCES_DIR"
+cp "$SCRIPT_DIR/eloward-rank-badges.c" "$PLUGIN_DIR/"
+cp "$SCRIPT_DIR/eloward-rank-badges.js" "$DATA_DIR/"
+if [ -f "$SCRIPT_DIR/CMakeLists.txt" ]; then
+    cp "$SCRIPT_DIR/CMakeLists.txt" "$PLUGIN_DIR/"
 fi
 
-# Build the plugin
-echo "Building plugin..."
-cd "$PLUGIN_DIR"
-# Simplified build for demo purposes
-echo "Plugin installed to $PLUGIN_DIR"
+# Copy locale data if it exists
+if [ -d "$SCRIPT_DIR/data/locale" ]; then
+    cp -r "$SCRIPT_DIR/data/locale"/* "$DATA_DIR/locale/"
+fi
 
-# Create a CMakeLists.txt file
-cat > "$PLUGIN_DIR/CMakeLists.txt" << EOL
+# Copy the rank images from the plugin's data directory
+echo "Copying rank badge images..."
+if [ -d "$SCRIPT_DIR/data/images/ranks" ]; then
+    cp "$SCRIPT_DIR/data/images/ranks"/*.png "$RESOURCES_DIR/"
+    echo "Successfully copied rank badge images."
+else
+    echo -e "${YELLOW}Warning: Rank images not found in the plugin package.${NC}"
+    echo "The plugin may not display rank badges correctly."
+fi
+
+# Create a CMakeLists.txt file if it doesn't exist
+if [ ! -f "$PLUGIN_DIR/CMakeLists.txt" ]; then
+    echo "Creating CMakeLists.txt..."
+    cat > "$PLUGIN_DIR/CMakeLists.txt" << EOL
 cmake_minimum_required(VERSION 3.16)
 
 project(eloward-rank-badges VERSION 1.0.0)
@@ -123,6 +106,7 @@ endif()
 
 setup_plugin_target(eloward-rank-badges)
 EOL
+fi
 
 echo -e "\n${GREEN}Installation complete!${NC}\n"
 echo "Please restart OBS Studio and add the \"EloWard Rank Badges\" source."

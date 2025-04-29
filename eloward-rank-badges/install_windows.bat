@@ -5,6 +5,16 @@ echo EloWard Rank Badges Installer for OBS Studio
 echo =============================================
 echo.
 
+:: Check if OBS is running
+tasklist /FI "IMAGENAME eq obs64.exe" 2>NUL | find /I "obs64.exe" >NUL
+if "%ERRORLEVEL%"=="0" (
+    echo [ERROR] Please close OBS Studio before installing.
+    echo.
+    echo Press any key to exit...
+    pause > nul
+    exit /b 1
+)
+
 :: Find OBS installation path
 SET "OBS_INSTALL_PATH="
 SET "PLUGIN_NAME=eloward-rank-badges"
@@ -37,11 +47,8 @@ IF "!OBS_INSTALL_PATH!" == "" (
 
 echo Found OBS Studio at: !OBS_INSTALL_PATH!
 
-:: Extension images source
-SET "EXTENSION_IMAGES_DIR=%~dp0..\ext\images\ranks"
-IF NOT EXIST "!EXTENSION_IMAGES_DIR!" (
-    SET "EXTENSION_IMAGES_DIR=%UserProfile%\Desktop\EloWardApp\ext\images\ranks"
-)
+:: Determine script directory (where the installer is located)
+SET "SCRIPT_DIR=%~dp0"
 
 :: Setup directories
 SET "PLUGIN_PATH=!OBS_INSTALL_PATH!\plugins\!PLUGIN_NAME!"
@@ -53,60 +60,72 @@ echo Creating directories...
 IF NOT EXIST "!PLUGIN_PATH!" mkdir "!PLUGIN_PATH!"
 IF NOT EXIST "!DATA_PATH!" mkdir "!DATA_PATH!"
 IF NOT EXIST "!IMAGES_PATH!" mkdir "!IMAGES_PATH!"
+IF NOT EXIST "!DATA_PATH!\locale" mkdir "!DATA_PATH!\locale"
 
 :: Copy files
 echo Copying plugin files...
-copy "%~dp0eloward-rank-badges.c" "!PLUGIN_PATH!"
-copy "%~dp0eloward-rank-badges.js" "!DATA_PATH!"
-xcopy /E /Y "%~dp0data\locale" "!DATA_PATH!\locale\"
+copy "%SCRIPT_DIR%eloward-rank-badges.c" "!PLUGIN_PATH!"
+copy "%SCRIPT_DIR%eloward-rank-badges.js" "!DATA_PATH!"
 
-:: Copy rank images
-echo Copying rank badge images...
-IF EXIST "!EXTENSION_IMAGES_DIR!" (
-    xcopy /Y "!EXTENSION_IMAGES_DIR!\*.png" "!IMAGES_PATH!\"
-    echo Successfully copied rank badge images.
-) ELSE (
-    echo Warning: Extension images directory not found at !EXTENSION_IMAGES_DIR!
-    echo You will need to manually copy the rank images to: !IMAGES_PATH!
+:: Copy locale data if it exists
+IF EXIST "%SCRIPT_DIR%data\locale" (
+    xcopy /E /Y "%SCRIPT_DIR%data\locale\*" "!DATA_PATH!\locale\"
 )
 
-:: Create a CMakeLists.txt file
-echo Creating CMakeLists.txt...
-(
-    echo cmake_minimum_required^(VERSION 3.16^)
-    echo.
-    echo project^(eloward-rank-badges VERSION 1.0.0^)
-    echo.
-    echo set^(CMAKE_CXX_STANDARD 17^)
-    echo set^(CMAKE_CXX_STANDARD_REQUIRED ON^)
-    echo.
-    echo find_package^(libobs REQUIRED^)
-    echo find_package^(obs-frontend-api REQUIRED^)
-    echo find_package^(jansson REQUIRED^)
-    echo find_package^(CURL REQUIRED^)
-    echo.
-    echo set^(eloward-rank-badges_SOURCES
-    echo     eloward-rank-badges.c^)
-    echo.
-    echo add_library^(eloward-rank-badges MODULE
-    echo     ${eloward-rank-badges_SOURCES}^)
-    echo.
-    echo target_link_libraries^(eloward-rank-badges
-    echo     libobs
-    echo     obs-frontend-api
-    echo     jansson
-    echo     CURL::libcurl^)
-    echo.
-    echo configure_file^(eloward-rank-badges.js "${CMAKE_BINARY_DIR}/data/eloward-rank-badges.js" COPYONLY^)
-    echo.
-    echo if^(OS_WINDOWS^)
-    echo     set_target_properties^(eloward-rank-badges PROPERTIES
-    echo         PREFIX ""
-    echo         SUFFIX ".dll"^)
-    echo endif^(^)
-    echo.
-    echo setup_plugin_target^(eloward-rank-badges^)
-) > "!PLUGIN_PATH!\CMakeLists.txt"
+:: Copy CMakeLists if it exists
+IF EXIST "%SCRIPT_DIR%CMakeLists.txt" (
+    copy "%SCRIPT_DIR%CMakeLists.txt" "!PLUGIN_PATH!"
+)
+
+:: Copy rank images from the plugin package
+echo Copying rank badge images...
+IF EXIST "%SCRIPT_DIR%data\images\ranks" (
+    xcopy /Y "%SCRIPT_DIR%data\images\ranks\*.png" "!IMAGES_PATH!\"
+    echo Successfully copied rank badge images.
+) ELSE (
+    echo Warning: Rank images not found in the plugin package.
+    echo The plugin may not display rank badges correctly.
+)
+
+:: Create a CMakeLists.txt file if it doesn't exist
+IF NOT EXIST "!PLUGIN_PATH!\CMakeLists.txt" (
+    echo Creating CMakeLists.txt...
+    (
+        echo cmake_minimum_required^(VERSION 3.16^)
+        echo.
+        echo project^(eloward-rank-badges VERSION 1.0.0^)
+        echo.
+        echo set^(CMAKE_CXX_STANDARD 17^)
+        echo set^(CMAKE_CXX_STANDARD_REQUIRED ON^)
+        echo.
+        echo find_package^(libobs REQUIRED^)
+        echo find_package^(obs-frontend-api REQUIRED^)
+        echo find_package^(jansson REQUIRED^)
+        echo find_package^(CURL REQUIRED^)
+        echo.
+        echo set^(eloward-rank-badges_SOURCES
+        echo     eloward-rank-badges.c^)
+        echo.
+        echo add_library^(eloward-rank-badges MODULE
+        echo     ${eloward-rank-badges_SOURCES}^)
+        echo.
+        echo target_link_libraries^(eloward-rank-badges
+        echo     libobs
+        echo     obs-frontend-api
+        echo     jansson
+        echo     CURL::libcurl^)
+        echo.
+        echo configure_file^(eloward-rank-badges.js "${CMAKE_BINARY_DIR}/data/eloward-rank-badges.js" COPYONLY^)
+        echo.
+        echo if^(OS_WINDOWS^)
+        echo     set_target_properties^(eloward-rank-badges PROPERTIES
+        echo         PREFIX ""
+        echo         SUFFIX ".dll"^)
+        echo endif^(^)
+        echo.
+        echo setup_plugin_target^(eloward-rank-badges^)
+    ) > "!PLUGIN_PATH!\CMakeLists.txt"
+)
 
 echo.
 echo Installation complete!

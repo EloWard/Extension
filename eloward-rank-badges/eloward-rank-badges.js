@@ -40,14 +40,29 @@
     
     // Define resources path for accessing images
     const RESOURCES_PATH = (function() {
-        // Try to detect the resources path based on the environment
+        // Try multiple methods to find the images path
+        
+        // Method 1: If the OBS plugin has provided a configured path
+        if (window.ELOWARD_RESOURCES_PATH) {
+            return window.ELOWARD_RESOURCES_PATH;
+        }
+        
+        // Method 2: Try to detect the path based on the script URL
         const scriptElement = document.currentScript;
         if (scriptElement && scriptElement.src) {
             const scriptPath = scriptElement.src;
             // Extract the base path from the script URL
-            return scriptPath.substring(0, scriptPath.lastIndexOf('/') + 1) + 'images/ranks/';
+            const basePath = scriptPath.substring(0, scriptPath.lastIndexOf('/') + 1);
+            return `${basePath}images/ranks/`;
         }
-        // Fallback: assume a relative path
+        
+        // Method 3: Check if we're in an OBS browser source
+        if (window.obsstudio) {
+            // Default OBS data path structure
+            return 'file:///Library/Application Support/obs-studio/plugins/eloward-rank-badges/data/images/ranks/';
+        }
+        
+        // Method 4: Fallback to a relative path
         return 'images/ranks/';
     })();
     
@@ -75,6 +90,7 @@
     // Log initialization with config
     if (DEBUG) {
         console.log('EloWard Config:', CONFIG);
+        console.log('EloWard Resources Path:', RESOURCES_PATH);
     }
     
     /**
@@ -215,8 +231,16 @@
         // Normalize tier name
         const normalizedTier = tier.toLowerCase();
         
-        // First try 36px version (higher quality for tooltips)
-        return `${RESOURCES_PATH}${normalizedTier}36.png`;
+        // Try 36px image first, then 18px as fallback
+        const baseUrl = `${RESOURCES_PATH}${normalizedTier}`;
+        return `${baseUrl}36.png`;
+    }
+    
+    // Get fallback image URL (18px version)
+    function getFallbackImageUrl(tier) {
+        if (!tier) return null;
+        const normalizedTier = tier.toLowerCase();
+        return `${RESOURCES_PATH}${normalizedTier}18.png`;
     }
     
     // Fallback to get color for rank tier
@@ -227,8 +251,12 @@
     // Preload rank images for better performance
     function preloadRankImages() {
         RANK_TIERS.forEach(tier => {
-            const img = new Image();
-            img.src = getRankImageUrl(tier);
+            // Preload both 36px and 18px versions
+            const imgHigh = new Image();
+            imgHigh.src = getRankImageUrl(tier);
+            
+            const imgLow = new Image();
+            imgLow.src = getFallbackImageUrl(tier);
         });
     }
     
@@ -254,8 +282,14 @@
         rankImg.src = getRankImageUrl(rankData.rank_tier);
         rankImg.alt = rankData.rank_tier;
         rankImg.onerror = () => {
-            rankImg.style.display = 'none';
-            rankText.style.color = getRankColor(rankData.rank_tier);
+            // Try the 18px version
+            rankImg.src = getFallbackImageUrl(rankData.rank_tier);
+            
+            // If that also fails, hide the image and use color
+            rankImg.onerror = () => {
+                rankImg.style.display = 'none';
+                rankText.style.color = getRankColor(rankData.rank_tier);
+            };
         };
         rankText.appendChild(rankImg);
         
@@ -387,16 +421,22 @@
         rankImg.alt = rankData.rank_tier;
         rankImg.src = getRankImageUrl(rankData.rank_tier);
         
-        // Handle image load error - fallback to color badge with text
+        // Handle image load error - try fallback image first
         rankImg.onerror = () => {
-            rankImg.style.display = 'none';
-            badgeElement.textContent = formatRank(rankData);
-            badgeElement.style.backgroundColor = getRankColor(rankData.rank_tier);
-            badgeElement.style.padding = '1px 4px';
-            badgeElement.style.borderRadius = '3px';
-            badgeElement.style.fontSize = '11px';
-            badgeElement.style.fontWeight = 'bold';
-            badgeElement.style.color = 'white';
+            // Try the 18px version
+            rankImg.src = getFallbackImageUrl(rankData.rank_tier);
+            
+            // If that also fails, fall back to text
+            rankImg.onerror = () => {
+                rankImg.style.display = 'none';
+                badgeElement.textContent = formatRank(rankData);
+                badgeElement.style.backgroundColor = getRankColor(rankData.rank_tier);
+                badgeElement.style.padding = '1px 4px';
+                badgeElement.style.borderRadius = '3px';
+                badgeElement.style.fontSize = '11px';
+                badgeElement.style.fontWeight = 'bold';
+                badgeElement.style.color = 'white';
+            };
         };
         
         // Add the image to the badge
