@@ -20,88 +20,92 @@ This OBS plugin integrates with the EloWard service to display rank badges for v
 - Multiple methods to detect the streamer name
 - Zero resource consumption when not subscribed
 
-## Installation
+## Easy Installation (Recommended)
 
-### Pre-built Binaries
+### Windows Users
+1. Download the [`install_windows.bat`](https://github.com/yourusername/eloward-rank-badges/releases/latest/download/install_windows.bat) file
+2. Right-click the downloaded file and select "Run as administrator"
+3. Follow the on-screen instructions
 
-1. Download the latest release zip file for your platform (Windows/Mac/Linux)
-2. Extract the zip file to your OBS plugins directory:
-   - Windows: `C:\Program Files\obs-studio\obs-plugins\64bit\`
-   - macOS: `~/Library/Application Support/obs-studio/plugins/`
-   - Linux: `/usr/lib/obs-plugins/` or `~/.config/obs-studio/plugins/`
-3. Restart OBS Studio
+### Mac Users
+1. Download the [`install_mac.sh`](https://github.com/yourusername/eloward-rank-badges/releases/latest/download/install_mac.sh) file
+2. Open Terminal (from Applications > Utilities)
+3. Drag the downloaded file into the Terminal window and press Enter
+4. If prompted, enter your password
+5. Follow the on-screen instructions
 
-### Building from Source
+That's it! The installer will automatically:
+- Find your OBS installation
+- Download the latest plugin version
+- Install all required files
+- Provide clear usage instructions
 
-#### Prerequisites
+## Manual Installation
 
+If you prefer to install manually, follow these steps:
+
+### Windows
+1. Download the [latest release ZIP](https://github.com/yourusername/eloward-rank-badges/releases/latest/download/eloward-rank-badges-windows.zip)
+2. Extract the ZIP file
+3. Copy the contents of the extracted `obs-plugins` folder to `C:\Program Files\obs-studio\obs-plugins\`
+4. Copy the contents of the extracted `data` folder to `C:\Program Files\obs-studio\data\obs-plugins\eloward-rank-badges\`
+
+### Mac
+1. Download the [latest release ZIP](https://github.com/yourusername/eloward-rank-badges/releases/latest/download/eloward-rank-badges-mac.zip)
+2. Extract the ZIP file
+3. Copy the `eloward-rank-badges` folder to `~/Library/Application Support/obs-studio/plugins/`
+
+### Linux
+1. Download the [latest release ZIP](https://github.com/yourusername/eloward-rank-badges/releases/latest/download/eloward-rank-badges-linux.zip)
+2. Extract the ZIP file
+3. Copy the `eloward-rank-badges` folder to `~/.config/obs-studio/plugins/`
+
+## Usage
+
+1. After installing, restart OBS Studio
+2. Add the "EloWard Rank Badges" source to any scene where you're displaying Twitch chat
+3. Make sure you have a Browser Source showing your Twitch chat in the same scene (the name should contain "chat", "Chat", "twitch", or "Twitch")
+4. Enter your Twitch username in the plugin properties if it's not automatically detected
+
+The plugin will automatically:
+- Check if you're subscribed to EloWard
+- If subscribed, display rank badges next to usernames in chat
+- If not subscribed, remain dormant with zero resource impact
+
+## Troubleshooting
+
+- **Badges not appearing?**
+  - Make sure your Twitch chat browser source has "chat", "Chat", "twitch", or "Twitch" in its name
+  - Verify your streamer name is correctly set in the plugin properties
+  - Confirm that your EloWard subscription is active
+  - Check the OBS log file for any error messages
+
+- **Can't find the plugin in OBS?**
+  - Make sure OBS is completely closed when installing the plugin
+  - Try running the installer again with administrator privileges
+  - Restart OBS after installation
+
+- **Still having issues?**
+  - Visit [eloward.com/support](https://eloward.com/support) for additional help
+  - Check the [GitHub issues page](https://github.com/yourusername/eloward-rank-badges/issues) for known problems
+
+## Building from Source
+
+For advanced users who want to build the plugin from source:
+
+### Prerequisites
 - CMake 3.16 or newer
 - OBS Studio development package
 - C/C++ compiler (Visual Studio, GCC, or Clang)
 - libcurl development package
 - jansson JSON library development package
 
-#### Build Steps
-
-1. Clone this repository:
-   ```
-   git clone https://github.com/yourusername/eloward-rank-badges.git
-   cd eloward-rank-badges
-   ```
-
-2. Create a build directory and run CMake:
-   ```
-   mkdir build
-   cd build
-   cmake ..
-   ```
-
-3. Build the plugin:
-   ```
-   cmake --build .
-   ```
-
-4. Install the plugin:
-   ```
-   cmake --install .
-   ```
-
-## Usage
-
-1. After installing the plugin and restarting OBS Studio, add the "EloWard Rank Badges" source to any scene where you're displaying Twitch chat
-2. Make sure you have a Browser Source showing your Twitch chat in the same scene (the name should contain "chat", "Chat", "twitch", or "Twitch")
-3. Configure the plugin:
-   - Enter your Twitch streamer name in the "Streamer Name" field if it's not automatically detected
-   - The plugin will save this setting globally for all scenes
-
-4. The plugin will automatically:
-   - Check if you're subscribed to EloWard
-   - If subscribed, inject the badge display code into the chat window
-   - Display rank badges next to usernames in chat
-   - If not subscribed, the plugin will remain dormant and consume no resources
-
-## Streamer Name Detection
-
-The plugin attempts to determine your Twitch username in the following order:
-
-1. From the "Streamer Name" setting in the plugin properties
-2. From your OBS stream settings (service username)
-3. From your OBS profile name
-4. From a global OBS setting
-
-If none of these methods work, you should manually set your Twitch username in the plugin properties.
-
-## Troubleshooting
-
-- If rank badges aren't appearing:
-  - Make sure your Twitch chat browser source has "chat", "Chat", "twitch", or "Twitch" in its name
-  - Verify your streamer name is correctly set in the plugin properties
-  - Confirm that your EloWard subscription is active
-  - Check the OBS log file for any error messages
-
-- If your streamer name isn't being detected:
-  - Enter it manually in the plugin's "Streamer Name" field
-  - Make sure to use your exact Twitch username
+### Build Steps
+1. Clone the repository
+2. Create a build directory: `mkdir build && cd build`
+3. Run CMake: `cmake ..`
+4. Build the plugin: `cmake --build .`
+5. Install: `cmake --install .`
 
 ## Technical Notes
 
