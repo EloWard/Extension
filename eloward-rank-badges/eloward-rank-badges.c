@@ -1,7 +1,7 @@
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <util/platform.h>
-#include <util/curl/curl.h>
+#include <curl/curl.h>
 #include <json.h>
 #include <pthread.h>
 #include <stdio.h>

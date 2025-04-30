@@ -2,12 +2,31 @@ cmake_minimum_required(VERSION 3.16)
 
 project(eloward-rank-badges VERSION 1.0.0)
 
+# Development: include OBS source headers for libobs and frontend API when building locally
+include_directories(
+    "${CMAKE_SOURCE_DIR}/../obs-studio/libobs"
+    "${CMAKE_SOURCE_DIR}/../obs-studio/frontend/api"
+)
+
 # Include OBS dependencies
 find_package(libobs REQUIRED)
 find_package(CURL REQUIRED)
 # JSON library (Jansson) via pkg-config
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JANSSON REQUIRED jansson)
+
+# Development fallback: if OBS_INCLUDE_DIRS/LIBRARIES are not set, point to local obs-studio clone
+if(NOT OBS_INCLUDE_DIRS)
+    message(STATUS "OBS_INCLUDE_DIRS not defined; using libobs and frontend/api")
+    set(OBS_INCLUDE_DIRS
+        "${CMAKE_SOURCE_DIR}/../obs-studio/libobs"
+        "${CMAKE_SOURCE_DIR}/../obs-studio/frontend/api"
+    )
+endif()
+if(NOT OBS_LIBRARIES)
+    message(STATUS "OBS_LIBRARIES not defined; using ../obs-studio/build/libobs/RelWithDebInfo/libobs.dylib")
+    set(OBS_LIBRARIES "${CMAKE_SOURCE_DIR}/../obs-studio/build/libobs/RelWithDebInfo/libobs.dylib")
+endif()
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,7 +59,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME}
-    libobs
+    ${OBS_LIBRARIES}
     ${CURL_LIBRARIES}
     ${JANSSON_LIBRARIES}
 )
