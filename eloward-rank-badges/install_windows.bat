@@ -1,8 +1,8 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-echo EloWard Rank Badges Installer for OBS Studio
-echo =============================================
+echo EloWard Rank Badges Test Installer for OBS Studio
+echo ================================================
 echo.
 
 :: Check if OBS is running
@@ -49,21 +49,39 @@ echo Found OBS Studio at: !OBS_INSTALL_PATH!
 
 :: Determine script directory (where the installer is located)
 SET "SCRIPT_DIR=%~dp0"
-SET "COMPILED_PLUGIN_FILE=%SCRIPT_DIR%eloward-rank-badges.dll" &:: Assumes .dll file is in the same dir
 
-:: Check if compiled plugin exists
-IF NOT EXIST "!COMPILED_PLUGIN_FILE!" (
-    echo [ERROR] Compiled plugin file (eloward-rank-badges.dll) not found in the package.
-    echo Please ensure the package is complete.
+:: Look for compiled plugin file
+SET "COMPILED_PLUGIN_FILE="
+
+:: Check in common build locations
+IF EXIST "!SCRIPT_DIR!build\eloward-rank-badges.dll" (
+    SET "COMPILED_PLUGIN_FILE=!SCRIPT_DIR!build\eloward-rank-badges.dll"
+) ELSE IF EXIST "!SCRIPT_DIR!eloward-rank-badges.dll" (
+    SET "COMPILED_PLUGIN_FILE=!SCRIPT_DIR!eloward-rank-badges.dll"
+) ELSE (
+    :: Attempt to find the DLL somewhere in the directory tree
+    FOR /R "!SCRIPT_DIR!" %%F IN (eloward-rank-badges.dll) DO (
+        IF EXIST "%%F" (
+            SET "COMPILED_PLUGIN_FILE=%%F"
+            GOTO FOUND_PLUGIN
+        )
+    )
+    
+    :: If we get here, we didn't find the plugin
+    echo [ERROR] Could not find compiled plugin file (eloward-rank-badges.dll).
+    echo Please build the plugin first or place the DLL file in the build directory.
     echo.
     echo Press any key to exit...
     pause > nul
     exit /b 1
 )
 
+:FOUND_PLUGIN
+echo Found plugin at: !COMPILED_PLUGIN_FILE!
+
 :: Setup directories
 SET "PLUGIN_PATH=!OBS_INSTALL_PATH!\plugins\!PLUGIN_NAME!"
-SET "PLUGIN_BIN_PATH=!PLUGIN_PATH!\bin\64bit" &:: Assuming 64-bit OBS
+SET "PLUGIN_BIN_PATH=!PLUGIN_PATH!\bin\64bit"
 SET "DATA_PATH=!PLUGIN_PATH!\data"
 SET "IMAGES_PATH=!DATA_PATH!\images\ranks"
 
