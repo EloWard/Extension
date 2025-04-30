@@ -2,68 +2,146 @@
 
 An OBS Studio plugin that displays League of Legends rank badges next to usernames in Twitch chat for streamers.
 
-## Overview
+## Development Guide
 
-This OBS plugin integrates with the EloWard service to display rank badges for viewers in Twitch chat. It works by adding a small, invisible source to your scene which detects your chat source and injects the necessary code to show badges.
+This README provides instructions for developers working on the EloWard Rank Badges plugin.
 
-1. Checks if the streamer is subscribed to EloWard.
-2. If subscribed, adds rank badges next to viewer usernames in the OBS chat window (Browser Source).
-3. If not subscribed, performs no operations for maximum efficiency.
+### Prerequisites
 
-## Easy Installation
+- **OBS Studio** installed on your system
+- **C/C++ development environment**:
+  - Windows: Visual Studio with C++ workload
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+- **CMake** (3.10 or newer)
+- **Git** (for version control)
+
+### Building the Plugin
+
+#### macOS
+
+1. Clone or download this repository
+2. Open Terminal and navigate to the plugin directory:
+   ```
+   cd /path/to/eloward-rank-badges
+   ```
+3. Create and enter a build directory:
+   ```
+   mkdir build && cd build
+   ```
+4. Configure with CMake:
+   ```
+   cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+   ```
+5. Build the plugin:
+   ```
+   make
+   ```
+   
+This will create `eloward-rank-badges.so` in the build directory.
+
+#### Windows
+
+1. Clone or download this repository
+2. Open a Developer Command Prompt for Visual Studio
+3. Navigate to the plugin directory:
+   ```
+   cd \path\to\eloward-rank-badges
+   ```
+4. Create and enter a build directory:
+   ```
+   mkdir build
+   cd build
+   ```
+5. Configure with CMake:
+   ```
+   cmake -G "Visual Studio 17 2022" -A x64 ..
+   ```
+   (Adjust Visual Studio version as needed)
+6. Build the plugin:
+   ```
+   cmake --build . --config RelWithDebInfo
+   ```
+
+This will create `eloward-rank-badges.dll` in the build directory (usually in a subfolder like `RelWithDebInfo`).
+
+### Testing the Plugin
+
+#### 1. Install the Plugin Using the Scripts
 
 **Important:** Close OBS Studio completely before running the installer.
 
-This package includes the pre-compiled plugin. The installer script simply copies the necessary files to the correct OBS Studio folders.
+##### macOS
+1. Run the installer script:
+   ```
+   ./install_mac.sh
+   ```
+   The script will:
+   - Find the compiled `.so` file
+   - Create the necessary directories in your OBS installation
+   - Copy the plugin and data files to the correct locations
 
-### Windows Users
-1. Right-click on `install_windows.bat` and select "Run as administrator".
-2. Follow the on-screen instructions.
+##### Windows
+1. Run the installer script by double-clicking `install_windows.bat` or from command prompt:
+   ```
+   install_windows.bat
+   ```
+   The script will:
+   - Find the compiled `.dll` file
+   - Create the necessary directories in your OBS installation
+   - Copy the plugin and data files to the correct locations
 
-### Mac Users
-1. Open **Terminal** (you can find it in Applications > Utilities, or search using Spotlight).
-2. Type the command `bash ` into the Terminal window (make sure to include the space after `bash`). **Do not press Enter yet.**
-3. Drag the `install_mac.sh` file from your download location onto the Terminal window. The path to the file will appear after `bash `.
-4. Press **Enter** in the Terminal window.
-5. Follow any instructions shown in the Terminal.
+#### 2. Open OBS and Add the Plugin
 
-The installer will automatically:
-- Find your OBS installation.
-- Install all required plugin files (binary, JavaScript, images, locale).
-- Provide usage instructions.
+1. Launch OBS Studio
+2. Create or select a scene where you want to test the plugin
+3. Add a new source:
+   - Click the "+" button in the Sources panel
+   - Select "EloWard Rank Badges" from the list
+   - Give it a name (e.g., "EloWard Badges") and click "OK"
+4. The source will appear invisible in your scene (this is normal)
+5. If you have a Twitch chat Browser Source in your scene, the plugin should automatically detect it
 
-## Usage
+#### 3. Configure the Plugin (if needed)
 
-1. After running the installer, **restart OBS Studio** to ensure it loads the new plugin.
-2. Go to the scene that contains your **Twitch chat Browser Source**.
-3. Add a new source by clicking the **'+' button** under the 'Sources' dock.
-4. Select **"EloWard Rank Badges"** from the list of available sources.
-5. Give it a name (e.g., "EloWard Badges") and click **'OK'**.
-6. **That's it!** The source is invisible but will now automatically detect your chat source in that scene and start showing badges (if you are subscribed and viewers have linked accounts).
-7. If your Twitch username isn't detected automatically (check the OBS logs: Help -> Log Files -> View Current Log, look for "EloWard Ranks"), you can manually set it:
-   - Right-click the "EloWard Rank Badges" source you added.
-   - Select "Properties".
-   - Enter your Twitch username (lowercase) in the "Streamer Name" field.
-   - Click "OK".
+If your Twitch username isn't automatically detected:
+1. Right-click the "EloWard Rank Badges" source
+2. Select "Properties"
+3. Enter your Twitch username (lowercase) in the "Streamer Name" field
+4. Click "OK"
 
-## Troubleshooting
+#### 4. Verify It's Working
 
-- **Plugin not listed in OBS after installation?**
-  - Ensure OBS was *completely* closed (check Task Manager/Activity Monitor) before running the installer.
-  - Run the installer again.
-  - Restart OBS Studio after installation.
-  - Check the OBS log files (Help -> Log Files -> View Current Log) for errors related to "eloward-rank-badges" during startup.
+1. Check the OBS logs for plugin information:
+   - Help → Log Files → View Current Log
+   - Look for entries containing "EloWard Rank Badges" or "eloward-rank-badges"
+2. If you have a Twitch chat Browser Source in the same scene, the plugin should inject the necessary code to display rank badges
 
-- **Badges not appearing in chat?**
-  - Make sure the **"EloWard Rank Badges" source** is in the **same scene** as your Twitch chat Browser Source.
-  - Ensure your chat **Browser Source's name** contains "chat", "Chat", "twitch", or "Twitch" (case-insensitive) so the plugin can find it.
-  - Check the plugin's properties (right-click the source -> Properties) and verify your streamer name is correctly set if it wasn't auto-detected.
-  - Confirm your EloWard subscription is active by checking your account on eloward.com.
-  - Remember badges only show for viewers who have linked their Riot account via the EloWard extension.
+### Troubleshooting Development Issues
 
-- **Need more help?**
-  - Visit [eloward.com/feedback](https://eloward.com/feedback) or email unleashai.inquiries@gmail.com
+- **Compilation errors?**
+  - Check that you have all required dependencies
+  - Ensure your CMake and compiler versions are up to date
+  - Check the error logs for specific issues
+
+- **Plugin not loading in OBS?**
+  - Check if the plugin files were copied to the correct location
+  - Look for errors in the OBS log (Help → Log Files → View Current Log)
+  - Try reinstalling using the installer script
+
+- **Changes not appearing when testing?**
+  - Make sure you're rebuilding the plugin after changes
+  - Reinstall using the installer script
+  - Restart OBS completely after installing
+
+## Project Structure
+
+- `eloward-rank-badges.c` - Main plugin implementation
+- `eloward-rank-badges.js` - JavaScript code injected into the browser source
+- `data/` - Resources used by the plugin
+- `install_mac.sh` - macOS installation script
+- `install_windows.bat` - Windows installation script
+- `CMakeLists.txt` - CMake build configuration
 
 ## Technical Details
 
-For more technical information, see the [project GitHub page](https://github.com/yourusername/eloward-rank-badges).
+For production details and user-facing documentation, see the [EloWard website](https://eloward.com).
