@@ -145,3 +145,14 @@ If your Twitch username isn't automatically detected:
 ## Technical Details
 
 For production details and user-facing documentation, see the [EloWard website](https://eloward.com).
+
+
+   /Users/sunnywang/Desktop/EloWardApp/obs-studio/build
+
+      cd ~/path/to/eloward-rank-badges
+   mkdir -p build && cd build
+   cmake \
+     -DCMAKE_PREFIX_PATH=/Users/sunnywang/Desktop/EloWardApp/obs-studio/build \
+     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+     ..
+   make
