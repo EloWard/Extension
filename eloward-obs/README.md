@@ -1,59 +1,67 @@
-# OBS Plugin Template
+# EloWard Rank Badges for OBS
 
-## Introduction
+This OBS plugin displays League of Legends rank badges next to usernames in Twitch chat.
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
+## Features
 
-* Boilerplate plugin source code
-* A CMake project file
-* GitHub Actions workflows and repository actions
+- Displays League of Legends rank badges in OBS browser sources showing Twitch chat
+- Automatically detects the streamer's username
+- Shows tooltips with detailed rank information on hover
+- Maintains subscription verification with the EloWard service
 
-## Supported Build Environments
+## Installation
 
-| Platform  | Tool   |
-|-----------|--------|
-| Windows   | Visal Studio 17 2022 |
-| macOS     | XCode 16.0 |
-| Windows, macOS  | CMake 3.30.5 |
-| Ubuntu 24.04 | CMake 3.28.3 |
-| Ubuntu 24.04 | `ninja-build` |
-| Ubuntu 24.04 | `pkg-config`
-| Ubuntu 24.04 | `build-essential` |
+### macOS
 
-## Quick Start
+1. Download the latest release from the [releases page](https://github.com/EloWard/eloward-rank-badges/releases)
+2. Extract the archive
+3. Copy the `eloward-rank-badges.plugin` folder to `~/Library/Application Support/obs-studio/plugins/`
+4. Restart OBS
 
-An absolute bare-bones [Quick Start Guide](https://github.com/obsproject/obs-plugintemplate/wiki/Quick-Start-Guide) is available in the wiki.
+### Windows
 
-## Documentation
+1. Download the latest release from the [releases page](https://github.com/EloWard/eloward-rank-badges/releases)
+2. Extract the archive
+3. Copy the `eloward-rank-badges` folder to `C:\Program Files\obs-studio\obs-plugins\64bit\`
+4. Restart OBS
 
-All documentation can be found in the [Plugin Template Wiki](https://github.com/obsproject/obs-plugintemplate/wiki).
+## Usage
 
-Suggested reading to get up and running:
+1. Add a Browser Source to your scene with the Twitch chat URL
+2. The plugin will automatically detect the chat and inject rank badges
 
-* [Getting started](https://github.com/obsproject/obs-plugintemplate/wiki/Getting-Started)
-* [Build system requirements](https://github.com/obsproject/obs-plugintemplate/wiki/Build-System-Requirements)
-* [Build system options](https://github.com/obsproject/obs-plugintemplate/wiki/CMake-Build-System-Options)
+## Building from Source
 
-## GitHub Actions & CI
+### Prerequisites
 
-Default GitHub Actions workflows are available for the following repository actions:
+- CMake 3.28 or newer
+- OBS Studio development files
+- CURL development libraries
+- Jansson development libraries
 
-* `push`: Run for commits or tags pushed to `master` or `main` branches.
-* `pr-pull`: Run when a Pull Request has been pushed or synchronized.
-* `dispatch`: Run when triggered by the workflow dispatch in GitHub's user interface.
-* `build-project`: Builds the actual project and is triggered by other workflows.
-* `check-format`: Checks CMake and plugin source code formatting and is triggered by other workflows.
+### Build Steps
 
-The workflows make use of GitHub repository actions (contained in `.github/actions`) and build scripts (contained in `.github/scripts`) which are not needed for local development, but might need to be adjusted if additional/different steps are required to build the plugin.
+```bash
+# Clone the repository
+git clone https://github.com/EloWard/eloward-rank-badges.git
+cd eloward-rank-badges
 
-### Retrieving build artifacts
+# Configure with CMake
+cmake -S . -B build -G Ninja
 
-Successful builds on GitHub Actions will produce build artifacts that can be downloaded for testing. These artifacts are commonly simple archives and will not contain package installers or installation programs.
+# Build
+cmake --build build
 
-### Building a Release
+# Install
+cmake --install build
+```
 
-To create a release, an appropriately named tag needs to be pushed to the `main`/`master` branch using semantic versioning (e.g., `12.3.4`, `23.4.5-beta2`). A draft release will be created on the associated repository with generated installer packages or installation programs attached as release artifacts.
+## License
 
-## Signing and Notarizing on macOS
+This project is licensed under the GPL v2 License - see the LICENSE file for details.
 
-Basic concepts of codesigning and notarization on macOS are explained in the correspodning [Wiki article](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS) which has a specific section for the [GitHub Actions setup](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS#setting-up-code-signing-for-github-actions).
+## Acknowledgments
+
+- OBS Studio Team for their excellent software and plugin API
+- League of Legends for providing the rank tier system
+- All the streamers who use the EloWard extension
