@@ -30,8 +30,9 @@ This README provides instructions for developers working on the EloWard Rank Bad
    ```
 4. Configure with CMake:
    ```
-   cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+   cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/path/to/obs-studio/build ..
    ```
+   Note: You must specify the path to your OBS Studio build directory using `-DCMAKE_PREFIX_PATH`
 5. Build the plugin:
    ```
    make

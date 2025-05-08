@@ -2,7 +2,7 @@
 #include <obs-frontend-api.h>
 #include <util/platform.h>
 #include <curl/curl.h>
-#include <json.h>
+#include <jansson.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
