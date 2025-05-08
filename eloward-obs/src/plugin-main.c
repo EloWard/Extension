@@ -609,7 +609,7 @@ static void on_scene_change(enum obs_frontend_event event, void *data) {
 }
 
 bool obs_module_load(void) {
-    obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
+	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 
     // Initialize libcurl
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -659,11 +659,11 @@ bool obs_module_load(void) {
     
     obs_log(LOG_INFO, "Plugin initialized successfully");
     
-    return true;
+	return true;
 }
 
 void obs_module_unload(void) {
-    obs_log(LOG_INFO, "plugin unloaded");
+	obs_log(LOG_INFO, "plugin unloaded");
     
     // Clean up
     if (plugin_data) {

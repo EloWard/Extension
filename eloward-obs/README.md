@@ -35,9 +35,32 @@ This OBS plugin displays League of Legends rank badges next to usernames in Twit
 ### Prerequisites
 
 - CMake 3.28 or newer
+  - macOS: `brew install cmake`
+  - Windows: Download installer from [cmake.org](https://cmake.org/download/)
+  - Ubuntu: `sudo apt install cmake`
 - OBS Studio development files
 - CURL development libraries
+  - macOS: `brew install curl`
+  - Windows: Included with OBS development files
+  - Ubuntu: `sudo apt install libcurl4-openssl-dev`
 - Jansson development libraries
+  - macOS: `brew install jansson`
+  - Windows: Included with OBS development files
+  - Ubuntu: `sudo apt install libjansson-dev`
+- Ninja build system (recommended)
+  - macOS: `brew install ninja`
+  - Windows: Download from [ninja-build.org](https://ninja-build.org/)
+  - Ubuntu: `sudo apt install ninja-build`
+
+### Checking Your CMake Version
+
+To verify your CMake installation and version:
+
+```bash
+cmake --version
+```
+
+If you don't have CMake installed or need to update it, follow the installation instructions above for your platform.
 
 ### Build Steps
 
@@ -54,6 +77,22 @@ cmake --build build
 
 # Install
 cmake --install build
+```
+
+#### macOS Specific Build Steps
+
+On macOS, you might need to specify the OBS installation path:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="/Applications/OBS.app/Contents/Resources"
+```
+
+#### Windows Specific Build Steps
+
+On Windows, you might need to specify the OBS development directory:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="C:/obs-studio/build"
 ```
 
 ## License
