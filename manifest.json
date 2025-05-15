@@ -22,7 +22,7 @@
   ],
   "host_permissions": [
     "https://www.twitch.tv/*",
-    "https://*.unleashai-inquiries.workers.dev/*",
+    "https://*.unleashai.workers.dev/*",
     "https://www.eloward.com/*"
   ],
   "content_scripts": [

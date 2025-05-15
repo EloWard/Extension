@@ -5,9 +5,9 @@ import { PersistentStorage } from './js/persistentStorage.js';
 
 // Constants
 const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai-inquiries.workers.dev'; // Updated to use deployed worker
-const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai-inquiries.workers.dev'; // Rank Worker API endpoint
-const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai-inquiries.workers.dev'; // Subscription API worker
+const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai.workers.dev'; // Updated to use deployed worker
+const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai.workers.dev'; // Rank Worker API endpoint
+const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai.workers.dev'; // Subscription API worker
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
