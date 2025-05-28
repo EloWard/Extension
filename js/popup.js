@@ -660,7 +660,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentRank.textContent = rankText;
     
     // Determine the rank badge image path
-    let rankImageFileName = formattedTier;
+    let rankImageFileName = formattedTier.toLowerCase();
     
     // Set the rank badge image
     rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}.png')`;
