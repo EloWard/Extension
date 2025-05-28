@@ -812,20 +812,13 @@ function addBadgeToMessage(usernameElement, rankData) {
   rankImg.width = 24;
   rankImg.height = 24;
   
-  // Set image source based on rank tier - use 36px images for higher quality
+  // Set image source based on rank tier - use CDN
   try {
     const tier = rankData.tier.toLowerCase();
-    rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}36.png`);
+    rankImg.src = `https://eloward-cdn.unleashai.workers.dev/lol/${tier}.png`;
   } catch (error) {
     console.error("Error setting badge image source:", error);
-    // Fallback to 18px if 36px isn't available
-    try {
-      const tier = rankData.tier.toLowerCase();
-      rankImg.src = chrome.runtime.getURL(`images/ranks/${tier}18.png`);
-    } catch (fallbackError) {
-      console.error("Error setting fallback badge image source:", fallbackError);
-      return; // Don't continue if we can't get the image
-    }
+    return; // Don't continue if we can't get the image
   }
   
   // Add the image to the badge container

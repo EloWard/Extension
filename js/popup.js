@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           // Show unranked if rank info is missing
           currentRank.textContent = 'Unranked';
-          rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+          rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
           rankBadgePreview.style.transform = 'translateY(-3px)';
         }
       } else {
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Reset rank display and show unranked graphic
         currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
         
         // Set region from storage if available
@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Reset rank display and show unranked graphic
     currentRank.textContent = 'Unranked';
-    rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+    rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
     rankBadgePreview.style.transform = 'translateY(-3px)';
     setRiotControlsDisabled(true); // Ensure Riot controls are disabled
   }
@@ -411,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Show unranked rank display
             currentRank.textContent = 'Unranked';
-            rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+            rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
             rankBadgePreview.style.transform = 'translateY(-3px)';
             refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
             
@@ -607,7 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
           error.message.includes('no rank data')
       )) {
         currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
       } else {
         // For other errors, show brief error message
@@ -635,7 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!rankData) {
       currentRank.textContent = 'Unranked';
       // Enhanced image URL path to ensure proper loading with transparent background
-      rankBadgePreview.style.backgroundImage = `url('../images/ranks/unranked.png')`;
+      rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
       // Apply custom positioning for unranked badge
       rankBadgePreview.style.transform = 'translateY(-3px)';
       return;
@@ -663,7 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let rankImageFileName = formattedTier;
     
     // Set the rank badge image
-    rankBadgePreview.style.backgroundImage = `url('../images/ranks/${rankImageFileName}.png')`;
+    rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}.png')`;
     
     // Apply different positioning based on rank
     const higherRanks = ['master', 'grandmaster', 'challenger'];
