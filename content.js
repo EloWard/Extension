@@ -818,7 +818,7 @@ function addBadgeToMessage(usernameElement, rankData) {
     rankImg.src = `https://eloward-cdn.unleashai.workers.dev/lol/${tier}.png`;
   } catch (error) {
     console.error("Error setting badge image source:", error);
-    return; // Don't continue if we can't get the image
+      return; // Don't continue if we can't get the image
   }
   
   // Add the image to the badge container
