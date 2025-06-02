@@ -223,37 +223,120 @@ function getCurrentGame() {
       return game;
     }
     
-    // Method 3: Look for game name in meta tags
+    // Method 3: Try to access React props for game data (inspired by FFZ trubbel addon)
+    try {
+      const reactElements = document.querySelectorAll('[data-a-target*="stream"], [data-a-target*="game"], .tw-card');
+      for (const element of reactElements) {
+        const reactFiber = element._reactInternalFiber || element._reactInterns || 
+                           Object.keys(element).find(key => key.startsWith('__reactInternalInstance') || key.startsWith('__reactFiber'));
+        if (reactFiber) {
+          const fiber = typeof reactFiber === 'string' ? element[reactFiber] : reactFiber;
+          if (fiber && fiber.memoizedProps) {
+            const props = fiber.memoizedProps;
+            // Try different paths where game data might be stored
+            let gameName = null;
+            if (props.stream?.game?.displayName) {
+              gameName = props.stream.game.displayName;
+            } else if (props.stream?.broadcaster?.broadcastSettings?.game?.displayName) {
+              gameName = props.stream.broadcaster.broadcastSettings.game.displayName;
+            } else if (props.metadataRight?.props?.stream?.game?.displayName) {
+              gameName = props.metadataRight.props.stream.game.displayName;
+            } else if (props.tooltipContent?.props?.stream?.content?.game?.displayName) {
+              gameName = props.tooltipContent.props.stream.content.game.displayName;
+            }
+            
+            if (gameName) {
+              if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 3 - React): ${gameName}`);
+              return gameName.trim();
+            }
+          }
+        }
+      }
+    } catch (reactError) {
+      if (DEBUG_MODE) console.log('React data access failed:', reactError);
+    }
+    
+    // Method 4: Look for category in sidebar or navigation elements
+    const categorySelectors = [
+      '.side-nav-card__metadata p[title]', // Sidebar game categories
+      '.tw-media-card-meta__subtitle', // Media card subtitles
+      '[data-a-target="browse-game-title"]', // Browse game titles
+      '.tw-card-title', // Generic card titles
+      '.tw-title[title]', // Title elements with title attribute
+      'p[data-a-target="stream-game-link"]' // Alternative game link structure
+    ];
+    
+    for (const selector of categorySelectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const element of elements) {
+        const text = element.textContent || element.getAttribute('title');
+        if (text && text.trim() && !text.includes('viewer') && !text.includes('follower')) {
+          const game = text.trim();
+          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 4 - ${selector}): ${game}`);
+          return game;
+        }
+      }
+    }
+    
+    // Method 5: Look for game name in meta tags
     const metaGame = document.querySelector('meta[property="og:game"]');
     if (metaGame && metaGame.getAttribute('content')) {
       const game = metaGame.getAttribute('content').trim();
-      if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 3): ${game}`);
+      if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 5): ${game}`);
       return game;
     }
     
-    // Method 4: Look for structured data in the page
+    // Method 6: Check for channel info container with specific game info
+    const channelInfoContainer = document.querySelector('[data-a-target="stream-info-card"], .channel-info-content');
+    if (channelInfoContainer) {
+      const gameElements = channelInfoContainer.querySelectorAll('a[href*="/directory/game/"], a[href*="/directory/category/"]');
+      for (const gameElement of gameElements) {
+        const game = gameElement.textContent.trim();
+        if (game) {
+          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 6): ${game}`);
+          return game;
+        }
+      }
+    }
+    
+    // Method 7: Look for structured data in the page
     const structuredData = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
     for (const script of structuredData) {
       try {
         const data = JSON.parse(script.textContent);
         if (data.genre || data.applicationCategory) {
           const game = data.genre || data.applicationCategory;
-          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 4): ${game}`);
+          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 7): ${game}`);
           return game;
         }
       } catch (e) {
         // Continue to next script if JSON parsing fails
       }
     }
-    
-    // Method 5: Parse from the URL if it's a game directory
+
+    // Method 8: Parse from the URL if it's a game directory
     if (window.location.pathname.startsWith('/directory/game/') || window.location.pathname.startsWith('/directory/category/')) {
       const pathSegments = window.location.pathname.split('/');
       if (pathSegments.length >= 4) {
         const game = decodeURIComponent(pathSegments[3]);
-        if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 5): ${game}`);
+        if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 8): ${game}`);
         return game;
       }
+    }
+    
+    // Method 9: Try to find game data in window.__INITIAL_STATE__ or similar global variables
+    try {
+      if (window.__INITIAL_STATE__) {
+        const state = window.__INITIAL_STATE__;
+        // Look for current stream/channel data in the state
+        if (state.currentChannel?.stream?.game?.displayName) {
+          const game = state.currentChannel.stream.game.displayName;
+          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 9): ${game}`);
+          return game;
+        }
+      }
+    } catch (stateError) {
+      if (DEBUG_MODE) console.log('Global state access failed:', stateError);
     }
     
     if (DEBUG_MODE) console.log(`EloWard: No game detected from DOM`);
