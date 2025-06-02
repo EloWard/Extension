@@ -109,47 +109,47 @@
 
 /* Rank-specific badges */
 .eloward-unranked {
-  background-image: url('images/ranks/unranked.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png');
 }
 
 .eloward-iron {
-  background-image: url('images/ranks/iron.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/iron.png');
 }
 
 .eloward-bronze {
-  background-image: url('images/ranks/bronze.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/bronze.png');
 }
 
 .eloward-silver {
-  background-image: url('images/ranks/silver.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/silver.png');
 }
 
 .eloward-gold {
-  background-image: url('images/ranks/gold.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/gold.png');
 }
 
 .eloward-platinum {
-  background-image: url('images/ranks/platinum.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/platinum.png');
 }
 
 .eloward-emerald {
-  background-image: url('images/ranks/emerald.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/emerald.png');
 }
 
 .eloward-diamond {
-  background-image: url('images/ranks/diamond.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/diamond.png');
 }
 
 .eloward-master {
-  background-image: url('images/ranks/master.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/master.png');
 }
 
 .eloward-grandmaster {
-  background-image: url('images/ranks/grandmaster.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/grandmaster.png');
 }
 
 .eloward-challenger {
-  background-image: url('images/ranks/challenger.png');
+  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/challenger.png');
 }
 
 /* Badge tooltip */

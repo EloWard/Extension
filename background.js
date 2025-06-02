@@ -1062,7 +1062,7 @@ function getRankBySummonerId(token, summonerId, platform) {
 
 // Helper function to get rank icon URL
 function getRankIconUrl(tier) {
-  if (!tier) return chrome.runtime.getURL('images/ranks/unranked.png');
+  if (!tier) return 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
   
   // Convert tier to lowercase for case-insensitive match
   const tierLower = tier.toLowerCase();
@@ -1085,7 +1085,7 @@ function getRankIconUrl(tier) {
   // Get the correct icon or use unranked as fallback
   const iconFile = tierIcons[tierLower] || 'unranked.png';
   
-  return chrome.runtime.getURL(`images/ranks/${iconFile}`);
+  return `https://eloward-cdn.unleashai.workers.dev/lol/${iconFile.replace('.png', '')}.png`;
 }
 
 // Check if user is authenticated with Riot
