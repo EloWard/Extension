@@ -73,17 +73,17 @@ export const EloWardConfig = {
       baseUrl: 'https://ddragon.leagueoflegends.com/cdn',
       versions: 'https://ddragon.leagueoflegends.com/api/versions.json',
       rankIcons: {
-        unranked: '/images/ranks/unranked.png',
-        iron: '/images/ranks/iron.png',
-        bronze: '/images/ranks/bronze.png',
-        silver: '/images/ranks/silver.png',
-        gold: '/images/ranks/gold.png',
-        platinum: '/images/ranks/platinum.png',
-        emerald: '/images/ranks/emerald.png',
-        diamond: '/images/ranks/diamond.png',
-        master: '/images/ranks/master.png',
-        grandmaster: '/images/ranks/grandmaster.png',
-        challenger: '/images/ranks/challenger.png'
+        unranked: 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png',
+        iron: 'https://eloward-cdn.unleashai.workers.dev/lol/iron.png',
+        bronze: 'https://eloward-cdn.unleashai.workers.dev/lol/bronze.png',
+        silver: 'https://eloward-cdn.unleashai.workers.dev/lol/silver.png',
+        gold: 'https://eloward-cdn.unleashai.workers.dev/lol/gold.png',
+        platinum: 'https://eloward-cdn.unleashai.workers.dev/lol/platinum.png',
+        emerald: 'https://eloward-cdn.unleashai.workers.dev/lol/emerald.png',
+        diamond: 'https://eloward-cdn.unleashai.workers.dev/lol/diamond.png',
+        master: 'https://eloward-cdn.unleashai.workers.dev/lol/master.png',
+        grandmaster: 'https://eloward-cdn.unleashai.workers.dev/lol/grandmaster.png',
+        challenger: 'https://eloward-cdn.unleashai.workers.dev/lol/challenger.png'
       }
     }
   },
