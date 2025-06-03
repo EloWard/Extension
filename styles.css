@@ -1,56 +1,5 @@
 /* EloWard Styles for Twitch Chat */
 
-/* Rank Badge */
-.eloward-rank-badge {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  vertical-align: middle;
-  margin-left: 4px;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-  image-rendering: -webkit-optimize-contrast; /* Sharper images on Chrome */
-  image-rendering: crisp-edges; /* Sharper images on Firefox */
-}
-
-/* High DPI/Retina display support */
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-  .eloward-rank-badge {
-    background-size: 18px 18px; /* Maintain visible size while using higher resolution image */
-  }
-}
-
-.eloward-rank-badge:hover {
-  transform: scale(1.2);
-}
-
-/* Tooltip */
-.eloward-tooltip {
-  position: absolute;
-  background: rgba(28, 30, 48, 0.95);
-  border: 1px solid rgba(217, 163, 54, 0.3);
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: #fff;
-  z-index: 9999;
-  pointer-events: none;
-  transform: translate(-30%, -100%) scale(0.9);
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  white-space: nowrap;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.eloward-tooltip.visible {
-  opacity: 1;
-  transform: translate(-30%, -100%) scale(1);
-}
-
 /* Notification */
 .eloward-notification {
   position: fixed;
@@ -87,27 +36,7 @@
   color: #D9A336;
 }
 
-/* EloWard Rank Badges for Twitch Chat */
-
-.eloward-badge {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  margin-right: 4px;
-  vertical-align: middle;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  border-radius: 50%;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease;
-}
-
-.eloward-badge:hover {
-  transform: scale(1.2);
-}
-
-/* Rank-specific badges */
+/* Rank-specific badge background images (fallback/legacy support) */
 .eloward-unranked {
   background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png');
 }
@@ -150,31 +79,6 @@
 
 .eloward-challenger {
   background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/challenger.png');
-}
-
-/* Badge tooltip */
-.eloward-tooltip {
-  position: relative;
-}
-
-.eloward-tooltip:hover::after {
-  content: attr(data-rank);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: rgba(28, 30, 48, 0.95);
-  color: #FFFFFF;
-  border: 1px solid rgba(217, 163, 54, 0.3);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  z-index: 1000;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(4px);
-  font-family: 'neue-haas-grotesk-display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-weight: 500;
 }
 
 /* Animation for newly added badges */
