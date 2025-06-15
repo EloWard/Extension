@@ -1,13 +1,15 @@
-const DEBUG_MODE = false; // Set to false for production release
+// Centralized extension state
+const extensionState = {
+  isChannelSubscribed: false,
+  channelName: '',
+  currentGame: null,
+  currentUser: null,
+  observerInitialized: false
+};
 
-// Global state
-let isChannelSubscribed = false;
-let channelName = '';
+// Processing state
 let processedMessages = new Set();
-let observerInitialized = false;
 let tooltipElement = null; // Global tooltip element
-let currentUser = null; // Current user's Twitch username
-let currentGame = null; // Current game being streamed
 
 // Supported games configuration - simplified structure
 const SUPPORTED_GAMES = {
@@ -56,23 +58,19 @@ function clearRankCache() {
   
   // Also clear the processed messages set to prevent memory buildup
   processedMessages.clear();
-  
-  if (DEBUG_MODE) {
-    console.log(`EloWard: Rank cache cleared (preserved ${currentUser || 'no user'}'s data)`);
-  }
 }
 
 // Initialize storage and load user data
 function initializeStorage() {
   chrome.storage.local.get(null, (allData) => {
     // Find current user in storage using consolidated logic
-    currentUser = findCurrentUser(allData);
+    extensionState.currentUser = findCurrentUser(allData);
     
     // Send current user to background script to protect from cache eviction
-    if (currentUser) {
+    if (extensionState.currentUser) {
       chrome.runtime.sendMessage({
         action: 'set_current_user',
-        username: currentUser
+        username: extensionState.currentUser
       });
     }
   });
@@ -153,26 +151,11 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
 }
 
 /**
- * Get the current channel name using multiple fallback methods
- * 1. Try to find the channel name in Twitch's data elements
- * 2. Parse from URL if data elements aren't available
+ * Get the current channel name using URL parsing as primary method
  * @returns {string|null} The current channel name or null if not found
  */
 function getCurrentChannelName() {
-  // Method 1: Try to get from Twitch's channel data in the DOM
-  // This is the most reliable method across all viewing modes
-  const channelElem = document.querySelector('[data-a-target="channel-display-name"], [data-a-target="user-display-name"]');
-  if (channelElem && channelElem.textContent) {
-    return channelElem.textContent.trim().toLowerCase();
-  }
-  
-  // Method 2: Try to get from channel header element
-  const channelHeader = document.querySelector('.channel-info-content h1, .tw-channel-header h1');
-  if (channelHeader && channelHeader.textContent) {
-    return channelHeader.textContent.trim().toLowerCase();
-  }
-  
-  // Method 3: Try to extract from the URL
+  // Method 1: URL parsing (most reliable for Twitch)
   const pathSegments = window.location.pathname.split('/');
   
   // Handle moderator view URLs (format: /moderator/channelname)
@@ -187,17 +170,12 @@ function getCurrentChannelName() {
     return pathSegments[1].toLowerCase();
   }
   
-  // Method 4: Try to find from other Twitch UI elements as last resort
-  const channelLink = document.querySelector('a[data-a-target="stream-game-link"]')?.closest('div')?.querySelector('a:not([data-a-target="stream-game-link"])');
-  if (channelLink) {
-    const channelPath = new URL(channelLink.href).pathname;
-    const channelNameFromLink = channelPath.split('/')[1];
-    if (channelNameFromLink) {
-      return channelNameFromLink.toLowerCase();
-    }
+  // Method 2: DOM fallback for edge cases
+  const channelElem = document.querySelector('[data-a-target="channel-display-name"]');
+  if (channelElem && channelElem.textContent) {
+    return channelElem.textContent.trim().toLowerCase();
   }
   
-  // Could not determine channel name
   return null;
 }
 
@@ -207,116 +185,24 @@ function getCurrentChannelName() {
  */
 function getCurrentGame() {
   try {
-    // Method 1: Primary - Direct game link (most reliable)
+    // Method 1: Direct game link (most reliable)
     const gameLink = document.querySelector('a[data-a-target="stream-game-link"]');
     if (gameLink && gameLink.textContent) {
-      const game = gameLink.textContent.trim();
-      if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 1 - Direct Link): ${game}`);
-      return game;
+      return gameLink.textContent.trim();
     }
     
-    // Method 2: React Props Access (most robust - inspired by FFZ)
-    try {
-      const reactElements = document.querySelectorAll('[data-a-target*="stream"], [data-a-target*="game"], .tw-card');
-      for (const element of reactElements) {
-        const reactFiber = element._reactInternalFiber || element._reactInterns || 
-                           Object.keys(element).find(key => key.startsWith('__reactInternalInstance') || key.startsWith('__reactFiber'));
-        if (reactFiber) {
-          const fiber = typeof reactFiber === 'string' ? element[reactFiber] : reactFiber;
-          if (fiber && fiber.memoizedProps) {
-            const props = fiber.memoizedProps;
-            // Try different paths where game data might be stored
-            let gameName = null;
-            if (props.stream?.game?.displayName) {
-              gameName = props.stream.game.displayName;
-            } else if (props.stream?.broadcaster?.broadcastSettings?.game?.displayName) {
-              gameName = props.stream.broadcaster.broadcastSettings.game.displayName;
-            } else if (props.metadataRight?.props?.stream?.game?.displayName) {
-              gameName = props.metadataRight.props.stream.game.displayName;
-            } else if (props.tooltipContent?.props?.stream?.content?.game?.displayName) {
-              gameName = props.tooltipContent.props.stream.content.game.displayName;
-            }
-            
-            if (gameName) {
-              if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 2 - React Props): ${gameName}`);
-              return gameName.trim();
-            }
-          }
-        }
-      }
-    } catch (reactError) {
-      if (DEBUG_MODE) console.log('React data access failed:', reactError);
-    }
-    
-    // Method 3: Global State Access (reliable fallback)
-    try {
-      if (window.__INITIAL_STATE__) {
-        const state = window.__INITIAL_STATE__;
-        if (state.currentChannel?.stream?.game?.displayName) {
-          const game = state.currentChannel.stream.game.displayName;
-          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 3 - Global State): ${game}`);
-          return game;
-        }
-      }
-    } catch (stateError) {
-      if (DEBUG_MODE) console.log('Global state access failed:', stateError);
-    }
-    
-    // Method 4: Enhanced DOM Selectors (consolidated and cleaned up)
-    const categorySelectors = [
-      '.side-nav-card__metadata p[title]', // Sidebar game categories
-      '.tw-media-card-meta__subtitle', // Media card subtitles
-      '[data-a-target="browse-game-title"]', // Browse game titles
-      '.tw-card-title', // Generic card titles (covers old .tw-card-title[title])
-      '.game-hover', // Game hover elements
-      '[data-test-selector="game-card-title"]', // Test selector variants
-      'p[data-a-target="stream-game-link"]' // Alternative game link structure
-    ];
-    
-    for (const selector of categorySelectors) {
-      const elements = document.querySelectorAll(selector);
-      for (const element of elements) {
-        const text = element.textContent || element.getAttribute('title');
-        if (text && text.trim() && !text.includes('viewer') && !text.includes('follower')) {
-          const game = text.trim();
-          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 4 - DOM): ${game}`);
-          return game;
-        }
-      }
-    }
-    
-    // Method 5: Channel Info Container (specific area search)
+    // Method 2: Channel info container fallback
     const channelInfoContainer = document.querySelector('[data-a-target="stream-info-card"], .channel-info-content');
     if (channelInfoContainer) {
       const gameElements = channelInfoContainer.querySelectorAll('a[href*="/directory/game/"], a[href*="/directory/category/"]');
       for (const gameElement of gameElements) {
         const game = gameElement.textContent.trim();
         if (game) {
-          if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 5 - Channel Info): ${game}`);
           return game;
         }
       }
     }
     
-    // Method 6: URL Parsing (for directory pages)
-    if (window.location.pathname.startsWith('/directory/game/') || window.location.pathname.startsWith('/directory/category/')) {
-      const pathSegments = window.location.pathname.split('/');
-      if (pathSegments.length >= 4) {
-        const game = decodeURIComponent(pathSegments[3]);
-        if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 6 - URL): ${game}`);
-        return game;
-      }
-    }
-    
-    // Method 7: Meta Tags (final fallback)
-    const metaGame = document.querySelector('meta[property="og:game"]');
-    if (metaGame && metaGame.getAttribute('content')) {
-      const game = metaGame.getAttribute('content').trim();
-      if (DEBUG_MODE) console.log(`EloWard: Game detected (Method 7 - Meta): ${game}`);
-      return game;
-    }
-    
-    if (DEBUG_MODE) console.log(`EloWard: No game detected from any method`);
     return null;
   } catch (error) {
     console.error(`EloWard: Error detecting game:`, error);
@@ -340,10 +226,8 @@ function getGameWithRetries(maxAttempts = 5, interval = 2000) {
         resolve(game);
       } else if (attempts < maxAttempts) {
         attempts++;
-        if (DEBUG_MODE) console.log(`EloWard: Retry attempt ${attempts}/${maxAttempts} to detect game`);
         setTimeout(tryGetGame, interval);
       } else {
-        if (DEBUG_MODE) console.log(`EloWard: Failed to detect game after ${maxAttempts} attempts`);
         resolve(null);
       }
     }
@@ -392,9 +276,9 @@ function setupGameChangeObserver() {
     if (!newGame) return;
     
     // If game changed, reinitialize
-    if (newGame !== currentGame) {
-      const oldGame = currentGame;
-      currentGame = newGame;
+    if (newGame !== extensionState.currentGame) {
+      const oldGame = extensionState.currentGame;
+      extensionState.currentGame = newGame;
       
       console.log(`EloWard: Game changed from ${oldGame || 'unknown'} to ${newGame}`);
       
@@ -402,7 +286,7 @@ function setupGameChangeObserver() {
       if (window._eloward_chat_observer) {
         window._eloward_chat_observer.disconnect();
         window._eloward_chat_observer = null;
-        observerInitialized = false;
+        extensionState.observerInitialized = false;
       }
       
       // Reset extension state based on game support
@@ -410,14 +294,14 @@ function setupGameChangeObserver() {
         console.log(`EloWard: Supported game '${newGame}' detected. Activating extension.`);
         
         // Only check subscription if the game is supported
-        checkChannelSubscription(channelName, false)
+        checkChannelSubscription(extensionState.channelName, false)
           .then(subscribed => {
-            isChannelSubscribed = subscribed;
+            extensionState.isChannelSubscribed = subscribed;
             
-            if (isChannelSubscribed) {
+            if (extensionState.isChannelSubscribed) {
               console.log("🛡️ EloWard Extension Active");
               
-              if (!observerInitialized) {
+              if (!extensionState.observerInitialized) {
                 initializeObserver();
               }
             }
@@ -425,8 +309,8 @@ function setupGameChangeObserver() {
       } else {
         // Deactivate extension for unsupported games
         console.log(`EloWard: Game '${newGame}' is not supported. Extension inactive.`);
-        isChannelSubscribed = false;
-        observerInitialized = false;
+        extensionState.isChannelSubscribed = false;
+        extensionState.observerInitialized = false;
       }
     }
   });
@@ -463,21 +347,21 @@ function initializeExtension() {
   }
   
   // Check if we've changed channels
-  const channelChanged = newChannelName !== channelName;
+  const channelChanged = newChannelName !== extensionState.channelName;
   if (channelChanged) {
     // Notify background about channel switch
     chrome.runtime.sendMessage({
       action: 'channel_switched',
-      oldChannel: channelName,
+      oldChannel: extensionState.channelName,
       newChannel: newChannelName
     });
     
     // Update the channel name
-    channelName = newChannelName;
+    extensionState.channelName = newChannelName;
     
     // Reset state when changing channels
-    isChannelSubscribed = false;
-    observerInitialized = false;
+    extensionState.isChannelSubscribed = false;
+    extensionState.observerInitialized = false;
     
     // Clear the rank cache but preserve current user's rank
     clearRankCache();
@@ -492,49 +376,45 @@ function initializeExtension() {
   if (window._eloward_chat_observer) {
     window._eloward_chat_observer.disconnect();
     window._eloward_chat_observer = null;
-    observerInitialized = false;
+    extensionState.observerInitialized = false;
   }
   
   // Attempt to detect the game with retries
   getGameWithRetries().then(detectedGame => {
     // Update current game state
-    currentGame = detectedGame;
-    
-    if (DEBUG_MODE) {
-      console.log(`EloWard: Current game is ${currentGame || 'unknown'}`);
-    }
+    extensionState.currentGame = detectedGame;
     
     // Only proceed if the current game is supported
-    if (!isGameSupported(currentGame)) {
-      console.log(`EloWard: Game '${currentGame || 'unknown'}' is not supported. Extension inactive.`);
+    if (!isGameSupported(extensionState.currentGame)) {
+      console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
       return;
     }
     
-    console.log(`EloWard: Supported game '${currentGame}' detected`);
+    console.log(`EloWard: Supported game '${extensionState.currentGame}' detected`);
     
     // Setup game change observer to detect mid-stream game switches
     setupGameChangeObserver();
     
     // Only force check subscription status on channel changes
     // Otherwise use the cached value to reduce API calls
-    checkChannelSubscription(channelName, channelChanged)
+    checkChannelSubscription(extensionState.channelName, channelChanged)
       .then(subscribed => {
-        isChannelSubscribed = subscribed;
+        extensionState.isChannelSubscribed = subscribed;
         
-        if (isChannelSubscribed) {
+        if (extensionState.isChannelSubscribed) {
           // Only print the activation message when the channel is subscribed
           console.log("🛡️ EloWard Extension Active");
           
-          if (!observerInitialized) {
+          if (!extensionState.observerInitialized) {
             initializeObserver();
           }
-        } else if (!isChannelSubscribed) {
+        } else if (!extensionState.isChannelSubscribed) {
           // Clean up any existing observers
           if (window._eloward_chat_observer) {
             window._eloward_chat_observer.disconnect();
             window._eloward_chat_observer = null;
           }
-          observerInitialized = false;
+          extensionState.observerInitialized = false;
         }
       });
   });
@@ -563,11 +443,11 @@ function setupUrlChangeObserver() {
     }
     
     // Only reinitialize if the channel actually changed
-    if (currentChannel !== channelName) {
+    if (currentChannel !== extensionState.channelName) {
       // Reset state
-      channelName = currentChannel;
-      observerInitialized = false;
-      isChannelSubscribed = false;
+      extensionState.channelName = currentChannel;
+      extensionState.observerInitialized = false;
+      extensionState.isChannelSubscribed = false;
       
       // Clear rank cache but preserve current user's rank
       clearRankCache();
@@ -598,7 +478,7 @@ function setupUrlChangeObserver() {
 }
 
 function initializeObserver() {
-  if (observerInitialized) {
+  if (extensionState.observerInitialized) {
     return;
   }
   
@@ -607,7 +487,7 @@ function initializeObserver() {
   if (chatContainer) {
     // Chat container found, set up the observer
     setupChatObserver(chatContainer);
-    observerInitialized = true;
+    extensionState.observerInitialized = true;
     
     // Also set up a fallback observer for the whole chat area
     const chatArea = document.querySelector('.chat-room, .right-column, [data-test-selector="chat-room"]');
@@ -621,13 +501,13 @@ function initializeObserver() {
       
       if (chatContainer) {
         setupChatObserver(chatContainer);
-        observerInitialized = true;
+        extensionState.observerInitialized = true;
       } else {
         // Last resort: observe the whole right column
         const rightColumn = document.querySelector('.right-column, [data-test-selector="right-column"]');
         if (rightColumn) {
           setupChatObserver(rightColumn, true);
-          observerInitialized = true;
+          extensionState.observerInitialized = true;
         }
       }
     }, 2000);
@@ -683,7 +563,7 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
   // Create a MutationObserver to watch for new chat messages
   const chatObserver = new MutationObserver((mutations) => {
     // Process messages only if channel is subscribed
-    if (!isChannelSubscribed) return;
+    if (!extensionState.isChannelSubscribed) return;
     
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
@@ -736,28 +616,23 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
 }
 
 function processNewMessage(messageNode) {
-  // Skip if we've already processed this message or too many processed
+  // Skip if we've already processed this message
   if (processedMessages.has(messageNode)) return;
-  
-  // Memory management - clear if too many messages
-  if (processedMessages.size > 1000) {
-    processedMessages.clear();
-  }
-  
-  // Mark this message as processed
   processedMessages.add(messageNode);
   
+  // Memory management - clear old entries if too many
+  if (processedMessages.size > 500) {
+    const toDelete = Array.from(processedMessages).slice(0, 100);
+    toDelete.forEach(msg => processedMessages.delete(msg));
+  }
+  
   // Only process messages if the channel is subscribed
-  // This relies on the cached subscription status from sessionStorage
-  if (!isChannelSubscribed) return;
+  if (!extensionState.isChannelSubscribed) return;
   
   // Find username element - support various extensions' DOM structures
-  let usernameElement = messageNode.querySelector(
-    // Standard Twitch selectors
+  const usernameElement = messageNode.querySelector(
     '.chat-author__display-name, [data-a-target="chat-message-username"], ' +
-    // 7TV specific selectors
     '.seventv-chat-user, .seventv-chat-author, ' +
-    // BetterTTV specific selectors
     '.chat-line__username'
   );
   
@@ -767,7 +642,7 @@ function processNewMessage(messageNode) {
   const username = usernameElement.textContent.trim().toLowerCase();
   
   // Check if this is the current user
-  if (currentUser && username === currentUser.toLowerCase()) {
+  if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
     // Get user's actual rank from Riot data
     chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
       const riotData = data.eloward_persistent_riot_user_data;
@@ -789,17 +664,15 @@ function processNewMessage(messageNode) {
         });
         
         // Increment metrics for the current channel
-        if (channelName) {
-          // Increment db_reads counter
+        if (extensionState.channelName) {
           chrome.runtime.sendMessage({
             action: 'increment_db_reads',
-            channel: channelName
+            channel: extensionState.channelName
           });
           
-          // Increment successful_lookups counter
           chrome.runtime.sendMessage({
             action: 'increment_successful_lookups',
-            channel: channelName
+            channel: extensionState.channelName
           });
         }
         
@@ -820,7 +693,7 @@ function fetchRankFromBackground(username, usernameElement) {
       { 
         action: 'fetch_rank_for_username',
         username: username,
-        channel: channelName
+        channel: extensionState.channelName
       },
       response => {
         if (chrome.runtime.lastError) return;
@@ -828,12 +701,6 @@ function fetchRankFromBackground(username, usernameElement) {
         if (response?.success && response.rankData) {
           // Add the badge to the message
           addBadgeToMessage(usernameElement, response.rankData);
-          
-          // Log cache hits vs misses for performance monitoring
-          if (DEBUG_MODE) {
-            const source = response.source || 'unknown';
-            console.log(`EloWard: Rank data for ${username} from ${source}`);
-          }
         }
       }
     );
@@ -843,42 +710,34 @@ function fetchRankFromBackground(username, usernameElement) {
 }
 
 function addBadgeToMessage(usernameElement, rankData) {
-  // Skip if no rank data (rankData object itself might be null/undefined)
+  // Skip if no rank data
   if (!rankData?.tier) return; 
   
   // Check if badge already exists in this message
-  const messageContainer = usernameElement.closest('.chat-line__message') || usernameElement.closest('.chat-line') || usernameElement.closest('.seventv-chat-message');
+  const messageContainer = usernameElement.closest('.chat-line__message, .chat-line, .seventv-chat-message');
   if (messageContainer?.querySelector('.eloward-rank-badge')) return;
-  
-  // Get the parent container that holds the username
-  // Support multiple extension structures - standard Twitch, 7TV, and BetterTTV
-  const usernameContainer = usernameElement.closest('.chat-line__username-container') || 
-                            usernameElement.closest('.seventv-chat-badges-container')?.parentElement || 
-                            usernameElement.closest('[data-test-selector="chat-message-username"]')?.parentElement;
-                            
-  if (usernameContainer?.querySelector('.eloward-rank-badge')) return;
   
   // Create badge container
   const badgeContainer = document.createElement('div');
   badgeContainer.className = 'eloward-rank-badge';
   
-  // Store rank text as a data attribute instead of title to avoid browser tooltip
+  // Store rank text as a data attribute for tooltip
   badgeContainer.dataset.rankText = formatRankText(rankData);
   
   // Create the rank image
   const rankImg = document.createElement('img');
   rankImg.alt = rankData.tier;
-  rankImg.className = 'chat-badge'; // Add Twitch's chat-badge class for better styling
+  rankImg.className = 'chat-badge';
   rankImg.width = 24;
   rankImg.height = 24;
   
-  // Set image source based on rank tier - use CDN
+  // Set image source based on rank tier
   try {
     const tier = rankData.tier.toLowerCase();
     rankImg.src = `https://eloward-cdn.unleashai.workers.dev/lol/${tier}.png`;
   } catch (error) {
     console.error("Error setting badge image source:", error);
-      return; // Don't continue if we can't get the image
+    return;
   }
   
   // Add the image to the badge container
@@ -888,76 +747,25 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.addEventListener('mouseenter', showTooltip);
   badgeContainer.addEventListener('mouseleave', hideTooltip);
   
-  // Convert leaguePoints to string to ensure consistent storage
-  const lpValue = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
-                 rankData.leaguePoints.toString() : '';
-  
   // Store rank data as attributes for tooltip
   badgeContainer.dataset.rank = rankData.tier;
   badgeContainer.dataset.division = rankData.division || '';
-  badgeContainer.dataset.lp = lpValue;
+  badgeContainer.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
+                              rankData.leaguePoints.toString() : '';
   badgeContainer.dataset.username = rankData.summonerName || '';
   
-  // Insert the badge in the appropriate location based on the extension environment
-  if (usernameContainer) {
-    // Check if 7TV is active by looking for its elements
-    const isSevenTV = !!document.querySelector('#seventv-extension') || 
-                     !!usernameContainer.closest('.seventv-chat-message') || 
-                     !!usernameElement.closest('.seventv-chat-badges-container');
-                     
-    // Check if BetterTTV is active
-    const isBTTV = !!document.querySelector('.bttv-tooltip') || 
-                  !!usernameContainer.querySelector('.bttv-badge');
-    
-    if (isSevenTV) {
-      // 7TV-specific insertion logic
-      const badgesContainer = usernameContainer.querySelector('.seventv-chat-badges-container') || 
-                             usernameContainer.querySelector('.chat-badge-container');
-      
-      if (badgesContainer) {
-        // Append to the badge container (makes it rightmost)
-        badgesContainer.appendChild(badgeContainer);
-      } else {
-        // Find the username span and insert before it (typical 7TV structure)
-        const usernameSpan = usernameContainer.querySelector('[data-a-target="chat-message-username"], .chat-author__display-name');
-        if (usernameSpan) {
-          usernameContainer.insertBefore(badgeContainer, usernameSpan);
-        } else {
-          // Last resort fallback - insert at the end
-          usernameContainer.appendChild(badgeContainer);
-        }
-      }
-    } else if (isBTTV) {
-      // BetterTTV-specific insertion logic
-      const badgesContainer = usernameContainer.querySelector('.chat-badge-container, .bttv-badges-container');
-      
-      if (badgesContainer) {
-        // Add to the end of badges container (makes it rightmost)
-        badgesContainer.appendChild(badgeContainer);
-      } else {
-        // Find the username span that follows the badges 
-        const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
-        // Insert the badge right before the username span (making it the rightmost badge)
-        usernameContainer.insertBefore(badgeContainer, usernameSpan);
-      }
-    } else {
-      // Standard Twitch insertion
-      const badgesContainer = usernameContainer.querySelector('.chat-badge-container');
-      
-      if (badgesContainer) {
-        // Add to the end of badges container (makes it rightmost)
-        badgesContainer.appendChild(badgeContainer);
-      } else {
-        // Find the username span that follows the badges
-        const usernameSpan = usernameContainer.querySelector('.chat-line__username, .chat-author__display-name').closest('span');
-        
-        // Insert the badge right before the username span (making it the rightmost badge)
-        usernameContainer.insertBefore(badgeContainer, usernameSpan);
-      }
-    }
+  // Insert badge - find the best location
+  const usernameContainer = usernameElement.closest('.chat-line__username-container') || 
+                           usernameElement.parentNode;
+  
+  const badgesContainer = usernameContainer?.querySelector('.chat-badge-container');
+  
+  if (badgesContainer) {
+    // Add to existing badge container
+    badgesContainer.appendChild(badgeContainer);
   } else {
-    // Fallback
-    usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
+    // Insert before the username element
+    usernameContainer.insertBefore(badgeContainer, usernameElement);
   }
 }
 
@@ -1035,17 +843,6 @@ function showTooltip(event) {
     // Always include LP for ranked players
     if (lp !== undefined && lp !== null && lp !== '') {
       tooltipText += ' - ' + lp + ' LP';
-    }
-    
-    // Debug logging if enabled
-    if (DEBUG_MODE) {
-      console.debug('Tooltip data:', {
-        rank: rankTier,
-        division: division,
-        lp: lp,
-        username: username,
-        displayText: tooltipText
-      });
     }
     
     // Set the tooltip content

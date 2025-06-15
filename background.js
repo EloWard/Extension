@@ -11,7 +11,6 @@ const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai.workers
 const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
-const DEBUG_MODE = false; // Set to false for production release
 
 // Platform routing values for Riot API
 const PLATFORM_ROUTING = {
@@ -634,9 +633,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Increment db_read counter regardless of cache hit/miss
     if (channelName) {
       incrementDbReadCounter(channelName).catch(error => {
-        if (DEBUG_MODE) {
-          console.error(`Error incrementing db_read for ${channelName}:`, error);
-        }
+        console.error(`Error incrementing db_read for ${channelName}:`, error);
       });
     }
     
@@ -646,9 +643,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // If we got a successful result from cache, increment successful_lookups
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(error => {
-          if (DEBUG_MODE) {
-            console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
-          }
+          console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
         });
       }
       
@@ -673,9 +668,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // If we got a successful result from API, increment successful_lookups
           if (channelName && rankData?.tier) {
             incrementSuccessfulLookupCounter(channelName).catch(error => {
-              if (DEBUG_MODE) {
-                console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
-              }
+              console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
             });
           }
         }
@@ -688,9 +681,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        if (DEBUG_MODE) {
-          console.error(`Error fetching rank for ${username}:`, error);
-        }
+        console.error(`Error fetching rank for ${username}:`, error);
         sendResponse({ 
           success: false, 
           error: error.message || 'Error fetching rank data' 
@@ -2083,6 +2074,39 @@ async function incrementSuccessfulLookupCounter(channelName) {
     return !!data.success;
   } catch (error) {
     console.error(`Failed to increment successful_lookups for ${channelName}:`, error);
+    return false;
+  }
+}
+
+let rankCache = new Map(); // Cache for rank data only
+
+// Track processed channels to avoid checking subscription status multiple times per session
+let subscribedChannels = new Set();
+
+/**
+ * Check if a channel is subscribed to EloWard
+ * Uses session-based tracking to avoid redundant checks
+ */
+async function checkChannelSubscription(channelName, forceCheck = false) {
+  if (!channelName) return false;
+  
+  // If we've already confirmed this channel is subscribed in this session, return true
+  if (!forceCheck && subscribedChannels.has(channelName)) {
+    return true;
+  }
+
+  try {
+    const response = await fetch(`${SUBSCRIPTION_API_URL}?channel=${encodeURIComponent(channelName)}`);
+    const isSubscribed = response.ok && response.status === 200;
+    
+    // Add to session tracking if subscribed
+    if (isSubscribed) {
+      subscribedChannels.add(channelName);
+    }
+    
+    return isSubscribed;
+  } catch (error) {
+    console.error('Error checking channel subscription:', error);
     return false;
   }
 } 
