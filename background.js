@@ -1460,70 +1460,39 @@ self.eloward = {
 };
 
 /**
- * Get a user's linked account by Twitch username
+ * Get a user's linked account by Twitch username - simplified approach
  * @param {string} twitchUsername - The Twitch username to look up
  * @returns {Promise} - Resolves with the linked account or null
  */
 function getUserLinkedAccount(twitchUsername) {
   return new Promise((resolve) => {
     if (!twitchUsername) {
-      console.log('Empty username passed to getUserLinkedAccount');
       resolve(null);
       return;
     }
     
     const normalizedTwitchUsername = twitchUsername.toLowerCase();
     
-    // Check our database of linked accounts
+    // Direct lookup by normalized username (most efficient)
     chrome.storage.local.get('linkedAccounts', data => {
       const linkedAccounts = data.linkedAccounts || {};
       
-      // First, try direct lookup by Twitch username (most efficient path)
+      // Direct lookup first
       if (linkedAccounts[normalizedTwitchUsername]) {
         resolve(linkedAccounts[normalizedTwitchUsername]);
         return;
       }
       
-      // If the current user is viewing their own account
-      chrome.storage.local.get(['twitchUsername', 'riotAccountInfo'], currentUserData => {
-        if (currentUserData.twitchUsername) {
-          const currentNormalizedUsername = currentUserData.twitchUsername.toLowerCase();
-          
-          if (currentNormalizedUsername === normalizedTwitchUsername && currentUserData.riotAccountInfo) {
-            // Add the current user to the linkedAccounts cache if not already there
-            if (!linkedAccounts[normalizedTwitchUsername]) {
-              linkedAccounts[normalizedTwitchUsername] = {
-                ...currentUserData.riotAccountInfo,
-                twitchUsername: currentUserData.twitchUsername,
-                normalizedTwitchUsername: normalizedTwitchUsername,
-                linkedAt: Date.now(),
-                lastUpdated: Date.now()
-              };
-              
-              chrome.storage.local.set({ linkedAccounts });
-            }
-            
-            resolve(currentUserData.riotAccountInfo);
-            return;
-          }
+      // Single fallback - check if current user matches
+      chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'eloward_persistent_riot_user_data'], currentUserData => {
+        const currentTwitchData = currentUserData.eloward_persistent_twitch_user_data;
+        const currentRiotData = currentUserData.eloward_persistent_riot_user_data;
+        
+        if (currentTwitchData?.login?.toLowerCase() === normalizedTwitchUsername && currentRiotData) {
+          resolve(currentRiotData);
+          return;
         }
         
-        // No case-sensitive match, try a case-insensitive scan of all accounts
-        const keys = Object.keys(linkedAccounts);
-        for (const key of keys) {
-          const account = linkedAccounts[key];
-          // Check all possible variations of the username
-          if (account.twitchUsername && 
-              (account.twitchUsername.toLowerCase() === normalizedTwitchUsername ||
-               (account.normalizedTwitchUsername && 
-                account.normalizedTwitchUsername === normalizedTwitchUsername))) {
-            
-            resolve(account);
-            return;
-          }
-        }
-        
-        // No linked account found after trying all methods
         resolve(null);
       });
     });
@@ -2081,32 +2050,4 @@ async function incrementSuccessfulLookupCounter(channelName) {
 let rankCache = new Map(); // Cache for rank data only
 
 // Track processed channels to avoid checking subscription status multiple times per session
-let subscribedChannels = new Set();
-
-/**
- * Check if a channel is subscribed to EloWard
- * Uses session-based tracking to avoid redundant checks
- */
-async function checkChannelSubscription(channelName, forceCheck = false) {
-  if (!channelName) return false;
-  
-  // If we've already confirmed this channel is subscribed in this session, return true
-  if (!forceCheck && subscribedChannels.has(channelName)) {
-    return true;
-  }
-
-  try {
-    const response = await fetch(`${SUBSCRIPTION_API_URL}?channel=${encodeURIComponent(channelName)}`);
-    const isSubscribed = response.ok && response.status === 200;
-    
-    // Add to session tracking if subscribed
-    if (isSubscribed) {
-      subscribedChannels.add(channelName);
-    }
-    
-    return isSubscribed;
-  } catch (error) {
-    console.error('Error checking channel subscription:', error);
-    return false;
-  }
-} 
+let subscribedChannels = new Set(); 

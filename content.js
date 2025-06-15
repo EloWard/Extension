@@ -76,31 +76,16 @@ function initializeStorage() {
   });
 }
 
-// Find current Twitch user from various storage formats
+// Find current Twitch user from storage - use most reliable key
 function findCurrentUser(allData) {
-  // Check storage in order of preference
+  // Use the most reliable persistent storage key
   if (allData.eloward_persistent_twitch_user_data?.login) {
-    const twitchData = allData.eloward_persistent_twitch_user_data;
-    return twitchData.login.toLowerCase();
-  } 
+    return allData.eloward_persistent_twitch_user_data.login.toLowerCase();
+  }
   
+  // Single fallback for backward compatibility
   if (allData.twitchUsername) {
     return allData.twitchUsername.toLowerCase();
-  }
-  
-  if (allData.eloward_twitch_user_info?.login) {
-    const twitchInfo = allData.eloward_twitch_user_info;
-    return twitchInfo.login.toLowerCase();
-  }
-  
-  // Search through all keys for possible Twitch data as last resort
-  for (const key in allData) {
-    if (key.toLowerCase().includes('twitch')) {
-      const data = allData[key];
-      if (data && typeof data === 'object' && (data.login || data.display_name)) {
-        return (data.login || data.display_name).toLowerCase();
-      }
-    }
   }
   
   return null;
@@ -151,11 +136,10 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
 }
 
 /**
- * Get the current channel name using URL parsing as primary method
+ * Get the current channel name using URL parsing (100% reliable on Twitch)
  * @returns {string|null} The current channel name or null if not found
  */
 function getCurrentChannelName() {
-  // Method 1: URL parsing (most reliable for Twitch)
   const pathSegments = window.location.pathname.split('/');
   
   // Handle moderator view URLs (format: /moderator/channelname)
@@ -170,12 +154,6 @@ function getCurrentChannelName() {
     return pathSegments[1].toLowerCase();
   }
   
-  // Method 2: DOM fallback for edge cases
-  const channelElem = document.querySelector('[data-a-target="channel-display-name"]');
-  if (channelElem && channelElem.textContent) {
-    return channelElem.textContent.trim().toLowerCase();
-  }
-  
   return null;
 }
 
@@ -185,25 +163,9 @@ function getCurrentChannelName() {
  */
 function getCurrentGame() {
   try {
-    // Method 1: Direct game link (most reliable)
+    // Use the most reliable method - direct game link selector
     const gameLink = document.querySelector('a[data-a-target="stream-game-link"]');
-    if (gameLink && gameLink.textContent) {
-      return gameLink.textContent.trim();
-    }
-    
-    // Method 2: Channel info container fallback
-    const channelInfoContainer = document.querySelector('[data-a-target="stream-info-card"], .channel-info-content');
-    if (channelInfoContainer) {
-      const gameElements = channelInfoContainer.querySelectorAll('a[href*="/directory/game/"], a[href*="/directory/category/"]');
-      for (const gameElement of gameElements) {
-        const game = gameElement.textContent.trim();
-        if (game) {
-          return game;
-        }
-      }
-    }
-    
-    return null;
+    return gameLink?.textContent?.trim() || null;
   } catch (error) {
     console.error(`EloWard: Error detecting game:`, error);
     return null;
@@ -488,75 +450,28 @@ function initializeObserver() {
     // Chat container found, set up the observer
     setupChatObserver(chatContainer);
     extensionState.observerInitialized = true;
-    
-    // Also set up a fallback observer for the whole chat area
-    const chatArea = document.querySelector('.chat-room, .right-column, [data-test-selector="chat-room"]');
-    if (chatArea && chatArea !== chatContainer) {
-      setupChatObserver(chatArea, true);
-    }
   } else {
-    // Chat container not found yet, wait and try again
+    // Single retry after short delay if container not found immediately
     setTimeout(() => {
       const chatContainer = findChatContainer();
-      
       if (chatContainer) {
         setupChatObserver(chatContainer);
         extensionState.observerInitialized = true;
-      } else {
-        // Last resort: observe the whole right column
-        const rightColumn = document.querySelector('.right-column, [data-test-selector="right-column"]');
-        if (rightColumn) {
-          setupChatObserver(rightColumn, true);
-          extensionState.observerInitialized = true;
-        }
       }
-    }, 2000);
+    }, 1000);
   }
 }
 
 function findChatContainer() {
-  // Try to find chat container using multiple selectors
-  const potentialContainers = [
-    // Standard Twitch chat selectors
-    document.querySelector('.chat-scrollable-area__message-container'),
-    document.querySelector('[data-a-target="chat-scroller"]'),
-    document.querySelector('.chat-list--default, .chat-list'),
-    document.querySelector('.chat-list__list'),
-    
-    // 7TV specific selectors
-    document.querySelector('.seventv-chat-list'),
-    document.querySelector('main[data-a-target="chat-main-container"]'),
-    
-    // BetterTTV specific selectors 
-    document.querySelector('.chat-list--default, .chat-list--other'),
-    document.querySelector('.bttv-chat-container')
-  ].filter(Boolean); // Remove null elements
+  // Use the most reliable standard Twitch selector
+  const chatContainer = document.querySelector('.chat-scrollable-area__message-container') ||
+                       document.querySelector('[data-a-target="chat-scroller"]');
   
-  for (const container of potentialContainers) {
-    // Look for elements that might contain chat messages
-    const usernameElements = container.querySelectorAll(
-      '.chat-author__display-name, [data-a-target="chat-message-username"], ' + 
-      '.seventv-chat-user, .seventv-chat-author, ' +
-      '.chat-line__username'
-    );
-    
-    if (usernameElements.length > 0) {
-      return container;
-    }
-  }
+  if (chatContainer) return chatContainer;
   
-  // Ultimate fallback - get the chat container by looking for any chat message
-  const anyMessage = document.querySelector(
-    '.chat-line__message, .chat-line, .seventv-chat-message'
-  );
-  
-  if (anyMessage) {
-    return anyMessage.closest('[role="log"]') || 
-           anyMessage.parentElement || 
-           anyMessage.closest('div[data-a-target="chat-scroller"]');
-  }
-  
-  return null;
+  // Single fallback: find by existing chat message
+  const anyMessage = document.querySelector('.chat-line__message, .chat-line');
+  return anyMessage ? anyMessage.closest('[role="log"]') || anyMessage.parentElement : null;
 }
 
 function setupChatObserver(chatContainer, isFallbackObserver = false) {
@@ -569,27 +484,19 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // Check if this is a chat message using multiple extension-aware selectors
+            // Check if this is a standard Twitch chat message
             const isMessage = node.classList && (
               node.classList.contains('chat-line__message') || 
               node.classList.contains('chat-line') ||
-              node.classList.contains('seventv-chat-message') ||
-              node.classList.contains('bttv-message') ||
-              node.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"], .seventv-chat-user, .seventv-chat-author, .chat-line__username')
+              node.querySelector('.chat-author__display-name, [data-a-target="chat-message-username"]')
             );
             
             if (isMessage) {
               processNewMessage(node);
             } else if (isFallbackObserver) {
-              // For fallback observers, look deeper for chat messages from any extension
-              const messages = node.querySelectorAll(
-                '[data-a-target="chat-line-message"], .chat-line__message, .chat-line, ' +
-                '.seventv-chat-message, .seventv-chat-line, ' +
-                '.bttv-message, .bttv-chat-line'
-              );
-              messages.forEach(message => {
-                processNewMessage(message);
-              });
+              // For fallback observers, look for standard Twitch messages
+              const messages = node.querySelectorAll('.chat-line__message, .chat-line');
+              messages.forEach(message => processNewMessage(message));
             }
           }
         }
@@ -600,16 +507,11 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
   // Start observing the chat container
   chatObserver.observe(chatContainer, {
     childList: true,
-    subtree: true // Always use subtree: true to catch changes made by other extensions
+    subtree: true
   });
   
-  // Also process any existing messages, supporting multiple extensions' formats
-  const existingMessages = chatContainer.querySelectorAll(
-    '[data-a-target="chat-line-message"], .chat-line__message, .chat-line, ' +
-    '.seventv-chat-message, .seventv-chat-line, ' +
-    '.bttv-message, .bttv-chat-line'
-  );
-    
+  // Process any existing standard Twitch messages
+  const existingMessages = chatContainer.querySelectorAll('.chat-line__message, .chat-line');
   for (const message of existingMessages) {
     processNewMessage(message);
   }
@@ -629,12 +531,9 @@ function processNewMessage(messageNode) {
   // Only process messages if the channel is subscribed
   if (!extensionState.isChannelSubscribed) return;
   
-  // Find username element - support various extensions' DOM structures
-  const usernameElement = messageNode.querySelector(
-    '.chat-author__display-name, [data-a-target="chat-message-username"], ' +
-    '.seventv-chat-user, .seventv-chat-author, ' +
-    '.chat-line__username'
-  );
+  // Use the most reliable Twitch username selector
+  const usernameElement = messageNode.querySelector('.chat-author__display-name') ||
+                         messageNode.querySelector('[data-a-target="chat-message-username"]');
   
   if (!usernameElement) return;
   
@@ -714,7 +613,7 @@ function addBadgeToMessage(usernameElement, rankData) {
   if (!rankData?.tier) return; 
   
   // Check if badge already exists in this message
-  const messageContainer = usernameElement.closest('.chat-line__message, .chat-line, .seventv-chat-message');
+  const messageContainer = usernameElement.closest('.chat-line__message, .chat-line');
   if (messageContainer?.querySelector('.eloward-rank-badge')) return;
   
   // Create badge container
@@ -754,19 +653,8 @@ function addBadgeToMessage(usernameElement, rankData) {
                               rankData.leaguePoints.toString() : '';
   badgeContainer.dataset.username = rankData.summonerName || '';
   
-  // Insert badge - find the best location
-  const usernameContainer = usernameElement.closest('.chat-line__username-container') || 
-                           usernameElement.parentNode;
-  
-  const badgesContainer = usernameContainer?.querySelector('.chat-badge-container');
-  
-  if (badgesContainer) {
-    // Add to existing badge container
-    badgesContainer.appendChild(badgeContainer);
-  } else {
-    // Insert before the username element
-    usernameContainer.insertBefore(badgeContainer, usernameElement);
-  }
+  // Insert badge using the most reliable method - before the username element
+  usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
 }
 
 function formatRankText(rankData) {
