@@ -4,7 +4,9 @@ const extensionState = {
   channelName: '',
   currentGame: null,
   currentUser: null,
-  observerInitialized: false
+  observerInitialized: false,
+  lastSubscriptionCheck: null, // Track last subscription check time
+  initializationInProgress: false // Prevent concurrent initializations
 };
 
 // Processing state
@@ -24,20 +26,20 @@ let tooltipShowTimeout = null;
 // Initialize storage data once at startup
 initializeStorage();
 
-// Initialize when the page is loaded
+// Single initialization with fallback delay
 initializeExtension();
+setTimeout(() => {
+  if (!extensionState.observerInitialized) {
+    initializeExtension();
+  }
+}, 3000);
 
-// Also set a delayed initialization to catch slow-loading pages
-setTimeout(initializeExtension, 3000);
-
-// Add a window.onload handler as an additional initialization method
-window.addEventListener('load', function() {
-  initializeExtension();
-});
-
-// Listen for URL changes (for SPA navigation)
+// Listen for URL changes only (for SPA navigation)
 window.addEventListener('popstate', function() {
-  initializeExtension();
+  // Only reinitialize if we're not already in progress
+  if (!extensionState.initializationInProgress) {
+    initializeExtension();
+  }
 });
 
 // Clear rank cache when user closes tab or navigates away from Twitch
@@ -101,6 +103,15 @@ function findCurrentUser(allData) {
 async function checkChannelSubscription(channelName, forceCheck = false) {
   if (!channelName) return false;
   
+  // Prevent redundant checks within 30 seconds unless forced
+  const now = Date.now();
+  if (!forceCheck && 
+      extensionState.lastSubscriptionCheck && 
+      extensionState.channelName === channelName && 
+      (now - extensionState.lastSubscriptionCheck) < 30000) {
+    return extensionState.isChannelSubscribed;
+  }
+  
   // Normalize channel name
   const normalizedChannel = channelName.toLowerCase();
   
@@ -111,7 +122,6 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
         { 
           action: 'check_streamer_subscription', 
           streamer: channelName,
-          // No need for cache at this level since we only check on channel load/change
           skipCache: true
         },
         (response) => {
@@ -122,6 +132,9 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
           
           // Extract the boolean value with casting to ensure it's a boolean
           const isSubscribed = response && response.subscribed === true;
+          
+          // Update tracking
+          extensionState.lastSubscriptionCheck = now;
           
           // Log subscription status
           console.log(`EloWard: ${channelName} is ${isSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
@@ -296,6 +309,15 @@ function setupGameChangeObserver() {
 }
 
 function initializeExtension() {
+  // Prevent concurrent initializations
+  if (extensionState.initializationInProgress) {
+    return;
+  }
+  extensionState.initializationInProgress = true;
+  
+  // Signal Chrome extension presence to FFZ addon (as recommended in PR review)
+  document.body.setAttribute('data-eloward-chrome-ext', 'active');
+  
   // Get channel name using the new reliable method
   const newChannelName = getCurrentChannelName();
   
@@ -305,6 +327,7 @@ function initializeExtension() {
       window.location.pathname.includes('auth/') ||
       window.location.href.includes('auth/callback') ||
       window.location.href.includes('auth/redirect')) {
+    extensionState.initializationInProgress = false;
     return;
   }
   
@@ -324,6 +347,7 @@ function initializeExtension() {
     // Reset state when changing channels
     extensionState.isChannelSubscribed = false;
     extensionState.observerInitialized = false;
+    extensionState.lastSubscriptionCheck = null;
     
     // Clear the rank cache but preserve current user's rank
     clearRankCache();
@@ -349,6 +373,7 @@ function initializeExtension() {
     // Only proceed if the current game is supported
     if (!isGameSupported(extensionState.currentGame)) {
       console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
+      extensionState.initializationInProgress = false;
       return;
     }
     
@@ -378,7 +403,11 @@ function initializeExtension() {
           }
           extensionState.observerInitialized = false;
         }
+        
+        extensionState.initializationInProgress = false;
       });
+  }).catch(() => {
+    extensionState.initializationInProgress = false;
   });
   
   // Set up navigation observer to detect URL changes
