@@ -30,7 +30,7 @@ initializeStorage();
 initializeExtension();
 setTimeout(() => {
   if (!extensionState.observerInitialized) {
-    initializeExtension();
+  initializeExtension();
   }
 }, 3000);
 
@@ -38,7 +38,7 @@ setTimeout(() => {
 window.addEventListener('popstate', function() {
   // Only reinitialize if we're not already in progress
   if (!extensionState.initializationInProgress) {
-    initializeExtension();
+  initializeExtension();
   }
 });
 
@@ -83,7 +83,7 @@ function findCurrentUser(allData) {
   // Use the most reliable persistent storage key
   if (allData.eloward_persistent_twitch_user_data?.login) {
     return allData.eloward_persistent_twitch_user_data.login.toLowerCase();
-  }
+  } 
   
   // Single fallback for backward compatibility
   if (allData.twitchUsername) {
@@ -683,7 +683,7 @@ function addBadgeToMessage(usernameElement, rankData) {
   badgeContainer.dataset.username = rankData.summonerName || '';
   
   // Insert badge using the most reliable method - before the username element
-  usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
+    usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
 }
 
 function formatRankText(rankData) {

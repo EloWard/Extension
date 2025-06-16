@@ -633,7 +633,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Increment db_read counter regardless of cache hit/miss
     if (channelName) {
       incrementDbReadCounter(channelName).catch(error => {
-        console.error(`Error incrementing db_read for ${channelName}:`, error);
+          console.error(`Error incrementing db_read for ${channelName}:`, error);
       });
     }
     
@@ -643,7 +643,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // If we got a successful result from cache, increment successful_lookups
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(error => {
-          console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+            console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
         });
       }
       
@@ -668,7 +668,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // If we got a successful result from API, increment successful_lookups
           if (channelName && rankData?.tier) {
             incrementSuccessfulLookupCounter(channelName).catch(error => {
-              console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
+                console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
             });
           }
         }
@@ -681,7 +681,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error(`Error fetching rank for ${username}:`, error);
+          console.error(`Error fetching rank for ${username}:`, error);
         sendResponse({ 
           success: false, 
           error: error.message || 'Error fetching rank data' 
@@ -1490,8 +1490,8 @@ function getUserLinkedAccount(twitchUsername) {
         
         if (currentTwitchData?.login?.toLowerCase() === normalizedTwitchUsername && currentRiotData) {
           resolve(currentRiotData);
-          return;
-        }
+            return;
+          }
         
         resolve(null);
       });
@@ -2045,7 +2045,7 @@ async function incrementSuccessfulLookupCounter(channelName) {
     console.error(`Failed to increment successful_lookups for ${channelName}:`, error);
     return false;
   }
-}
+} 
 
 let rankCache = new Map(); // Cache for rank data only
 
