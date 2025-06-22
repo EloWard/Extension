@@ -1986,7 +1986,7 @@ async function incrementDbReadCounter(channelName) {
     return false;
   }
   
-  
+
   try {
     const normalizedName = channelName.toLowerCase();
     
