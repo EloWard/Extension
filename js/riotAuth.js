@@ -1332,16 +1332,16 @@ export const RiotAuth = {
   },
   
   /**
-   * Get rank data for the specified summoner
-   * @param {string} summonerId - The encrypted summoner ID
+   * Get rank data for the specified PUUID
+   * @param {string} puuid - The player's PUUID
    * @returns {Promise<Array>} - Array of league entries
    */
-  async getRankInfo(summonerId) {
+  async getRankInfo(puuid) {
     try {
-      console.log(`Getting rank info for summoner ID: ${summonerId.substring(0, 8)}...`);
+      console.log(`Getting rank info for PUUID: ${puuid.substring(0, 8)}...`);
       
-      if (!summonerId) {
-        throw new Error('No summoner ID provided');
+      if (!puuid) {
+        throw new Error('No PUUID provided');
       }
       
       // Get the region from storage
@@ -1354,8 +1354,8 @@ export const RiotAuth = {
         throw new Error('No valid access token available');
       }
       
-      // Construct the URL for the league entries endpoint
-      const requestUrl = `${this.config.proxyBaseUrl}/riot/league/entries?region=${region}&summonerId=${summonerId}`;
+      // Construct the URL for the league entries endpoint using PUUID
+      const requestUrl = `${this.config.proxyBaseUrl}/riot/league/entries?region=${region}&puuid=${puuid}`;
       console.log(`Fetching rank data from: ${requestUrl}`);
       
       // Make the request with the access token
@@ -1520,21 +1520,17 @@ export const RiotAuth = {
         console.log(`Summoner info retrieved for ${summonerInfo.name} (Level ${summonerInfo.summonerLevel})`);
       }
       
-      // Get rank info using the summoner ID
+      // Get rank info using the PUUID
       console.log('Getting rank info...');
       let rankInfo = [];
       
-      if (summonerInfo && summonerInfo.id) {
-        try {
-          rankInfo = await this.getRankInfo(summonerInfo.id);
-          console.log(`Rank info retrieved, found ${rankInfo.length} entries`);
-        } catch (rankError) {
-          console.error('Error retrieving rank info:', rankError);
-          console.log('Continuing without rank data');
-          rankInfo = [];
-        }
-      } else {
-        console.warn('Cannot get rank info without summoner ID');
+      try {
+        rankInfo = await this.getRankInfo(accountInfo.puuid);
+        console.log(`Rank info retrieved, found ${rankInfo.length} entries`);
+      } catch (rankError) {
+        console.error('Error retrieving rank info:', rankError);
+        console.log('Continuing without rank data');
+        rankInfo = [];
       }
       
       // Combine all data

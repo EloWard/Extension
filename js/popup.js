@@ -519,15 +519,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedRegion = regionSelect.value;
       console.log('Using selected region during refresh:', selectedRegion);
       
-      // Get summoner info using the puuid
+      // Get summoner info using the puuid (for display purposes)
       const summonerInfo = await RiotAuth.getSummonerInfo(accountInfo.puuid);
       
-      if (!summonerInfo || !summonerInfo.id) {
+      if (!summonerInfo) {
         throw new Error('Summoner information not available');
       }
       
-      // Force a fresh rank lookup by explicitly calling getRankInfo
-      const rankEntries = await RiotAuth.getRankInfo(summonerInfo.id);
+      // Force a fresh rank lookup using PUUID
+      const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
       
       // Get the freshly updated user data
       const userData = await RiotAuth.getUserData(true);

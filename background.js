@@ -692,13 +692,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'get_user_rank_by_puuid') {
-    const { puuid, summonerId, region } = message;
+    const { puuid, region } = message;
     
     // Check if we have a valid token
     RiotAuth.getValidToken()
       .then(token => {
-        // Get rank data using the League V4 API via backend
-        getRankBySummonerId(token, summonerId, region)
+        // Get rank data using the League V4 API via backend with PUUID
+        getRankByPuuid(token, puuid, region)
           .then(rankData => {
             sendResponse({ rank: rankData });
           })
@@ -1006,15 +1006,15 @@ function fetchRankFromBackend(username, platform) {
 }
 
 /**
- * Gets rank data for a summoner using the League V4 API via backend
+ * Gets rank data for a player using the League V4 API via backend with PUUID
  * @param {string} token - The access token
- * @param {string} summonerId - The encrypted summoner ID
+ * @param {string} puuid - The player's PUUID
  * @param {string} platform - The platform code (e.g., 'na1')
  * @returns {Promise} - Resolves with the rank data
  */
-function getRankBySummonerId(token, summonerId, platform) {
+function getRankByPuuid(token, puuid, platform) {
   return new Promise((resolve, reject) => {
-    fetch(`${RIOT_AUTH_URL}/riot/league/entries?platform=${platform}&summonerId=${summonerId}`, {
+    fetch(`${RIOT_AUTH_URL}/riot/league/entries?platform=${platform}&puuid=${puuid}`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -1311,8 +1311,8 @@ async function getUserProfile() {
       return summonerInfo;
     }
     
-    // Get rank info using summoner ID
-    const rankInfo = await fetchRankInfo(summonerInfo.summonerId, region);
+    // Get rank info using PUUID
+    const rankInfo = await fetchRankInfo(accountInfo.puuid, region);
     
     // Return combined profile data
     return {
@@ -1390,10 +1390,10 @@ async function fetchSummonerInfo(puuid, region) {
   }
 }
 
-// Fetch rank info from Riot API using summoner ID
-async function fetchRankInfo(summonerId, platform) {
+// Fetch rank info from Riot API using PUUID
+async function fetchRankInfo(puuid, platform) {
   try {
-    const response = await fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${summonerId}`);
+    const response = await fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${puuid}`);
     
     if (!response.ok) {
       const errorData = await response.json();
@@ -1520,7 +1520,7 @@ function getRankForLinkedAccount(linkedAccount, platform) {
           return;
         }
         
-        getRankBySummonerId(data.riotAuthToken, linkedAccount.summonerId, platform)
+        getRankByPuuid(data.riotAuthToken, linkedAccount.puuid, platform)
           .then(rankData => {
             // Update cache
             linkedAccount.rankInfo = rankData;
@@ -1613,12 +1613,12 @@ function syncUserRanks() {
           return;
         }
         
-        // Fetch fresh rank data
-        if (account.summonerId) {
+        // Fetch fresh rank data using PUUID
+        if (account.puuid) {
           chrome.storage.local.get('riotAuthToken', (data) => {
             if (!data.riotAuthToken) return;
             
-            getRankBySummonerId(data.riotAuthToken, account.summonerId, selectedRegion)
+            getRankByPuuid(data.riotAuthToken, account.puuid, selectedRegion)
               .then(rankData => {
                 // Update the account with the new rank data
                 account.rankInfo = rankData;
@@ -1890,7 +1890,7 @@ function preloadLinkedAccounts() {
         
         // Update or add current user's linked account
         if (!linkedAccounts[normalizedUsername] || 
-            !linkedAccounts[normalizedUsername].summonerId) {
+            !linkedAccounts[normalizedUsername].puuid) {
           
           console.log(`Adding current user's account (${userData.twitchUsername}) to linked accounts`);
           
@@ -1935,8 +1935,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 async function fetchRankForLinkedAccount(linkedAccount, region) {
   // Only log meaningful error cases, not the routine function call
   
-  if (!linkedAccount.summonerId || !linkedAccount.platform) {
-    console.log('Missing summonerId or platform in linked account');
+  if (!linkedAccount.puuid || !linkedAccount.platform) {
+    console.log('Missing puuid or platform in linked account');
     return null;
   }
   
@@ -1948,10 +1948,10 @@ async function fetchRankForLinkedAccount(linkedAccount, region) {
       throw new Error('No valid Riot access token');
     }
     
-    // Fetch the rank data using the access token
-    const rankData = await getRankBySummonerId(
+    // Fetch the rank data using the access token and PUUID
+    const rankData = await getRankByPuuid(
       tokenData.access_token,
-      linkedAccount.summonerId,
+      linkedAccount.puuid,
       linkedAccount.platform || region
     );
     
