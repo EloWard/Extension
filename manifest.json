@@ -45,6 +45,6 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' https://eloward-cdn.unleashai.workers.dev"
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev"
   }
 } 
