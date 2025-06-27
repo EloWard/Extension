@@ -9,6 +9,13 @@ const extensionState = {
   initializationInProgress: false // Prevent concurrent initializations
 };
 
+// Channel state tracking similar to FFZ addon
+const channelState = {
+  activeChannels: new Set(), // Track active channels
+  subscribedChannels: new Set(), // Track subscribed channels
+  currentChannel: null // Track current active channel
+};
+
 // Processing state
 let processedMessages = new Set();
 let tooltipElement = null; // Global tooltip element
@@ -45,6 +52,12 @@ window.addEventListener('popstate', function() {
 // Clear rank cache when user closes tab or navigates away from Twitch
 window.addEventListener('beforeunload', function() {
   console.log('👋 UserRankCache: Cleared on page unload/navigation');
+  
+  // Clean up current channel if active
+  if (extensionState.channelName) {
+    cleanupChannel(extensionState.channelName);
+  }
+  
   clearRankCache();
 });
 
@@ -60,6 +73,72 @@ function clearRankCache() {
   
   // Also clear the processed messages set to prevent memory buildup
   processedMessages.clear();
+}
+
+/**
+ * Clean up state when leaving a channel (similar to FFZ addon's onRoomRemove)
+ * @param {string} channelName - The channel being left
+ */
+function cleanupChannel(channelName) {
+  if (!channelName) return;
+  
+  const normalizedChannel = channelName.toLowerCase();
+  
+  // Remove from active and subscribed channels
+  channelState.activeChannels.delete(normalizedChannel);
+  channelState.subscribedChannels.delete(normalizedChannel);
+  
+  // Clear processed messages for this channel
+  processedMessages.clear();
+  
+  // Disconnect observers
+  if (window._eloward_chat_observer) {
+    window._eloward_chat_observer.disconnect();
+    window._eloward_chat_observer = null;
+  }
+  
+  if (window._eloward_game_observer) {
+    window._eloward_game_observer.disconnect();
+    window._eloward_game_observer = null;
+  }
+  
+  // Reset extension state
+  extensionState.observerInitialized = false;
+  extensionState.isChannelSubscribed = false;
+  extensionState.lastSubscriptionCheck = null;
+  
+  console.log(`EloWard: Cleaned up channel ${channelName}`);
+}
+
+/**
+ * Initialize a channel (similar to FFZ addon's onRoomAdd)
+ * @param {string} channelName - The channel being entered
+ */
+async function initializeChannel(channelName) {
+  if (!channelName) return;
+  
+  const normalizedChannel = channelName.toLowerCase();
+  
+  // Add to active channels
+  channelState.activeChannels.add(normalizedChannel);
+  channelState.currentChannel = normalizedChannel;
+  
+  // Always force check subscription status to ensure fresh data
+  // This handles cases where subscription status might have changed
+  const isSubscribed = await checkChannelSubscription(channelName, true);
+  
+  if (isSubscribed) {
+    channelState.subscribedChannels.add(normalizedChannel);
+    extensionState.isChannelSubscribed = true;
+    console.log(`EloWard: Initialized channel ${channelName} (subscribed)`);
+  } else {
+    // Remove from subscribed channels if not subscribed
+    channelState.subscribedChannels.delete(normalizedChannel);
+    extensionState.isChannelSubscribed = false;
+    console.log(`EloWard: Initialized channel ${channelName} (not subscribed)`);
+  }
+  
+  return isSubscribed;
 }
 
 // Initialize storage and load user data
@@ -334,6 +413,11 @@ function initializeExtension() {
   // Check if we've changed channels
   const channelChanged = newChannelName !== extensionState.channelName;
   if (channelChanged) {
+    // Clean up the old channel if it exists
+    if (extensionState.channelName) {
+      cleanupChannel(extensionState.channelName);
+    }
+    
     // Notify background about channel switch
     chrome.runtime.sendMessage({
       action: 'channel_switched',
@@ -343,11 +427,6 @@ function initializeExtension() {
     
     // Update the channel name
     extensionState.channelName = newChannelName;
-    
-    // Reset state when changing channels
-    extensionState.isChannelSubscribed = false;
-    extensionState.observerInitialized = false;
-    extensionState.lastSubscriptionCheck = null;
     
     // Clear the rank cache but preserve current user's rank
     clearRankCache();
@@ -382,26 +461,16 @@ function initializeExtension() {
     // Setup game change observer to detect mid-stream game switches
     setupGameChangeObserver();
     
-    // Only force check subscription status on channel changes
-    // Otherwise use the cached value to reduce API calls
-    checkChannelSubscription(extensionState.channelName, channelChanged)
+    // Initialize the new channel properly
+    initializeChannel(extensionState.channelName)
       .then(subscribed => {
-        extensionState.isChannelSubscribed = subscribed;
-        
-        if (extensionState.isChannelSubscribed) {
+        if (subscribed) {
           // Only print the activation message when the channel is subscribed
           console.log("🛡️ EloWard Extension Active");
           
           if (!extensionState.observerInitialized) {
             initializeObserver();
           }
-        } else if (!extensionState.isChannelSubscribed) {
-          // Clean up any existing observers
-          if (window._eloward_chat_observer) {
-            window._eloward_chat_observer.disconnect();
-            window._eloward_chat_observer = null;
-          }
-          extensionState.observerInitialized = false;
         }
         
         extensionState.initializationInProgress = false;
@@ -435,28 +504,18 @@ function setupUrlChangeObserver() {
     
     // Only reinitialize if the channel actually changed
     if (currentChannel !== extensionState.channelName) {
-      // Reset state
+      // Clean up the old channel
+      if (extensionState.channelName) {
+        cleanupChannel(extensionState.channelName);
+      }
+      
+      // Update channel name
       extensionState.channelName = currentChannel;
-      extensionState.observerInitialized = false;
-      extensionState.isChannelSubscribed = false;
       
       // Clear rank cache but preserve current user's rank
       clearRankCache();
       
-      // Remove any existing observers
-      if (window._eloward_chat_observer) {
-        window._eloward_chat_observer.disconnect();
-        window._eloward_chat_observer = null;
-      }
-      
-      // Check if game observer needs to be reset
-      if (window._eloward_game_observer) {
-        window._eloward_game_observer.disconnect();
-        window._eloward_game_observer = null;
-      }
-      
       // Reinitialize with new channel
-      // This will trigger a fresh subscription check since channel changed
       initializeExtension();
     }
   });
