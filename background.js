@@ -1324,9 +1324,7 @@ async function getUserProfile() {
       },
       summonerInfo: {
         id: summonerInfo.summonerId,
-        name: summonerInfo.name,
-        profileIconId: summonerInfo.profileIconId,
-        summonerLevel: summonerInfo.summonerLevel
+        name: summonerInfo.name
       },
       rankInfo: rankInfo.entries || []
     };
@@ -1380,9 +1378,7 @@ async function fetchSummonerInfo(puuid, region) {
       success: true,
       summonerId: summonerData.id,
       accountId: summonerData.accountId,
-      name: summonerData.name,
-      profileIconId: summonerData.profileIconId,
-      summonerLevel: summonerData.summonerLevel
+      name: summonerData.name
     };
   } catch (error) {
     console.error('Error fetching summoner info:', error);

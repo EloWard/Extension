@@ -1293,16 +1293,13 @@ export const RiotAuth = {
         summonerInfo = {
           id: summonerId,
           puuid: puuid,
-          name: 'Unknown Summoner',
-          profileIconId: 0,
-          summonerLevel: 0
+          name: 'Unknown Summoner'
         };
       }
       
       console.log('Using summoner info:', {
         id: summonerInfo.id.substring(0, 8) + '...',
-        name: summonerInfo.name,
-        level: summonerInfo.summonerLevel
+        name: summonerInfo.name
       });
       
       // Store the summoner info
@@ -1517,7 +1514,7 @@ export const RiotAuth = {
       if (!summonerInfo || !summonerInfo.id) {
         console.warn('Failed to retrieve summoner info');
       } else {
-        console.log(`Summoner info retrieved for ${summonerInfo.name} (Level ${summonerInfo.summonerLevel})`);
+        console.log(`Summoner info retrieved for ${summonerInfo.name}`);
       }
       
       // Get rank info using the PUUID
@@ -1549,7 +1546,6 @@ export const RiotAuth = {
         tagLine: userData.tagLine,
         puuid: userData.puuid ? `${userData.puuid.substring(0, 8)}...` : null,
         summonerId: userData.summoner?.id ? `${userData.summoner.id.substring(0, 8)}...` : null,
-        summonerLevel: userData.summoner?.summonerLevel,
         rankEntriesCount: userData.ranks.length,
         hasSoloQueueRank: !!userData.soloQueueRank,
         soloQueueTier: userData.soloQueueRank?.tier,
