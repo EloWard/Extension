@@ -1352,8 +1352,6 @@ async function fetchRiotAccountInfo(accessToken, region) {
   }
 }
 
-
-
 // Fetch rank info from Riot API using PUUID
 async function fetchRankInfo(puuid, platform) {
   try {
@@ -1759,11 +1757,13 @@ async function fetchRankFromDatabase(twitchUsername) {
     const rankData = await response.json();
     
     // Convert API response format to the format expected by the content script
+    // Note: rankData now includes riot_puuid from the updated schema
     return {
       tier: rankData.rank_tier,
       division: rankData.rank_division,
       leaguePoints: rankData.lp,
-      summonerName: rankData.riot_id
+      summonerName: rankData.riot_id,
+      puuid: rankData.riot_puuid // Include PUUID for completeness
     };
   } catch (error) {
     console.error(`Error fetching rank from database for ${twitchUsername}:`, error);

@@ -21,10 +21,15 @@ export class RankAPI {
       throw new Error('Missing required data for rank upload');
     }
     
+    // Validate PUUID is present (required for uniqueness)
+    if (!rankData.puuid) {
+      throw new Error('PUUID is required for rank upload');
+    }
+    
     // Format the data for the API according to lol_ranks.sql schema
     const payload = {
+      riot_puuid: rankData.puuid,
       twitch_username: twitchUsername,
-      riot_puuid: rankData.puuid || null,
       riot_id: rankData.gameName && rankData.tagLine ? `${rankData.gameName}#${rankData.tagLine}` : null,
       rank_tier: rankData.tier || 'UNRANKED',
       rank_division: rankData.division || rankData.rank || null,
@@ -50,6 +55,7 @@ export class RankAPI {
       
       // Update the cache with the fresh data
       this.#updateCache(twitchUsername.toLowerCase(), {
+        riot_puuid: payload.riot_puuid,
         twitch_username: twitchUsername.toLowerCase(),
         riot_id: payload.riot_id,
         rank_tier: payload.rank_tier,
