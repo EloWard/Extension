@@ -116,6 +116,7 @@ function cleanupChannel(channelName) {
   extensionState.lastSubscriptionCheck = null;
   extensionState.initializationInProgress = false;
   extensionState.currentInitializationId = null; // Reset initialization ID
+  extensionState.currentGame = null; // Reset current game to force fresh detection
   
   console.log(`EloWard: Cleaned up channel ${channelName}`);
 }
@@ -334,9 +335,27 @@ function getCurrentChannelName() {
  */
 function getCurrentGame() {
   try {
-    // Use the most reliable method - direct game link selector
-    const gameLink = document.querySelector('a[data-a-target="stream-game-link"]');
-    return gameLink?.textContent?.trim() || null;
+    // Force fresh DOM queries by checking multiple selectors
+    const gameSelectors = [
+      'a[data-a-target="stream-game-link"]',
+      '[data-a-target="stream-game-link"]',
+      '.game-name', // Backup selector
+      '[data-test-selector="game-name"]' // Another backup
+    ];
+    
+    for (const selector of gameSelectors) {
+      const gameElement = document.querySelector(selector);
+      if (gameElement) {
+        const gameName = gameElement.textContent?.trim();
+        if (gameName && gameName !== 'Just Chatting') { // Basic validation
+          console.log(`EloWard: Game detected using selector "${selector}": ${gameName}`);
+          return gameName;
+        }
+      }
+    }
+    
+    console.log(`EloWard: No game detected from any selector`);
+    return null;
   } catch (error) {
     console.error(`EloWard: Error detecting game:`, error);
     return null;
@@ -417,72 +436,72 @@ function isGameSupported(game) {
  * This detects if a streamer switches games mid-stream
  */
 function setupGameChangeObserver() {
-  // Only set up once
-  if (window._eloward_game_observer) return;
+  // Only set up the observer once per initialization
+  if (window._eloward_game_observer) {
+    window._eloward_game_observer.disconnect();
+    window._eloward_game_observer = null;
+  }
   
-  // Create observer instance to monitor the game element
-  const gameObserver = new MutationObserver(function() {
-    const newGame = getCurrentGame();
-    
-    // If we can't detect the game, don't do anything
-    if (!newGame) return;
-    
-    // If game changed, reinitialize
-    if (newGame !== extensionState.currentGame) {
-      const oldGame = extensionState.currentGame;
-      extensionState.currentGame = newGame;
-      
-      console.log(`EloWard: Game changed from ${oldGame || 'unknown'} to ${newGame}`);
-      
-      // Clean up existing chat observer
-      if (window._eloward_chat_observer) {
-        window._eloward_chat_observer.disconnect();
-        window._eloward_chat_observer = null;
-        extensionState.observerInitialized = false;
-      }
-      
-      // Reset extension state based on game support
-      if (isGameSupported(newGame)) {
-        console.log(`EloWard: Supported game '${newGame}' detected. Activating extension.`);
-        
-        // Only check subscription if the game is supported
-        checkChannelSubscription(extensionState.channelName, false)
-          .then(subscribed => {
-            extensionState.isChannelSubscribed = subscribed;
-            
-            if (extensionState.isChannelSubscribed) {
-              console.log("🛡️ EloWard Extension Active");
-              
-              if (!extensionState.observerInitialized) {
-                initializeObserver();
-              }
-            }
-          });
-      } else {
-        // Deactivate extension for unsupported games
-        console.log(`EloWard: Game '${newGame}' is not supported. Extension inactive.`);
-        extensionState.isChannelSubscribed = false;
-        extensionState.observerInitialized = false;
-      }
+  // Only proceed if we have a supported game initially
+  if (!isGameSupported(extensionState.currentGame)) {
+    console.log(`EloWard: Not setting up game observer - current game not supported: ${extensionState.currentGame || 'unknown'}`);
+    return;
+  }
+  
+  console.log(`EloWard: Setting up game change observer for current game: ${extensionState.currentGame}`);
+  
+  // Debounce game detection to avoid excessive checks
+  let gameCheckTimeout = null;
+  
+  function checkGameChange() {
+    if (gameCheckTimeout) {
+      clearTimeout(gameCheckTimeout);
     }
+    
+    gameCheckTimeout = setTimeout(() => {
+      const newGame = getCurrentGame();
+      
+      // Only log and act on actual changes
+      if (newGame !== extensionState.currentGame) {
+        console.log(`EloWard: Game changed from ${extensionState.currentGame || 'unknown'} to ${newGame || 'unknown'}`);
+        
+        const oldGame = extensionState.currentGame;
+        extensionState.currentGame = newGame;
+        
+        // If the new game is not supported, deactivate extension
+        if (!isGameSupported(extensionState.currentGame)) {
+          console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
+          
+          // Clean up observers but keep the channel state
+          if (window._eloward_chat_observer) {
+            window._eloward_chat_observer.disconnect();
+            window._eloward_chat_observer = null;
+          }
+          extensionState.observerInitialized = false;
+          extensionState.isChannelSubscribed = false;
+        } else if (isGameSupported(extensionState.currentGame) && !isGameSupported(oldGame)) {
+          // Game changed to supported - reinitialize if channel is still active
+          console.log(`EloWard: Game changed to supported game, reinitializing...`);
+          if (extensionState.channelName && !extensionState.initializationInProgress) {
+            initializeExtension();
+          }
+        }
+      }
+    }, 1000); // 1 second debounce
+  }
+  
+  const gameObserver = new MutationObserver(checkGameChange);
+  
+  // Observe the entire document for game-related changes
+  gameObserver.observe(document.body, { 
+    subtree: true, 
+    childList: true,
+    attributes: true,
+    attributeFilter: ['data-a-target'], 
+    characterData: true 
   });
   
-  // Find the element containing game information
-  const gameContainer = document.querySelector('.channel-info-content, [data-a-target="stream-title-container"]');
-  if (gameContainer) {
-    gameObserver.observe(gameContainer, { subtree: true, childList: true, characterData: true });
-    window._eloward_game_observer = gameObserver;
-  } else {
-    // Try to find game information in the document body if the specific container isn't found
-    gameObserver.observe(document.body, { 
-      subtree: true, 
-      childList: true,
-      attributes: true,
-      attributeFilter: ['data-a-target'], 
-      characterData: true 
-    });
-    window._eloward_game_observer = gameObserver;
-  }
+  window._eloward_game_observer = gameObserver;
 }
 
 function initializeExtension() {
@@ -549,60 +568,72 @@ function initializeExtension() {
   }
   
   // Attempt to detect the game with retries
-  getGameWithRetries(5, 2000, initializationId).then(detectedGame => {
-    // Check if this initialization is still current
+  // Add extra delay for channel switches to allow DOM to update
+  const gameDetectionDelay = channelChanged ? 3000 : 0;
+  
+  setTimeout(() => {
+    // Check if this initialization is still current after delay
     if (extensionState.currentInitializationId !== initializationId) {
-      console.log(`EloWard: Game detection completed but initialization ${initializationId} is no longer current`);
-      return;
-    }
-    
-    // Update current game state
-    extensionState.currentGame = detectedGame;
-    
-    // Only proceed if the current game is supported
-    if (!isGameSupported(extensionState.currentGame)) {
-      console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
+      console.log(`EloWard: Game detection cancelled after delay for initialization ${initializationId}`);
       extensionState.initializationInProgress = false;
       return;
     }
     
-    console.log(`EloWard: Supported game '${extensionState.currentGame}' detected for initialization ${initializationId}`);
-    
-    // Setup game change observer to detect mid-stream game switches
-    setupGameChangeObserver();
-    
-    // Initialize the new channel properly
-    initializeChannel(extensionState.channelName, initializationId)
-      .then(subscribed => {
-        // Check if this initialization is still current
-        if (extensionState.currentInitializationId !== initializationId) {
-          console.log(`EloWard: Channel initialization completed but initialization ${initializationId} is no longer current`);
-          return;
-        }
-        
-        if (subscribed) {
-          // Only print the activation message when the channel is subscribed
-          console.log("🛡️ EloWard Extension Active");
-          
-          if (!extensionState.observerInitialized) {
-            initializeObserver();
+    getGameWithRetries(5, 2000, initializationId).then(detectedGame => {
+      // Check if this initialization is still current
+      if (extensionState.currentInitializationId !== initializationId) {
+        console.log(`EloWard: Game detection completed but initialization ${initializationId} is no longer current`);
+        return;
+      }
+      
+      // Update current game state
+      extensionState.currentGame = detectedGame;
+      
+      // Only proceed if the current game is supported
+      if (!isGameSupported(extensionState.currentGame)) {
+        console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
+        extensionState.initializationInProgress = false;
+        return;
+      }
+      
+      console.log(`EloWard: Supported game '${extensionState.currentGame}' detected for initialization ${initializationId}`);
+      
+      // Setup game change observer to detect mid-stream game switches
+      setupGameChangeObserver();
+      
+      // Initialize the new channel properly
+      initializeChannel(extensionState.channelName, initializationId)
+        .then(subscribed => {
+          // Check if this initialization is still current
+          if (extensionState.currentInitializationId !== initializationId) {
+            console.log(`EloWard: Channel initialization completed but initialization ${initializationId} is no longer current`);
+            return;
           }
-        }
-        
-        extensionState.initializationInProgress = false;
-      })
-      .catch(error => {
-        if (error.name === 'AbortError') {
-          console.log(`EloWard: Initialization ${initializationId} was aborted`);
-        } else {
-          console.error(`EloWard: Error during channel initialization:`, error);
-        }
-        extensionState.initializationInProgress = false;
-      });
-  }).catch(() => {
-    console.log(`EloWard: Game detection failed for initialization ${initializationId}`);
-    extensionState.initializationInProgress = false;
-  });
+          
+          if (subscribed) {
+            // Only print the activation message when the channel is subscribed
+            console.log("🛡️ EloWard Extension Active");
+            
+            if (!extensionState.observerInitialized) {
+              initializeObserver();
+            }
+          }
+          
+          extensionState.initializationInProgress = false;
+        })
+        .catch(error => {
+          if (error.name === 'AbortError') {
+            console.log(`EloWard: Initialization ${initializationId} was aborted`);
+          } else {
+            console.error(`EloWard: Error during channel initialization:`, error);
+          }
+          extensionState.initializationInProgress = false;
+        });
+    }).catch(() => {
+      console.log(`EloWard: Game detection failed for initialization ${initializationId}`);
+      extensionState.initializationInProgress = false;
+    });
+  }, gameDetectionDelay);
   
   // Set up navigation observer to detect URL changes
   setupUrlChangeObserver();
