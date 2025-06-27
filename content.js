@@ -6,14 +6,16 @@ const extensionState = {
   currentUser: null,
   observerInitialized: false,
   lastSubscriptionCheck: null, // Track last subscription check time
-  initializationInProgress: false // Prevent concurrent initializations
+  initializationInProgress: false, // Prevent concurrent initializations
+  currentInitializationId: null // Track current initialization to cancel old ones
 };
 
 // Channel state tracking similar to FFZ addon
 const channelState = {
   activeChannels: new Set(), // Track active channels
   subscribedChannels: new Set(), // Track subscribed channels
-  currentChannel: null // Track current active channel
+  currentChannel: null, // Track current active channel
+  activeAbortController: null // Track active operations to cancel them
 };
 
 // Processing state
@@ -84,6 +86,12 @@ function cleanupChannel(channelName) {
   
   const normalizedChannel = channelName.toLowerCase();
   
+  // Cancel any ongoing operations
+  if (channelState.activeAbortController) {
+    channelState.activeAbortController.abort();
+    channelState.activeAbortController = null;
+  }
+  
   // Remove from active and subscribed channels
   channelState.activeChannels.delete(normalizedChannel);
   channelState.subscribedChannels.delete(normalizedChannel);
@@ -106,6 +114,8 @@ function cleanupChannel(channelName) {
   extensionState.observerInitialized = false;
   extensionState.isChannelSubscribed = false;
   extensionState.lastSubscriptionCheck = null;
+  extensionState.initializationInProgress = false;
+  extensionState.currentInitializationId = null; // Reset initialization ID
   
   console.log(`EloWard: Cleaned up channel ${channelName}`);
 }
@@ -113,32 +123,64 @@ function cleanupChannel(channelName) {
 /**
  * Initialize a channel (similar to FFZ addon's onRoomAdd)
  * @param {string} channelName - The channel being entered
+ * @param {string} initializationId - Unique ID for this initialization session
  */
-async function initializeChannel(channelName) {
+async function initializeChannel(channelName, initializationId) {
   if (!channelName) return;
   
   const normalizedChannel = channelName.toLowerCase();
   
-  // Add to active channels
-  channelState.activeChannels.add(normalizedChannel);
-  channelState.currentChannel = normalizedChannel;
+  // Create new AbortController for this initialization
+  const abortController = new AbortController();
+  channelState.activeAbortController = abortController;
   
-  // Always force check subscription status to ensure fresh data
-  // This handles cases where subscription status might have changed
-  const isSubscribed = await checkChannelSubscription(channelName, true);
-  
-  if (isSubscribed) {
-    channelState.subscribedChannels.add(normalizedChannel);
-    extensionState.isChannelSubscribed = true;
-    console.log(`EloWard: Initialized channel ${channelName} (subscribed)`);
-  } else {
-    // Remove from subscribed channels if not subscribed
-    channelState.subscribedChannels.delete(normalizedChannel);
-    extensionState.isChannelSubscribed = false;
-    console.log(`EloWard: Initialized channel ${channelName} (not subscribed)`);
+  try {
+    // Check if this initialization is still current
+    if (extensionState.currentInitializationId !== initializationId) {
+      console.log(`EloWard: Initialization ${initializationId} cancelled (superseded)`);
+      return false;
+    }
+    
+    // Add to active channels
+    channelState.activeChannels.add(normalizedChannel);
+    channelState.currentChannel = normalizedChannel;
+    
+    // Always force check subscription status to ensure fresh data
+    // This handles cases where subscription status might have changed
+    const isSubscribed = await checkChannelSubscription(channelName, true, abortController.signal);
+    
+    // Check again if this initialization is still current after async operation
+    if (extensionState.currentInitializationId !== initializationId) {
+      console.log(`EloWard: Initialization ${initializationId} cancelled after subscription check`);
+      return false;
+    }
+    
+    // Check if operation was aborted
+    if (abortController.signal.aborted) {
+      console.log(`EloWard: Initialization ${initializationId} aborted`);
+      return false;
+    }
+    
+    if (isSubscribed) {
+      channelState.subscribedChannels.add(normalizedChannel);
+      extensionState.isChannelSubscribed = true;
+      console.log(`EloWard: Initialized channel ${channelName} (subscribed) - ID: ${initializationId}`);
+    } else {
+      // Remove from subscribed channels if not subscribed
+      channelState.subscribedChannels.delete(normalizedChannel);
+      extensionState.isChannelSubscribed = false;
+      console.log(`EloWard: Initialized channel ${channelName} (not subscribed) - ID: ${initializationId}`);
+    }
+    
+    return isSubscribed;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.log(`EloWard: Initialization ${initializationId} aborted`);
+      return false;
+    }
+    console.error(`EloWard: Error initializing channel ${channelName}:`, error);
+    return false;
   }
-  
-  return isSubscribed;
 }
 
 // Initialize storage and load user data
@@ -177,10 +219,16 @@ function findCurrentUser(allData) {
  * Uses local caching to avoid excessive API calls
  * @param {string} channelName - The channel to check
  * @param {boolean} forceCheck - Whether to bypass cache and force a fresh check
+ * @param {AbortSignal} signal - AbortSignal for cancellation
  * @returns {Promise<boolean>} - Whether the channel is subscribed
  */
-async function checkChannelSubscription(channelName, forceCheck = false) {
+async function checkChannelSubscription(channelName, forceCheck = false, signal = null) {
   if (!channelName) return false;
+  
+  // Check if operation was aborted before starting
+  if (signal?.aborted) {
+    throw new DOMException('Operation aborted', 'AbortError');
+  }
   
   // Prevent redundant checks within 30 seconds unless forced
   const now = Date.now();
@@ -195,7 +243,22 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
   const normalizedChannel = channelName.toLowerCase();
   
   try {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      // Check if aborted before making the call
+      if (signal?.aborted) {
+        reject(new DOMException('Operation aborted', 'AbortError'));
+        return;
+      }
+      
+      // Set up abort listener
+      const abortListener = () => {
+        reject(new DOMException('Operation aborted', 'AbortError'));
+      };
+      
+      if (signal) {
+        signal.addEventListener('abort', abortListener, { once: true });
+      }
+      
       // Send message to background script to check subscription
       chrome.runtime.sendMessage(
         { 
@@ -204,6 +267,17 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
           skipCache: true
         },
         (response) => {
+          // Clean up abort listener
+          if (signal) {
+            signal.removeEventListener('abort', abortListener);
+          }
+          
+          // Check if aborted during the call
+          if (signal?.aborted) {
+            reject(new DOMException('Operation aborted', 'AbortError'));
+            return;
+          }
+          
           if (chrome.runtime.lastError) {
             resolve(false);
             return;
@@ -212,17 +286,22 @@ async function checkChannelSubscription(channelName, forceCheck = false) {
           // Extract the boolean value with casting to ensure it's a boolean
           const isSubscribed = response && response.subscribed === true;
           
-          // Update tracking
-          extensionState.lastSubscriptionCheck = now;
-          
-          // Log subscription status
-          console.log(`EloWard: ${channelName} is ${isSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
+          // Update tracking only if not aborted
+          if (!signal?.aborted) {
+            extensionState.lastSubscriptionCheck = now;
+            
+            // Log subscription status
+            console.log(`EloWard: ${channelName} is ${isSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
+          }
           
           resolve(isSubscribed);
         }
       );
     });
   } catch (error) {
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     return false;
   }
 }
@@ -268,22 +347,41 @@ function getCurrentGame() {
  * Attempts to get the current game periodically if initial detection fails
  * @param {number} maxAttempts - Maximum number of retry attempts
  * @param {number} interval - Interval between attempts in ms
+ * @param {string} initializationId - Current initialization ID to check if still valid
  * @returns {Promise<string|null>} - Resolves to game name or null if not found
  */
-function getGameWithRetries(maxAttempts = 5, interval = 2000) {
+function getGameWithRetries(maxAttempts = 5, interval = 2000, initializationId = null) {
   return new Promise((resolve) => {
     let attempts = 0;
     
     function tryGetGame() {
+      // Check if this initialization is still current
+      if (initializationId && extensionState.currentInitializationId !== initializationId) {
+        console.log(`EloWard: Game detection cancelled for initialization ${initializationId}`);
+        resolve(null);
+        return;
+      }
+      
       const game = getCurrentGame();
       if (game) {
         resolve(game);
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(tryGetGame, interval);
-      } else {
-        resolve(null);
+        return;
       }
+      
+      attempts++;
+      if (attempts >= maxAttempts) {
+        resolve(null);
+        return;
+      }
+      
+      // Check again if this initialization is still current before scheduling retry
+      if (initializationId && extensionState.currentInitializationId !== initializationId) {
+        console.log(`EloWard: Game detection cancelled during retry for initialization ${initializationId}`);
+        resolve(null);
+        return;
+      }
+      
+      setTimeout(tryGetGame, interval);
     }
     
     tryGetGame();
@@ -388,10 +486,16 @@ function setupGameChangeObserver() {
 }
 
 function initializeExtension() {
-  // Prevent concurrent initializations
+  // Generate unique initialization ID
+  const initializationId = `init_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Prevent concurrent initializations by cancelling previous ones
   if (extensionState.initializationInProgress) {
-    return;
+    console.log(`EloWard: Cancelling previous initialization, starting new one: ${initializationId}`);
   }
+  
+  // Set current initialization ID to cancel any previous ones
+  extensionState.currentInitializationId = initializationId;
   extensionState.initializationInProgress = true;
   
   // Signal Chrome extension presence to FFZ addon (as recommended in PR review)
@@ -445,7 +549,13 @@ function initializeExtension() {
   }
   
   // Attempt to detect the game with retries
-  getGameWithRetries().then(detectedGame => {
+  getGameWithRetries(5, 2000, initializationId).then(detectedGame => {
+    // Check if this initialization is still current
+    if (extensionState.currentInitializationId !== initializationId) {
+      console.log(`EloWard: Game detection completed but initialization ${initializationId} is no longer current`);
+      return;
+    }
+    
     // Update current game state
     extensionState.currentGame = detectedGame;
     
@@ -456,14 +566,20 @@ function initializeExtension() {
       return;
     }
     
-    console.log(`EloWard: Supported game '${extensionState.currentGame}' detected`);
+    console.log(`EloWard: Supported game '${extensionState.currentGame}' detected for initialization ${initializationId}`);
     
     // Setup game change observer to detect mid-stream game switches
     setupGameChangeObserver();
     
     // Initialize the new channel properly
-    initializeChannel(extensionState.channelName)
+    initializeChannel(extensionState.channelName, initializationId)
       .then(subscribed => {
+        // Check if this initialization is still current
+        if (extensionState.currentInitializationId !== initializationId) {
+          console.log(`EloWard: Channel initialization completed but initialization ${initializationId} is no longer current`);
+          return;
+        }
+        
         if (subscribed) {
           // Only print the activation message when the channel is subscribed
           console.log("🛡️ EloWard Extension Active");
@@ -474,8 +590,17 @@ function initializeExtension() {
         }
         
         extensionState.initializationInProgress = false;
+      })
+      .catch(error => {
+        if (error.name === 'AbortError') {
+          console.log(`EloWard: Initialization ${initializationId} was aborted`);
+        } else {
+          console.error(`EloWard: Error during channel initialization:`, error);
+        }
+        extensionState.initializationInProgress = false;
       });
   }).catch(() => {
+    console.log(`EloWard: Game detection failed for initialization ${initializationId}`);
     extensionState.initializationInProgress = false;
   });
   
