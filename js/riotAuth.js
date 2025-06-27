@@ -55,7 +55,7 @@ const defaultConfig = {
     authToken: '/auth/token',
     authRefresh: '/auth/token/refresh',
     accountInfo: '/riot/account',
-    summonerInfo: '/riot/summoner',
+
     leagueEntries: '/riot/league/entries'
   },
   storageKeys: {
@@ -64,7 +64,6 @@ const defaultConfig = {
     tokenExpiry: 'eloward_riot_token_expiry',
     tokens: 'eloward_riot_tokens',
     accountInfo: 'eloward_riot_account_info',
-    summonerInfo: 'eloward_riot_summoner_info',
     rankInfo: 'eloward_riot_rank_info',
     authState: 'eloward_auth_state',
     authCallback: 'eloward_auth_callback',
@@ -926,7 +925,6 @@ export const RiotAuth = {
         this.config.storageKeys.tokens,
         this.config.storageKeys.idToken,
         this.config.storageKeys.accountInfo,
-        this.config.storageKeys.summonerInfo,
         this.config.storageKeys.rankInfo,
         this.config.storageKeys.authState,
         'riotAuth', // Add the main riotAuth object to be cleared
@@ -1098,13 +1096,7 @@ export const RiotAuth = {
       
       // Only use default values if we don't have anything
       if (!accountInfo.gameName) {
-        // Try to use summoner name as game name if available
-        const summonerInfo = await this._getStoredValue(this.config.storageKeys.summonerInfo);
-        if (summonerInfo && summonerInfo.name && summonerInfo.name !== 'Unknown Summoner') {
-          accountInfo.gameName = summonerInfo.name;
-        } else {
-          accountInfo.gameName = 'Summoner';
-        }
+        accountInfo.gameName = 'Summoner';
         console.log('Using fallback gameName:', accountInfo.gameName);
       }
       
@@ -1204,129 +1196,9 @@ export const RiotAuth = {
     return platformMap[platform] || 'americas'; // Default to americas if platform not found
   },
   
-  /**
-   * Get summoner info using PUUID
-   * @param {string} puuid - The player's PUUID
-   * @returns {Promise<Object>} - Summoner info object
-   */
-  async getSummonerInfo(puuid) {
-    try {
-      if (!puuid) {
-        throw new Error('PUUID is required to get summoner info');
-      }
-      
-      console.log('Fetching summoner info for PUUID:', puuid.substring(0, 8) + '...');
-      
-      // Get access token
-      const token = await this.getValidToken();
-      
-      // Get selected region or default to NA1
-      const platform = await this._getStoredValue('selectedRegion') || 'na1';
-      
-      // Try the primary endpoint first
-      let summonerInfo = null;
-      let error = null;
-      
-      try {
-        // Updated to use the correct endpoint format that matches the server's routes
-        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.summonerInfo}/${platform}/${puuid}`;
-        console.log(`Making summoner info request to: ${requestUrl}`);
-        
-        const response = await fetch(requestUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        console.log('Summoner info response status:', response.status, response.statusText);
-        
-        if (response.ok) {
-          summonerInfo = await response.json();
-          console.log('Successfully retrieved summoner info');
-        } else {
-          // Store error but continue to fallback methods
-          const errorData = await response.json().catch(() => ({}));
-          error = new Error(`Failed to get summoner info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
-          console.warn(error.message);
-        }
-      } catch (summonerError) {
-        // Store error but continue to fallback methods
-        error = summonerError;
-        console.warn('Error with primary summoner endpoint:', summonerError);
-      }
-      
-      // If primary endpoint failed, try fallback endpoint with alternative path format
-      if (!summonerInfo) {
-        try {
-          // Try fallback alternative path format
-          const fallbackUrl = `${this.config.proxyBaseUrl}/riot/summoner/by-puuid/${puuid}?region=${platform}`;
-          console.log(`Making fallback summoner info request to: ${fallbackUrl}`);
-          
-          const response = await fetch(fallbackUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          
-          if (response.ok) {
-            summonerInfo = await response.json();
-            console.log('Successfully retrieved summoner info from fallback endpoint');
-          } else {
-            // Log error but don't throw yet
-            const errorData = await response.json().catch(() => ({}));
-            console.warn('Fallback summoner endpoint also failed:', errorData);
-          }
-        } catch (fallbackError) {
-          console.warn('Error with fallback summoner endpoint:', fallbackError);
-        }
-      }
-      
-      // If we still don't have summoner info, create a minimal record with what we know
-      if (!summonerInfo) {
-        console.warn('Unable to retrieve summoner info, creating minimal record');
-        
-        // Try to extract summoner id from the puuid (first part)
-        const summonerId = puuid.split('_')[0] || puuid.substring(0, 16);
-        
-        summonerInfo = {
-          id: summonerId,
-          puuid: puuid,
-          name: 'Unknown Summoner'
-        };
-      }
-      
-      console.log('Using summoner info:', {
-        id: summonerInfo.id.substring(0, 8) + '...',
-        name: summonerInfo.name
-      });
-      
-      // Store the summoner info
-      await this._storeSummonerInfo(summonerInfo);
-      
-      return summonerInfo;
-    } catch (error) {
-      console.error('Error fetching summoner info:', error);
-      throw error;
-    }
-  },
+
   
-  /**
-   * Store summoner info in storage
-   * @param {Object} summonerInfo - Summoner info to store
-   * @private
-   */
-  async _storeSummonerInfo(summonerInfo) {
-    try {
-      await chrome.storage.local.set({
-        [this.config.storageKeys.summonerInfo]: summonerInfo
-      });
-      console.log('Summoner info stored in chrome.storage.local');
-    } catch (e) {
-      console.error('Failed to store summoner info:', e);
-    }
-  },
+
   
   /**
    * Get rank data for the specified PUUID
@@ -1471,7 +1343,7 @@ export const RiotAuth = {
   },
   
   /**
-   * Get user's data (account, summoner, and rank)
+   * Get user's data (account and rank)
    * @param {boolean} skipAuthCheck - Whether to skip authentication check
    * @returns {Promise<Object>} - The user data
    */
@@ -1507,15 +1379,8 @@ export const RiotAuth = {
       
       console.log(`Account info retrieved for ${accountInfo.gameName}#${accountInfo.tagLine}`);
       
-      // Get summoner info using the PUUID
-      console.log('Getting summoner info...');
-      const summonerInfo = await this.getSummonerInfo(accountInfo.puuid);
-      
-      if (!summonerInfo || !summonerInfo.id) {
-        console.warn('Failed to retrieve summoner info');
-      } else {
-        console.log(`Summoner info retrieved for ${summonerInfo.name}`);
-      }
+      // Summoner info no longer needed - using Riot ID for display and PUUID for ranks
+      console.log('Skipping summoner info fetch - using Riot ID and PUUID directly');
       
       // Get rank info using the PUUID
       console.log('Getting rank info...');
@@ -1533,7 +1398,6 @@ export const RiotAuth = {
       // Combine all data
       const userData = {
         ...accountInfo,
-        summoner: summonerInfo || null,
         ranks: rankInfo || [],
         // Find and extract solo queue rank data
         soloQueueRank: rankInfo && rankInfo.length ? 
@@ -1545,7 +1409,6 @@ export const RiotAuth = {
         gameName: userData.gameName,
         tagLine: userData.tagLine,
         puuid: userData.puuid ? `${userData.puuid.substring(0, 8)}...` : null,
-        summonerId: userData.summoner?.id ? `${userData.summoner.id.substring(0, 8)}...` : null,
         rankEntriesCount: userData.ranks.length,
         hasSoloQueueRank: !!userData.soloQueueRank,
         soloQueueTier: userData.soloQueueRank?.tier,

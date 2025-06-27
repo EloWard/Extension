@@ -876,7 +876,7 @@ function clearAllStoredData() {
         'eloward_riot_token_expiry',
         'eloward_riot_tokens',
         'eloward_riot_account_info',
-        'eloward_riot_summoner_info',
+
         'eloward_riot_rank_info',
         'eloward_auth_state',
         'eloward_riot_id_token',
@@ -1260,7 +1260,7 @@ async function signOutUser() {
       'eloward_riot_refresh_token',
       'eloward_riot_token_expiry',
       'eloward_riot_account_info',
-      'eloward_riot_summoner_info',
+
       'eloward_riot_rank_info'
     ]);
     
@@ -1305,12 +1305,6 @@ async function getUserProfile() {
       return accountInfo;
     }
     
-    // Get summoner info using PUUID
-    const summonerInfo = await fetchSummonerInfo(accountInfo.puuid, PLATFORM_ROUTING[region].region);
-    if (!summonerInfo.success) {
-      return summonerInfo;
-    }
-    
     // Get rank info using PUUID
     const rankInfo = await fetchRankInfo(accountInfo.puuid, region);
     
@@ -1321,10 +1315,6 @@ async function getUserProfile() {
         gameName: accountInfo.gameName,
         tagLine: accountInfo.tagLine,
         puuid: accountInfo.puuid
-      },
-      summonerInfo: {
-        id: summonerInfo.summonerId,
-        name: summonerInfo.name
       },
       rankInfo: rankInfo.entries || []
     };
@@ -1362,29 +1352,7 @@ async function fetchRiotAccountInfo(accessToken, region) {
   }
 }
 
-// Fetch summoner info from Riot API using PUUID
-async function fetchSummonerInfo(puuid, region) {
-  try {
-    const response = await fetch(`${RIOT_AUTH_URL}/riot/summoner/${region}/${puuid}`);
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.message || response.statusText}`);
-    }
-    
-    const summonerData = await response.json();
-    
-    return {
-      success: true,
-      summonerId: summonerData.id,
-      accountId: summonerData.accountId,
-      name: summonerData.name
-    };
-  } catch (error) {
-    console.error('Error fetching summoner info:', error);
-    return { success: false, error: error.message };
-  }
-}
+
 
 // Fetch rank info from Riot API using PUUID
 async function fetchRankInfo(puuid, platform) {

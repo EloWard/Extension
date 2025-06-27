@@ -508,7 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshRankBtn.classList.add('refreshing');
       refreshRankBtn.disabled = true; // Disable button while refreshing
       
-      // Get stored account/summoner info first
+      // Get stored account info first
       const accountInfo = await RiotAuth.getAccountInfo();
       
       if (!accountInfo || !accountInfo.puuid) {
@@ -518,13 +518,6 @@ document.addEventListener('DOMContentLoaded', () => {
       // Get the current selected region
       const selectedRegion = regionSelect.value;
       console.log('Using selected region during refresh:', selectedRegion);
-      
-      // Get summoner info using the puuid (for display purposes)
-      const summonerInfo = await RiotAuth.getSummonerInfo(accountInfo.puuid);
-      
-      if (!summonerInfo) {
-        throw new Error('Summoner information not available');
-      }
       
       // Force a fresh rank lookup using PUUID
       const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
