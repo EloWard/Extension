@@ -35,16 +35,10 @@ export const EloWardConfig = {
         getByPuuid: '/accounts/by-puuid/{{puuid}}'
       }
     },
-    summonerV4: {
-      baseUrl: 'https://{{platform}}.api.riotgames.com/lol/summoner/v4',
-      endpoints: {
-        getByPuuid: '/summoners/by-puuid/{{puuid}}'
-      }
-    },
     leagueV4: {
       baseUrl: 'https://{{platform}}.api.riotgames.com/lol/league/v4',
       endpoints: {
-        getEntriesBySummonerId: '/entries/by-summoner/{{encryptedSummonerId}}'
+        getEntriesByPuuid: '/entries/by-puuid/{{encryptedPUUID}}'
       }
     },
     
