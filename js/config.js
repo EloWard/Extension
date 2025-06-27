@@ -12,7 +12,6 @@ export const EloWardConfig = {
   
   // Badge Configuration
   badges: {
-    refreshInterval: 30 * 60 * 1000, // 30 minutes
     cacheExpiry: 24 * 60 * 60 * 1000, // 24 hours
     showUnranked: true,
     defaultSize: 16,

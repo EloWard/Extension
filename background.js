@@ -4,7 +4,6 @@ import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
 
 // Constants
-const BADGE_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai.workers.dev'; // Updated to use deployed worker
 const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai.workers.dev'; // Rank Worker API endpoint
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai.workers.dev'; // Subscription API worker
@@ -836,7 +835,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   
   // Initialize storage
   chrome.storage.local.set({
-    lastRankUpdate: 0,
     selectedRegion: 'na1' // Default region
   });
   
@@ -1173,12 +1171,16 @@ async function initiateRiotAuth(region) {
 // Handle the authorization callback (called from callback.html)
 async function handleAuthCallbackFromRedirect(code, state) {
   try {
+    // Get stored auth state for verification
+    const storedData = await chrome.storage.local.get(['authState']);
+    const expectedState = storedData.authState;
+    
     // Verify state parameter to prevent CSRF attacks
-    let stateValid = authState && authState === state;
+    let stateValid = expectedState && expectedState === state;
     
     // Log state verification status
     console.log('State verification result:', stateValid ? 'valid' : 'invalid');
-    console.log('Expected state:', authState);
+    console.log('Expected state:', expectedState);
     console.log('Received state:', state);
     
     if (!stateValid) {
@@ -1469,37 +1471,19 @@ function getUserLinkedAccount(twitchUsername) {
  */
 function getRankForLinkedAccount(linkedAccount, platform) {
   return new Promise((resolve, reject) => {
-    // Check if we need to fetch fresh data or if we have cached data
-    if (linkedAccount.rankInfo && linkedAccount.rankUpdatedAt && 
-        (Date.now() - linkedAccount.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
-      // Use cached rank data
-      resolve(linkedAccount.rankInfo);
-    } else {
-      // Fetch fresh rank data
-      chrome.storage.local.get('riotAuthToken', data => {
-        if (!data.riotAuthToken) {
-          reject(new Error('No Riot auth token available'));
-          return;
-        }
-        
-        getRankByPuuid(data.riotAuthToken, linkedAccount.puuid, platform)
-          .then(rankData => {
-            // Update cache
-            linkedAccount.rankInfo = rankData;
-            linkedAccount.rankUpdatedAt = Date.now();
-            
-            // Store updated data
-            chrome.storage.local.get('linkedAccounts', data => {
-              const linkedAccounts = data.linkedAccounts || {};
-              linkedAccounts[linkedAccount.twitchUsername.toLowerCase()] = linkedAccount;
-              chrome.storage.local.set({ linkedAccounts });
-            });
-            
-            resolve(rankData);
-          })
-          .catch(reject);
-      });
-    }
+    // Always fetch fresh rank data
+    chrome.storage.local.get('riotAuthToken', data => {
+      if (!data.riotAuthToken) {
+        reject(new Error('No Riot auth token available'));
+        return;
+      }
+      
+      getRankByPuuid(data.riotAuthToken, linkedAccount.puuid, platform)
+        .then(rankData => {
+          resolve(rankData);
+        })
+        .catch(reject);
+    });
   });
 }
 
@@ -1550,186 +1534,6 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
     });
   });
 }
-
-/**
- * Sync user ranks in the background periodically
- * This helps ensure that ranks are up to date even if not explicitly requested
- */
-function syncUserRanks() {
-  chrome.storage.local.get(['linkedAccounts', 'selectedRegion', 'eloward_persistent_twitch_user_data', 'twitchUsername'], (data) => {
-    const linkedAccounts = data.linkedAccounts || {};
-    const selectedRegion = data.selectedRegion || 'na1';
-    const currentTwitchUsername = data.eloward_persistent_twitch_user_data?.login || data.twitchUsername;
-    
-    // Skip if no linked accounts
-    if (Object.keys(linkedAccounts).length === 0) return;
-    
-    console.log('Syncing user ranks in the background');
-    
-    // Import RankAPI for database updates
-    import('./js/rankAPI.js').then(({ RankAPI }) => {
-      // Update ranks for all linked accounts
-      Object.values(linkedAccounts).forEach(account => {
-        // Skip if updated recently
-        if (account.rankUpdatedAt && (Date.now() - account.rankUpdatedAt < BADGE_REFRESH_INTERVAL)) {
-          return;
-        }
-        
-        // Fetch fresh rank data using PUUID
-        if (account.puuid) {
-          chrome.storage.local.get('riotAuthToken', (data) => {
-            if (!data.riotAuthToken) return;
-            
-            getRankByPuuid(data.riotAuthToken, account.puuid, selectedRegion)
-              .then(rankData => {
-                // Update the account with the new rank data
-                account.rankInfo = rankData;
-                account.rankUpdatedAt = Date.now();
-                
-                // Store the updated account
-                chrome.storage.local.get('linkedAccounts', (data) => {
-                  const linkedAccounts = data.linkedAccounts || {};
-                  linkedAccounts[account.twitchUsername.toLowerCase()] = account;
-                  chrome.storage.local.set({ linkedAccounts });
-                  
-                  // If this is the current user, also update the database
-                  if (currentTwitchUsername && 
-                      account.twitchUsername.toLowerCase() === currentTwitchUsername.toLowerCase() && 
-                      rankData) {
-                    
-                    // Format rank data for upload
-                    const formattedRankData = {
-                      puuid: account.puuid,
-                      gameName: account.gameName,
-                      tagLine: account.tagLine,
-                      tier: rankData.tier || 'UNRANKED',
-                      rank: rankData.rank || null,
-                      leaguePoints: rankData.leaguePoints || 0
-                    };
-                    
-                    // Upload to the database
-                    RankAPI.uploadRank(currentTwitchUsername, formattedRankData)
-                      .then(() => console.log('Rank data successfully updated in database'))
-                      .catch(error => console.error('Error updating rank in database:', error));
-                  }
-                });
-              })
-              .catch(error => {
-                console.error('Error syncing rank:', error);
-              });
-          });
-        }
-      });
-    }).catch(error => {
-      console.error('Error importing RankAPI:', error);
-    });
-  });
-}
-
-// Set up periodic rank syncing
-setInterval(syncUserRanks, BADGE_REFRESH_INTERVAL);
-
-// Set up a tab listener to detect the Twitch redirect and extract auth code
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // Skip if the URL didn't change or if there's no URL
-  if (!changeInfo.url) return;
-  
-  // Check if this is our Twitch redirect URL
-  if (changeInfo.url.startsWith(TWITCH_REDIRECT_URL)) {
-    console.log('Detected Twitch auth redirect:', changeInfo.url.substring(0, 60) + '...');
-    
-    try {
-      // IMMEDIATELY prevent further navigation by updating to the callback page
-      chrome.tabs.update(tabId, {
-        url: 'https://www.eloward.com/ext/twitch/auth/redirect'
-      });
-      
-      // Extract parameters from the URL
-      const url = new URL(changeInfo.url);
-      const params = new URLSearchParams(url.search);
-      const code = params.get('code');
-      const state = params.get('state');
-      const error = params.get('error');
-      const errorDescription = params.get('error_description');
-      
-      if (error) {
-        console.error('Twitch auth error from redirect:', error, errorDescription);
-        
-        // Let any listeners know about the error
-        chrome.runtime.sendMessage({
-          type: 'twitch_auth_error',
-          error,
-          errorDescription
-        });
-        
-        // Update the callback page with error parameters
-        chrome.tabs.update(tabId, {
-          url: `https://www.eloward.com/ext/twitch/auth/redirect?error=${error}${errorDescription ? `&error_description=${encodeURIComponent(errorDescription)}` : ''}`
-        });
-        
-        return;
-      }
-      
-      if (code && state) {
-        console.log('Extracted Twitch auth code and state');
-        
-        // Prepare the auth data
-        const authData = {
-          code,
-          state,
-          source: 'twitch_auth_callback',
-          service: 'twitch',
-          timestamp: new Date().toISOString()
-        };
-        
-        // Store in chrome.storage.local
-        chrome.storage.local.set({ 'eloward_auth_callback': authData });
-        
-        // Send a message to notify any listeners
-        chrome.runtime.sendMessage({
-          type: 'twitch_auth_complete',
-          success: true,
-          data: authData
-        });
-        
-        // Also try with the other message format
-        chrome.runtime.sendMessage({
-          type: 'auth_callback',
-          service: 'twitch',
-          params: authData
-        });
-        
-        // Show success on the callback page
-        chrome.tabs.update(tabId, {
-          url: `https://www.eloward.com/ext/twitch/auth/redirect?code=${code}&state=${state}`
-        });
-        
-        // Let the callback page handle its own closing with countdown
-      } else {
-        console.warn('Missing code or state in Twitch redirect URL');
-        // Show error on callback page
-        chrome.tabs.update(tabId, {
-          url: 'https://www.eloward.com/ext/twitch/auth/redirect?error=missing_parameters&error_description=Auth code or state parameter missing in redirect'
-        });
-      }
-    } catch (error) {
-      console.error('Error processing Twitch redirect URL:', error);
-      // Show generic error on callback page
-      chrome.tabs.update(tabId, {
-        url: `https://www.eloward.com/ext/twitch/auth/redirect?error=processing_error&error_description=${encodeURIComponent(error.message)}`
-      });
-    }
-  }
-});
-
-// Add message listener for extension communications
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Background script received message:', request);
-  
-  // We've already handled these messages in the main message listener above
-  // So we'll remove this duplicate handler to avoid conflicts
-  return true;
-});
 
 /**
  * Fetches rank data directly from the database using the Rank Worker API
@@ -1829,11 +1633,27 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
 }
 
 function cleanupAuthWindows() {
-  // Implementation of cleanupAuthWindows function
+  const now = Date.now();
+  const maxAge = 30 * 60 * 1000; // 30 minutes
+  
+  Object.keys(authWindows).forEach(id => {
+    const windowData = authWindows[id];
+    if (now - windowData.createdAt > maxAge) {
+      console.log(`Cleaning up old auth window ${id}`);
+      delete authWindows[id];
+    }
+  });
 }
 
 function trackAuthWindow(createdWindow) {
-  // Implementation of trackAuthWindow function
+  if (createdWindow && createdWindow.id) {
+    const windowId = createdWindow.id.toString();
+    authWindows[windowId] = {
+      window: createdWindow,
+      createdAt: Date.now()
+    };
+    console.log(`Tracking auth window with ID ${windowId}`);
+  }
 }
 
 // Add a function to preload and sync all linked accounts
@@ -1895,36 +1715,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-// Helper function to fetch rank for a linked account
-async function fetchRankForLinkedAccount(linkedAccount, region) {
-  // Only log meaningful error cases, not the routine function call
-  
-  if (!linkedAccount.puuid || !linkedAccount.platform) {
-    console.log('Missing puuid or platform in linked account');
-    return null;
-  }
-  
-  try {
-    // Get the user's riot access token
-    const tokenData = await RiotAuth.getAccessToken();
-    if (!tokenData || !tokenData.access_token) {
-      console.error('No valid Riot access token');
-      throw new Error('No valid Riot access token');
-    }
-    
-    // Fetch the rank data using the access token and PUUID
-    const rankData = await getRankByPuuid(
-      tokenData.access_token,
-      linkedAccount.puuid,
-      linkedAccount.platform || region
-    );
-    
-    return rankData;
-  } catch (error) {
-    console.error('Error in fetchRankForLinkedAccount:', error);
-    return null;
-  }
-}
+
 
 // Function to handle when users switch channels
 function handleChannelSwitch(oldChannel, newChannel) {
@@ -2010,8 +1801,3 @@ async function incrementSuccessfulLookupCounter(channelName) {
     return false;
   }
 } 
-
-let rankCache = new Map(); // Cache for rank data only
-
-// Track processed channels to avoid checking subscription status multiple times per session
-let subscribedChannels = new Set(); 
