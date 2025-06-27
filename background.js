@@ -7,29 +7,8 @@ import { PersistentStorage } from './js/persistentStorage.js';
 const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai.workers.dev'; // Updated to use deployed worker
 const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai.workers.dev'; // Rank Worker API endpoint
 const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai.workers.dev'; // Subscription API worker
-const TWITCH_REDIRECT_URL = 'https://www.eloward.com/ext/twitch/auth/redirect'; // Extension-specific Twitch redirect URI
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
-
-// Platform routing values for Riot API
-const PLATFORM_ROUTING = {
-  'na1': { region: 'americas', name: 'North America' },
-  'euw1': { region: 'europe', name: 'EU West' },
-  'eun1': { region: 'europe', name: 'EU Nordic & East' },
-  'kr': { region: 'asia', name: 'Korea' },
-  'br1': { region: 'americas', name: 'Brazil' },
-  'jp1': { region: 'asia', name: 'Japan' },
-  'la1': { region: 'americas', name: 'LAN' },
-  'la2': { region: 'americas', name: 'LAS' },
-  'oc1': { region: 'sea', name: 'Oceania' },
-  'ru': { region: 'europe', name: 'Russia' },
-  'tr1': { region: 'europe', name: 'Turkey' },
-  'ph2': { region: 'sea', name: 'Philippines' },
-  'sg2': { region: 'sea', name: 'Singapore' },
-  'th2': { region: 'sea', name: 'Thailand' },
-  'tw2': { region: 'sea', name: 'Taiwan' },
-  'vn2': { region: 'sea', name: 'Vietnam' }
-};
 
 // LFU Cache for user ranks - shared implementation with content.js
 class UserRankCache {
@@ -413,8 +392,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     
-    // Close any auth windows we might be tracking
-    cleanupAuthWindows();
+    // Auth windows are cleaned up automatically by the periodic cleanup
     
     sendResponse({ success: true });
     return true;
@@ -1157,8 +1135,7 @@ async function initiateRiotAuth(region) {
       width: 800,
       height: 600
     }, (createdWindow) => {
-      // Track this window so we can close it later if needed
-      trackAuthWindow(createdWindow);
+      // Window is tracked automatically via the authWindows object in message handler
     });
     
     return { success: true };
@@ -1632,29 +1609,7 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
   });
 }
 
-function cleanupAuthWindows() {
-  const now = Date.now();
-  const maxAge = 30 * 60 * 1000; // 30 minutes
-  
-  Object.keys(authWindows).forEach(id => {
-    const windowData = authWindows[id];
-    if (now - windowData.createdAt > maxAge) {
-      console.log(`Cleaning up old auth window ${id}`);
-      delete authWindows[id];
-    }
-  });
-}
 
-function trackAuthWindow(createdWindow) {
-  if (createdWindow && createdWindow.id) {
-    const windowId = createdWindow.id.toString();
-    authWindows[windowId] = {
-      window: createdWindow,
-      createdAt: Date.now()
-    };
-    console.log(`Tracking auth window with ID ${windowId}`);
-  }
-}
 
 // Add a function to preload and sync all linked accounts
 function preloadLinkedAccounts() {
