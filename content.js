@@ -110,13 +110,13 @@ function cleanupChannel(channelName) {
     window._eloward_game_observer = null;
   }
   
-  // Reset extension state
+  // Reset extension state - IMPORTANT: Reset game state to force fresh detection
   extensionState.observerInitialized = false;
   extensionState.isChannelSubscribed = false;
   extensionState.lastSubscriptionCheck = null;
   extensionState.initializationInProgress = false;
-  extensionState.currentInitializationId = null; // Reset initialization ID
-  extensionState.currentGame = null; // Reset current game to force fresh detection
+  extensionState.currentInitializationId = null;
+  extensionState.currentGame = null; // Force fresh game detection
   
   console.log(`EloWard: Cleaned up channel ${channelName}`);
 }
@@ -343,18 +343,23 @@ function getCurrentGame() {
       '[data-test-selector="game-name"]' // Another backup
     ];
     
-    for (const selector of gameSelectors) {
+    for (let i = 0; i < gameSelectors.length; i++) {
+      const selector = gameSelectors[i];
       const gameElement = document.querySelector(selector);
       if (gameElement) {
         const gameName = gameElement.textContent?.trim();
         if (gameName && gameName !== 'Just Chatting') { // Basic validation
           console.log(`EloWard: Game detected using selector "${selector}": ${gameName}`);
           return gameName;
+        } else {
+          console.log(`EloWard: Element found with selector "${selector}" but invalid game name: "${gameName}"`);
         }
+      } else {
+        console.log(`EloWard: No element found with selector "${selector}"`);
       }
     }
     
-    console.log(`EloWard: No game detected from any selector`);
+    console.log(`EloWard: No game detected from any selector on ${window.location.pathname}`);
     return null;
   } catch (error) {
     console.error(`EloWard: Error detecting game:`, error);
@@ -381,14 +386,18 @@ function getGameWithRetries(maxAttempts = 5, interval = 2000, initializationId =
         return;
       }
       
+      attempts++;
       const game = getCurrentGame();
+      console.log(`EloWard: Game detection attempt ${attempts}/${maxAttempts}: ${game || 'none detected'}`);
+      
       if (game) {
+        console.log(`EloWard: Game detected on attempt ${attempts}: ${game}`);
         resolve(game);
         return;
       }
       
-      attempts++;
       if (attempts >= maxAttempts) {
+        console.log(`EloWard: Game detection failed after ${maxAttempts} attempts, will monitor for changes`);
         resolve(null);
         return;
       }
@@ -436,19 +445,13 @@ function isGameSupported(game) {
  * This detects if a streamer switches games mid-stream
  */
 function setupGameChangeObserver() {
-  // Only set up the observer once per initialization
+  // Disconnect any existing game observer
   if (window._eloward_game_observer) {
     window._eloward_game_observer.disconnect();
     window._eloward_game_observer = null;
   }
   
-  // Only proceed if we have a supported game initially
-  if (!isGameSupported(extensionState.currentGame)) {
-    console.log(`EloWard: Not setting up game observer - current game not supported: ${extensionState.currentGame || 'unknown'}`);
-    return;
-  }
-  
-  console.log(`EloWard: Setting up game change observer for current game: ${extensionState.currentGame}`);
+  console.log(`EloWard: Setting up game change observer (current game: ${extensionState.currentGame || 'unknown'})`);
   
   // Debounce game detection to avoid excessive checks
   let gameCheckTimeout = null;
@@ -589,17 +592,18 @@ function initializeExtension() {
       // Update current game state
       extensionState.currentGame = detectedGame;
       
+      // Setup game change observer to detect mid-stream game switches
+      // This should ALWAYS be set up to monitor for game changes
+      setupGameChangeObserver();
+      
       // Only proceed if the current game is supported
       if (!isGameSupported(extensionState.currentGame)) {
-        console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
+        console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive but monitoring for changes.`);
         extensionState.initializationInProgress = false;
         return;
       }
       
       console.log(`EloWard: Supported game '${extensionState.currentGame}' detected for initialization ${initializationId}`);
-      
-      // Setup game change observer to detect mid-stream game switches
-      setupGameChangeObserver();
       
       // Initialize the new channel properly
       initializeChannel(extensionState.channelName, initializationId)
@@ -631,6 +635,11 @@ function initializeExtension() {
         });
     }).catch(() => {
       console.log(`EloWard: Game detection failed for initialization ${initializationId}`);
+      
+      // Even if game detection fails, set up the game observer to watch for changes
+      console.log(`EloWard: Setting up game observer despite initial detection failure`);
+      setupGameChangeObserver();
+      
       extensionState.initializationInProgress = false;
     });
   }, gameDetectionDelay);
@@ -660,6 +669,8 @@ function setupUrlChangeObserver() {
     
     // Only reinitialize if the channel actually changed
     if (currentChannel !== extensionState.channelName) {
+      console.log(`EloWard: URL change detected - switching from ${extensionState.channelName || 'unknown'} to ${currentChannel}`);
+      
       // Clean up the old channel
       if (extensionState.channelName) {
         cleanupChannel(extensionState.channelName);
@@ -671,8 +682,17 @@ function setupUrlChangeObserver() {
       // Clear rank cache but preserve current user's rank
       clearRankCache();
       
-      // Reinitialize with new channel
-      initializeExtension();
+      // Add a slight delay to allow DOM to update after navigation
+      setTimeout(() => {
+        // Double-check we're still on the same channel before reinitializing
+        const verifyChannel = getCurrentChannelName();
+        if (verifyChannel === currentChannel) {
+          console.log(`EloWard: Reinitializing for channel ${currentChannel} after URL change`);
+          initializeExtension();
+        } else {
+          console.log(`EloWard: Channel changed again during delay, skipping reinitialization`);
+        }
+      }, 500); // 500ms delay to allow DOM updates
     }
   });
   
