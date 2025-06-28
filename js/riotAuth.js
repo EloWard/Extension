@@ -1,5 +1,4 @@
 // EloWard Riot RSO Authentication
-import { EloWardConfig } from './config.js';
 import { PersistentStorage } from './persistentStorage.js';
 
 /**
@@ -848,7 +847,7 @@ export const RiotAuth = {
       };
       
       console.log('Refreshing access token via worker...');
-      const tokenUrl = `${EloWardConfig.riotRSOWorkerUrl}/auth/token`; 
+      const tokenUrl = `${this.config.proxyBaseUrl}/auth/riot/refresh`; 
       console.log('Making token refresh request to:', tokenUrl);
 
       const response = await fetch(tokenUrl, {
