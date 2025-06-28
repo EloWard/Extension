@@ -381,25 +381,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Required for async sendResponse
   }
   
-  if (message.type === 'auth_callback' && message.code) {
-    console.log('Auth callback from redirect page');
-    
-    // Store the auth callback result for later retrieval
-    chrome.storage.local.set({
-      eloward_auth_callback_result: {
-        code: message.code,
-        state: message.state
-      }
-    });
-    
-    // Auth windows are cleaned up automatically by the periodic cleanup
-    
-    sendResponse({ success: true });
-    return true;
-  }
-  
   if (message.type === 'auth_callback') {
-    handleAuthCallback(message.params);
+    if (message.code) {
+      console.log('Auth callback from redirect page');
+      // Auth windows are cleaned up automatically by the periodic cleanup
+    } else {
+      handleAuthCallback(message.params);
+    }
     sendResponse({ success: true });
     return true;
   }
@@ -1239,18 +1227,11 @@ async function signOutUser() {
       'eloward_riot_refresh_token',
       'eloward_riot_token_expiry',
       'eloward_riot_account_info',
-
-      'eloward_riot_rank_info'
+      'eloward_riot_rank_info',
+      'authState'
     ]);
     
-    // Clear tokens from storage
-    chrome.storage.local.remove([
-      'authState',
-      'eloward_riot_access_token',
-      'eloward_riot_refresh_token'
-    ], function() {
-      console.log('Cleared Riot auth tokens from chrome.storage');
-    });
+    console.log('Cleared Riot auth tokens from chrome.storage');
     
     return { success: true };
   } catch (error) {
