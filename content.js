@@ -338,15 +338,18 @@ function setupGameChangeObserver() {
   }
   
   const gameObserver = new MutationObserver(checkGameChange);
-  gameObserver.observe(document.body, { 
-    subtree: true, 
-    childList: true,
-    attributes: true,
-    attributeFilter: ['data-a-target'], 
-    characterData: true 
-  });
+  const streamInfoTarget = document.querySelector('[data-a-target="stream-info-card"]');
   
-  window._eloward_game_observer = gameObserver;
+  if (streamInfoTarget) {
+    gameObserver.observe(streamInfoTarget, { 
+      subtree: true, 
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-a-target']
+    });
+    
+    window._eloward_game_observer = gameObserver;
+  }
 }
 
 /**
