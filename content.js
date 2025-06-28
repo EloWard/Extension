@@ -1,105 +1,79 @@
-// Centralized extension state
+// Extension state management
 const extensionState = {
   isChannelSubscribed: false,
   channelName: '',
   currentGame: null,
   currentUser: null,
   observerInitialized: false,
-  lastSubscriptionCheck: null, // Track last subscription check time
-  initializationInProgress: false, // Prevent concurrent initializations
-  currentInitializationId: null // Track current initialization to cancel old ones
+  lastSubscriptionCheck: null,
+  initializationInProgress: false,
+  currentInitializationId: null
 };
 
-// Channel state tracking similar to FFZ addon
+// Channel state tracking
 const channelState = {
-  activeChannels: new Set(), // Track active channels
-  subscribedChannels: new Set(), // Track subscribed channels
-  currentChannel: null, // Track current active channel
-  activeAbortController: null // Track active operations to cancel them
+  activeChannels: new Set(),
+  subscribedChannels: new Set(),
+  currentChannel: null,
+  activeAbortController: null
 };
 
 // Processing state
 let processedMessages = new Set();
-let tooltipElement = null; // Global tooltip element
+let tooltipElement = null;
 
-// Supported games configuration - simplified structure
+// Supported games
 const SUPPORTED_GAMES = {
   'League of Legends': true
-  // Example of how to add more games in the future:
-  // 'Valorant': true
 };
 
-// Add a small delay before showing the tooltip to avoid flickering
+// Tooltip delay
 let tooltipShowTimeout = null;
 
-// Initialize storage data once at startup
+// Initialize extension
 initializeStorage();
-
-// Single initialization with fallback delay
 initializeExtension();
-setTimeout(() => {
-  if (!extensionState.observerInitialized) {
-  initializeExtension();
-  }
-}, 3000);
 
-// Listen for URL changes only (for SPA navigation)
+// Handle SPA navigation
 window.addEventListener('popstate', function() {
-  // Only reinitialize if we're not already in progress
   if (!extensionState.initializationInProgress) {
-  initializeExtension();
+    initializeExtension();
   }
 });
 
-// Clear rank cache when user closes tab or navigates away from Twitch
+// Cleanup on page unload
 window.addEventListener('beforeunload', function() {
-  console.log('👋 UserRankCache: Cleared on page unload/navigation');
-  
-  // Clean up current channel if active
   if (extensionState.channelName) {
     cleanupChannel(extensionState.channelName);
   }
-  
   clearRankCache();
 });
 
 /**
- * Clear the rank cache but preserve the current user's rank data
- * Called when switching streams/channels
+ * Clear rank cache and processed messages
  */
 function clearRankCache() {
-  // Ask background script to clear the cache
-  chrome.runtime.sendMessage({
-    action: 'clear_rank_cache'
-  });
-  
-  // Also clear the processed messages set to prevent memory buildup
+  chrome.runtime.sendMessage({ action: 'clear_rank_cache' });
   processedMessages.clear();
 }
 
 /**
- * Clean up state when leaving a channel (similar to FFZ addon's onRoomRemove)
- * @param {string} channelName - The channel being left
+ * Clean up state when leaving a channel
  */
 function cleanupChannel(channelName) {
   if (!channelName) return;
   
   const normalizedChannel = channelName.toLowerCase();
   
-  // Cancel any ongoing operations
   if (channelState.activeAbortController) {
     channelState.activeAbortController.abort();
     channelState.activeAbortController = null;
   }
   
-  // Remove from active and subscribed channels
   channelState.activeChannels.delete(normalizedChannel);
   channelState.subscribedChannels.delete(normalizedChannel);
-  
-  // Clear processed messages for this channel
   processedMessages.clear();
   
-  // Disconnect observers
   if (window._eloward_chat_observer) {
     window._eloward_chat_observer.disconnect();
     window._eloward_chat_observer = null;
@@ -110,76 +84,52 @@ function cleanupChannel(channelName) {
     window._eloward_game_observer = null;
   }
   
-  // Reset extension state - IMPORTANT: Reset game state to force fresh detection
+  // Reset state for fresh detection
   extensionState.observerInitialized = false;
   extensionState.isChannelSubscribed = false;
   extensionState.lastSubscriptionCheck = null;
   extensionState.initializationInProgress = false;
   extensionState.currentInitializationId = null;
-  extensionState.currentGame = null; // Force fresh game detection
-  
-  console.log(`EloWard: Cleaned up channel ${channelName}`);
+  extensionState.currentGame = null;
 }
 
 /**
- * Initialize a channel (similar to FFZ addon's onRoomAdd)
- * @param {string} channelName - The channel being entered
- * @param {string} initializationId - Unique ID for this initialization session
+ * Initialize channel and check subscription
  */
 async function initializeChannel(channelName, initializationId) {
-  if (!channelName) return;
+  if (!channelName) return false;
   
   const normalizedChannel = channelName.toLowerCase();
-  
-  // Create new AbortController for this initialization
   const abortController = new AbortController();
   channelState.activeAbortController = abortController;
   
   try {
-    // Check if this initialization is still current
     if (extensionState.currentInitializationId !== initializationId) {
-      console.log(`EloWard: Initialization ${initializationId} cancelled (superseded)`);
       return false;
     }
     
-    // Add to active channels
     channelState.activeChannels.add(normalizedChannel);
     channelState.currentChannel = normalizedChannel;
     
-    // Always force check subscription status to ensure fresh data
-    // This handles cases where subscription status might have changed
     const isSubscribed = await checkChannelSubscription(channelName, true, abortController.signal);
     
-    // Check again if this initialization is still current after async operation
-    if (extensionState.currentInitializationId !== initializationId) {
-      console.log(`EloWard: Initialization ${initializationId} cancelled after subscription check`);
-      return false;
-    }
-    
-    // Check if operation was aborted
-    if (abortController.signal.aborted) {
-      console.log(`EloWard: Initialization ${initializationId} aborted`);
+    if (extensionState.currentInitializationId !== initializationId || abortController.signal.aborted) {
       return false;
     }
     
     if (isSubscribed) {
       channelState.subscribedChannels.add(normalizedChannel);
       extensionState.isChannelSubscribed = true;
-      console.log(`EloWard: Initialized channel ${channelName} (subscribed) - ID: ${initializationId}`);
     } else {
-      // Remove from subscribed channels if not subscribed
       channelState.subscribedChannels.delete(normalizedChannel);
       extensionState.isChannelSubscribed = false;
-      console.log(`EloWard: Initialized channel ${channelName} (not subscribed) - ID: ${initializationId}`);
     }
     
     return isSubscribed;
   } catch (error) {
-    if (error.name === 'AbortError') {
-      console.log(`EloWard: Initialization ${initializationId} aborted`);
-      return false;
+    if (error.name !== 'AbortError') {
+      console.error(`EloWard: Error initializing channel ${channelName}:`, error);
     }
-    console.error(`EloWard: Error initializing channel ${channelName}:`, error);
     return false;
   }
 }
@@ -187,10 +137,8 @@ async function initializeChannel(channelName, initializationId) {
 // Initialize storage and load user data
 function initializeStorage() {
   chrome.storage.local.get(null, (allData) => {
-    // Find current user in storage using consolidated logic
     extensionState.currentUser = findCurrentUser(allData);
     
-    // Send current user to background script to protect from cache eviction
     if (extensionState.currentUser) {
       chrome.runtime.sendMessage({
         action: 'set_current_user',
@@ -200,14 +148,12 @@ function initializeStorage() {
   });
 }
 
-// Find current Twitch user from storage - use most reliable key
+// Find current Twitch user from storage
 function findCurrentUser(allData) {
-  // Use the most reliable persistent storage key
   if (allData.eloward_persistent_twitch_user_data?.login) {
     return allData.eloward_persistent_twitch_user_data.login.toLowerCase();
   } 
   
-  // Single fallback for backward compatibility
   if (allData.twitchUsername) {
     return allData.twitchUsername.toLowerCase();
   }
@@ -216,22 +162,16 @@ function findCurrentUser(allData) {
 }
 
 /**
- * Optimized function to check if a channel is subscribed
- * Uses local caching to avoid excessive API calls
- * @param {string} channelName - The channel to check
- * @param {boolean} forceCheck - Whether to bypass cache and force a fresh check
- * @param {AbortSignal} signal - AbortSignal for cancellation
- * @returns {Promise<boolean>} - Whether the channel is subscribed
+ * Check if channel is subscribed with caching
  */
 async function checkChannelSubscription(channelName, forceCheck = false, signal = null) {
   if (!channelName) return false;
   
-  // Check if operation was aborted before starting
   if (signal?.aborted) {
     throw new DOMException('Operation aborted', 'AbortError');
   }
   
-  // Prevent redundant checks within 30 seconds unless forced
+  // Use cache unless forced to check
   const now = Date.now();
   if (!forceCheck && 
       extensionState.lastSubscriptionCheck && 
@@ -240,18 +180,13 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
     return extensionState.isChannelSubscribed;
   }
   
-  // Normalize channel name
-  const normalizedChannel = channelName.toLowerCase();
-  
   try {
     return new Promise((resolve, reject) => {
-      // Check if aborted before making the call
       if (signal?.aborted) {
         reject(new DOMException('Operation aborted', 'AbortError'));
         return;
       }
       
-      // Set up abort listener
       const abortListener = () => {
         reject(new DOMException('Operation aborted', 'AbortError'));
       };
@@ -260,7 +195,6 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
         signal.addEventListener('abort', abortListener, { once: true });
       }
       
-      // Send message to background script to check subscription
       chrome.runtime.sendMessage(
         { 
           action: 'check_streamer_subscription', 
@@ -268,12 +202,10 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
           skipCache: true
         },
         (response) => {
-          // Clean up abort listener
           if (signal) {
             signal.removeEventListener('abort', abortListener);
           }
           
-          // Check if aborted during the call
           if (signal?.aborted) {
             reject(new DOMException('Operation aborted', 'AbortError'));
             return;
@@ -284,15 +216,10 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
             return;
           }
           
-          // Extract the boolean value with casting to ensure it's a boolean
           const isSubscribed = response && response.subscribed === true;
           
-          // Update tracking only if not aborted
           if (!signal?.aborted) {
             extensionState.lastSubscriptionCheck = now;
-            
-            // Log subscription status
-            console.log(`EloWard: ${channelName} is ${isSubscribed ? 'Subscribed ✅' : 'Not Subscribed ❌'}`);
           }
           
           resolve(isSubscribed);
@@ -308,18 +235,17 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
 }
 
 /**
- * Get the current channel name using URL parsing (100% reliable on Twitch)
- * @returns {string|null} The current channel name or null if not found
+ * Get current channel name from URL
  */
 function getCurrentChannelName() {
   const pathSegments = window.location.pathname.split('/');
   
-  // Handle moderator view URLs (format: /moderator/channelname)
+  // Handle moderator view
   if (pathSegments[1] === 'moderator' && pathSegments.length > 2) {
     return pathSegments[2].toLowerCase();
   }
   
-  // Regular channel URL (format: /channelname)
+  // Regular channel URL
   if (pathSegments[1] && 
       pathSegments[1] !== 'oauth2' && 
       !pathSegments[1].includes('auth')) {
@@ -330,106 +256,36 @@ function getCurrentChannelName() {
 }
 
 /**
- * Get the current game being played by the streamer
- * @returns {string|null} The game name or null if not found
+ * Get current game being streamed
  */
 function getCurrentGame() {
   try {
-    // Force fresh DOM queries by checking multiple selectors
-    const gameSelectors = [
-      'a[data-a-target="stream-game-link"]',
-      '[data-a-target="stream-game-link"]',
-      '.game-name', // Backup selector
-      '[data-test-selector="game-name"]' // Another backup
-    ];
-    
-    for (let i = 0; i < gameSelectors.length; i++) {
-      const selector = gameSelectors[i];
-      const gameElement = document.querySelector(selector);
-      if (gameElement) {
-        const gameName = gameElement.textContent?.trim();
-        if (gameName && gameName !== 'Just Chatting') { // Basic validation
-          console.log(`EloWard: Game detected using selector "${selector}": ${gameName}`);
-          return gameName;
-        } else {
-          console.log(`EloWard: Element found with selector "${selector}" but invalid game name: "${gameName}"`);
-        }
-      } else {
-        console.log(`EloWard: No element found with selector "${selector}"`);
+    const gameElement = document.querySelector('a[data-a-target="stream-game-link"]');
+    if (gameElement) {
+      const gameName = gameElement.textContent?.trim();
+      if (gameName && gameName !== 'Just Chatting') {
+        return gameName;
       }
     }
-    
-    console.log(`EloWard: No game detected from any selector on ${window.location.pathname}`);
     return null;
   } catch (error) {
-    console.error(`EloWard: Error detecting game:`, error);
+    console.error('EloWard: Error detecting game:', error);
     return null;
   }
 }
 
 /**
- * Attempts to get the current game periodically if initial detection fails
- * @param {number} maxAttempts - Maximum number of retry attempts
- * @param {number} interval - Interval between attempts in ms
- * @param {string} initializationId - Current initialization ID to check if still valid
- * @returns {Promise<string|null>} - Resolves to game name or null if not found
- */
-function getGameWithRetries(maxAttempts = 5, interval = 2000, initializationId = null) {
-  return new Promise((resolve) => {
-    let attempts = 0;
-    
-    function tryGetGame() {
-      // Check if this initialization is still current
-      if (initializationId && extensionState.currentInitializationId !== initializationId) {
-        console.log(`EloWard: Game detection cancelled for initialization ${initializationId}`);
-        resolve(null);
-        return;
-      }
-      
-      attempts++;
-      const game = getCurrentGame();
-      console.log(`EloWard: Game detection attempt ${attempts}/${maxAttempts}: ${game || 'none detected'}`);
-      
-      if (game) {
-        console.log(`EloWard: Game detected on attempt ${attempts}: ${game}`);
-        resolve(game);
-        return;
-      }
-      
-      if (attempts >= maxAttempts) {
-        console.log(`EloWard: Game detection failed after ${maxAttempts} attempts, will monitor for changes`);
-        resolve(null);
-        return;
-      }
-      
-      // Check again if this initialization is still current before scheduling retry
-      if (initializationId && extensionState.currentInitializationId !== initializationId) {
-        console.log(`EloWard: Game detection cancelled during retry for initialization ${initializationId}`);
-        resolve(null);
-        return;
-      }
-      
-      setTimeout(tryGetGame, interval);
-    }
-    
-    tryGetGame();
-  });
-}
-
-/**
- * Check if the current game is supported by EloWard
- * @param {string} game - The game name to check
- * @returns {boolean} - Whether the game is supported
+ * Check if game is supported
  */
 function isGameSupported(game) {
   if (!game) return false;
   
-  // Direct match check
+  // Direct match
   if (SUPPORTED_GAMES[game] === true) {
     return true;
   }
   
-  // Case-insensitive check
+  // Case-insensitive match
   const gameLower = game.toLowerCase();
   for (const supportedGame of Object.keys(SUPPORTED_GAMES)) {
     if (supportedGame.toLowerCase() === gameLower) {
@@ -441,19 +297,14 @@ function isGameSupported(game) {
 }
 
 /**
- * Setup observer for game changes during stream
- * This detects if a streamer switches games mid-stream
+ * Setup game change observer to detect mid-stream game switches
  */
 function setupGameChangeObserver() {
-  // Disconnect any existing game observer
   if (window._eloward_game_observer) {
     window._eloward_game_observer.disconnect();
     window._eloward_game_observer = null;
   }
   
-  console.log(`EloWard: Setting up game change observer (current game: ${extensionState.currentGame || 'unknown'})`);
-  
-  // Debounce game detection to avoid excessive checks
   let gameCheckTimeout = null;
   
   function checkGameChange() {
@@ -464,18 +315,12 @@ function setupGameChangeObserver() {
     gameCheckTimeout = setTimeout(() => {
       const newGame = getCurrentGame();
       
-      // Only log and act on actual changes
       if (newGame !== extensionState.currentGame) {
-        console.log(`EloWard: Game changed from ${extensionState.currentGame || 'unknown'} to ${newGame || 'unknown'}`);
-        
         const oldGame = extensionState.currentGame;
         extensionState.currentGame = newGame;
         
-        // If the new game is not supported, deactivate extension
         if (!isGameSupported(extensionState.currentGame)) {
-          console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive.`);
-          
-          // Clean up observers but keep the channel state
+          // Clean up for unsupported game
           if (window._eloward_chat_observer) {
             window._eloward_chat_observer.disconnect();
             window._eloward_chat_observer = null;
@@ -483,19 +328,16 @@ function setupGameChangeObserver() {
           extensionState.observerInitialized = false;
           extensionState.isChannelSubscribed = false;
         } else if (isGameSupported(extensionState.currentGame) && !isGameSupported(oldGame)) {
-          // Game changed to supported - reinitialize if channel is still active
-          console.log(`EloWard: Game changed to supported game, reinitializing...`);
+          // Reinitialize for supported game
           if (extensionState.channelName && !extensionState.initializationInProgress) {
             initializeExtension();
           }
         }
       }
-    }, 1000); // 1 second debounce
+    }, 1000);
   }
   
   const gameObserver = new MutationObserver(checkGameChange);
-  
-  // Observe the entire document for game-related changes
   gameObserver.observe(document.body, { 
     subtree: true, 
     childList: true,
@@ -507,158 +349,93 @@ function setupGameChangeObserver() {
   window._eloward_game_observer = gameObserver;
 }
 
+/**
+ * Main initialization function
+ */
 function initializeExtension() {
-  // Generate unique initialization ID
-  const initializationId = `init_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  // Prevent concurrent initializations by cancelling previous ones
+  // Prevent concurrent initializations
   if (extensionState.initializationInProgress) {
-    console.log(`EloWard: Cancelling previous initialization, starting new one: ${initializationId}`);
-  }
-  
-  // Set current initialization ID to cancel any previous ones
-  extensionState.currentInitializationId = initializationId;
-  extensionState.initializationInProgress = true;
-  
-  // Signal Chrome extension presence to FFZ addon (as recommended in PR review)
-  document.body.setAttribute('data-eloward-chrome-ext', 'active');
-  
-  // Get channel name using the new reliable method
-  const newChannelName = getCurrentChannelName();
-  
-  // If no channel name or we're on an auth-related path, don't do anything
-  if (!newChannelName || 
-      window.location.pathname.includes('oauth2') ||
-      window.location.pathname.includes('auth/') ||
-      window.location.href.includes('auth/callback') ||
-      window.location.href.includes('auth/redirect')) {
-    extensionState.initializationInProgress = false;
     return;
   }
   
-  // Check if we've changed channels
-  const channelChanged = newChannelName !== extensionState.channelName;
-  if (channelChanged) {
-    // Clean up the old channel if it exists
-    if (extensionState.channelName) {
-      cleanupChannel(extensionState.channelName);
+  // Get current channel
+  const currentChannel = getCurrentChannelName();
+  if (!currentChannel) {
+    return;
+  }
+  
+  // Generate unique initialization ID
+  const initializationId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  extensionState.currentInitializationId = initializationId;
+  extensionState.initializationInProgress = true;
+  extensionState.channelName = currentChannel;
+  
+  // Add extension styles
+  addExtensionStyles();
+  
+  // Notify background script of channel change
+  chrome.runtime.sendMessage({
+    action: 'channel_switched',
+    oldChannel: channelState.currentChannel,
+    newChannel: currentChannel
+  });
+  
+  // Setup URL observer
+  setupUrlChangeObserver();
+  
+  // Get current game and initialize
+  setTimeout(() => {
+    if (extensionState.currentInitializationId !== initializationId) {
+      return;
     }
     
-    // Notify background about channel switch
-    chrome.runtime.sendMessage({
-      action: 'channel_switched',
-      oldChannel: extensionState.channelName,
-      newChannel: newChannelName
-    });
+    const detectedGame = getCurrentGame();
+    extensionState.currentGame = detectedGame;
     
-    // Update the channel name
-    extensionState.channelName = newChannelName;
+    // Always setup game observer to monitor for changes
+    setupGameChangeObserver();
     
-    // Clear the rank cache but preserve current user's rank
-    clearRankCache();
-  }
-  
-  // Add extension styles if needed
-  if (!document.querySelector('#eloward-extension-styles')) {
-    addExtensionStyles();
-  }
-  
-  // Disconnect any existing observer when reinitializing
-  if (window._eloward_chat_observer) {
-    window._eloward_chat_observer.disconnect();
-    window._eloward_chat_observer = null;
-    extensionState.observerInitialized = false;
-  }
-  
-  // Attempt to detect the game with retries
-  // Add extra delay for channel switches to allow DOM to update
-  const gameDetectionDelay = channelChanged ? 3000 : 0;
-  
-  setTimeout(() => {
-    // Check if this initialization is still current after delay
-    if (extensionState.currentInitializationId !== initializationId) {
-      console.log(`EloWard: Game detection cancelled after delay for initialization ${initializationId}`);
+    // Only proceed if game is supported
+    if (!isGameSupported(extensionState.currentGame)) {
       extensionState.initializationInProgress = false;
       return;
     }
     
-    getGameWithRetries(5, 2000, initializationId).then(detectedGame => {
-      // Check if this initialization is still current
-      if (extensionState.currentInitializationId !== initializationId) {
-        console.log(`EloWard: Game detection completed but initialization ${initializationId} is no longer current`);
-        return;
-      }
-      
-      // Update current game state
-      extensionState.currentGame = detectedGame;
-      
-      // Setup game change observer to detect mid-stream game switches
-      // This should ALWAYS be set up to monitor for game changes
-      setupGameChangeObserver();
-      
-      // Only proceed if the current game is supported
-      if (!isGameSupported(extensionState.currentGame)) {
-        console.log(`EloWard: Game '${extensionState.currentGame || 'unknown'}' is not supported. Extension inactive but monitoring for changes.`);
+    // Initialize channel
+    initializeChannel(extensionState.channelName, initializationId)
+      .then(subscribed => {
+        if (extensionState.currentInitializationId !== initializationId) {
+          return;
+        }
+        
+        if (subscribed) {
+          console.log("🛡️ EloWard Extension Active");
+          
+          if (!extensionState.observerInitialized) {
+            initializeObserver();
+          }
+        }
+        
         extensionState.initializationInProgress = false;
-        return;
-      }
-      
-      console.log(`EloWard: Supported game '${extensionState.currentGame}' detected for initialization ${initializationId}`);
-      
-      // Initialize the new channel properly
-      initializeChannel(extensionState.channelName, initializationId)
-        .then(subscribed => {
-          // Check if this initialization is still current
-          if (extensionState.currentInitializationId !== initializationId) {
-            console.log(`EloWard: Channel initialization completed but initialization ${initializationId} is no longer current`);
-            return;
-          }
-          
-          if (subscribed) {
-            // Only print the activation message when the channel is subscribed
-            console.log("🛡️ EloWard Extension Active");
-            
-            if (!extensionState.observerInitialized) {
-              initializeObserver();
-            }
-          }
-          
-          extensionState.initializationInProgress = false;
-        })
-        .catch(error => {
-          if (error.name === 'AbortError') {
-            console.log(`EloWard: Initialization ${initializationId} was aborted`);
-          } else {
-            console.error(`EloWard: Error during channel initialization:`, error);
-          }
-          extensionState.initializationInProgress = false;
-        });
-    }).catch(() => {
-      console.log(`EloWard: Game detection failed for initialization ${initializationId}`);
-      
-      // Even if game detection fails, set up the game observer to watch for changes
-      console.log(`EloWard: Setting up game observer despite initial detection failure`);
-      setupGameChangeObserver();
-      
-      extensionState.initializationInProgress = false;
-    });
-  }, gameDetectionDelay);
-  
-  // Set up navigation observer to detect URL changes
-  setupUrlChangeObserver();
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') {
+          console.error('EloWard: Error during channel initialization:', error);
+        }
+        extensionState.initializationInProgress = false;
+      });
+  }, 1500);
 }
 
-// Watch for URL changes (channel changes)
+/**
+ * Setup URL change observer for SPA navigation
+ */
 function setupUrlChangeObserver() {
-  // Only set up once
   if (window._eloward_url_observer) return;
   
-  // Create observer instance
   const urlObserver = new MutationObserver(function(mutations) {
-    // Get the current channel name using our reliable method
     const currentChannel = getCurrentChannelName();
     
-    // Skip if we can't determine the channel or on auth-related paths
     if (!currentChannel || 
         window.location.pathname.includes('oauth2') || 
         window.location.pathname.includes('auth/') ||
@@ -667,42 +444,30 @@ function setupUrlChangeObserver() {
       return;
     }
     
-    // Only reinitialize if the channel actually changed
     if (currentChannel !== extensionState.channelName) {
-      console.log(`EloWard: URL change detected - switching from ${extensionState.channelName || 'unknown'} to ${currentChannel}`);
-      
-      // Clean up the old channel
       if (extensionState.channelName) {
         cleanupChannel(extensionState.channelName);
       }
       
-      // Update channel name
       extensionState.channelName = currentChannel;
-      
-      // Clear rank cache but preserve current user's rank
       clearRankCache();
       
-      // Add a slight delay to allow DOM to update after navigation
       setTimeout(() => {
-        // Double-check we're still on the same channel before reinitializing
         const verifyChannel = getCurrentChannelName();
         if (verifyChannel === currentChannel) {
-          console.log(`EloWard: Reinitializing for channel ${currentChannel} after URL change`);
           initializeExtension();
-        } else {
-          console.log(`EloWard: Channel changed again during delay, skipping reinitialization`);
         }
-      }, 500); // 500ms delay to allow DOM updates
+      }, 500);
     }
   });
   
-  // Start observing the document for URL changes
   urlObserver.observe(document, { subtree: true, childList: true });
-  
-  // Store observer for reference
   window._eloward_url_observer = urlObserver;
 }
 
+/**
+ * Initialize chat observer
+ */
 function initializeObserver() {
   if (extensionState.observerInitialized) {
     return;
@@ -711,11 +476,9 @@ function initializeObserver() {
   const chatContainer = findChatContainer();
   
   if (chatContainer) {
-    // Chat container found, set up the observer
     setupChatObserver(chatContainer);
     extensionState.observerInitialized = true;
   } else {
-    // Single retry after short delay if container not found immediately
     setTimeout(() => {
       const chatContainer = findChatContainer();
       if (chatContainer) {
@@ -726,29 +489,30 @@ function initializeObserver() {
   }
 }
 
+/**
+ * Find Twitch chat container
+ */
 function findChatContainer() {
-  // Use the most reliable standard Twitch selector
   const chatContainer = document.querySelector('.chat-scrollable-area__message-container') ||
                        document.querySelector('[data-a-target="chat-scroller"]');
   
   if (chatContainer) return chatContainer;
   
-  // Single fallback: find by existing chat message
   const anyMessage = document.querySelector('.chat-line__message, .chat-line');
   return anyMessage ? anyMessage.closest('[role="log"]') || anyMessage.parentElement : null;
 }
 
-function setupChatObserver(chatContainer, isFallbackObserver = false) {
-  // Create a MutationObserver to watch for new chat messages
+/**
+ * Setup chat observer to watch for new messages
+ */
+function setupChatObserver(chatContainer) {
   const chatObserver = new MutationObserver((mutations) => {
-    // Process messages only if channel is subscribed
     if (!extensionState.isChannelSubscribed) return;
     
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // Check if this is a standard Twitch chat message
             const isMessage = node.classList && (
               node.classList.contains('chat-line__message') || 
               node.classList.contains('chat-line') ||
@@ -757,10 +521,6 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
             
             if (isMessage) {
               processNewMessage(node);
-            } else if (isFallbackObserver) {
-              // For fallback observers, look for standard Twitch messages
-              const messages = node.querySelectorAll('.chat-line__message, .chat-line');
-              messages.forEach(message => processNewMessage(message));
             }
           }
         }
@@ -768,65 +528,61 @@ function setupChatObserver(chatContainer, isFallbackObserver = false) {
     }
   });
   
-  // Start observing the chat container
   chatObserver.observe(chatContainer, {
     childList: true,
     subtree: true
   });
   
-  // Process any existing standard Twitch messages
+  // Process existing messages
   const existingMessages = chatContainer.querySelectorAll('.chat-line__message, .chat-line');
   for (const message of existingMessages) {
     processNewMessage(message);
   }
+  
+  window._eloward_chat_observer = chatObserver;
 }
 
+/**
+ * Process new chat message for rank badges
+ */
 function processNewMessage(messageNode) {
-  // Skip if we've already processed this message
   if (processedMessages.has(messageNode)) return;
   processedMessages.add(messageNode);
   
-  // Memory management - clear old entries if too many
+  // Memory management
   if (processedMessages.size > 500) {
     const toDelete = Array.from(processedMessages).slice(0, 100);
     toDelete.forEach(msg => processedMessages.delete(msg));
   }
   
-  // Only process messages if the channel is subscribed
   if (!extensionState.isChannelSubscribed) return;
   
-  // Use the most reliable Twitch username selector
   const usernameElement = messageNode.querySelector('.chat-author__display-name') ||
                          messageNode.querySelector('[data-a-target="chat-message-username"]');
   
   if (!usernameElement) return;
   
-  // Get lowercase username for case-insensitive matching
   const username = usernameElement.textContent.trim().toLowerCase();
   
-  // Check if this is the current user
+  // Handle current user with stored Riot data
   if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
-    // Get user's actual rank from Riot data
     chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
       const riotData = data.eloward_persistent_riot_user_data;
       
       if (riotData?.rankInfo) {
-        // Convert the Riot rank format to our format
         const userRankData = {
           tier: riotData.rankInfo.tier,
-          division: riotData.rankInfo.rank, // In Riot API, "rank" is the division
+          division: riotData.rankInfo.rank,
           leaguePoints: riotData.rankInfo.leaguePoints,
           summonerName: riotData.gameName
         };
         
-        // Update the background cache
         chrome.runtime.sendMessage({
           action: 'set_rank_data',
           username: username,
           rankData: userRankData
         });
         
-        // Increment metrics for the current channel
         if (extensionState.channelName) {
           chrome.runtime.sendMessage({
             action: 'increment_db_reads',
@@ -839,17 +595,19 @@ function processNewMessage(messageNode) {
           });
         }
         
-        // Display the badge immediately
         addBadgeToMessage(usernameElement, userRankData);
       }
     });
     return;
   }
   
-  // For other users, fetch rank from background script
+  // Fetch rank for other users
   fetchRankFromBackground(username, usernameElement);
 }
 
+/**
+ * Fetch rank data from background script
+ */
 function fetchRankFromBackground(username, usernameElement) {
   try {
     chrome.runtime.sendMessage(
@@ -862,7 +620,6 @@ function fetchRankFromBackground(username, usernameElement) {
         if (chrome.runtime.lastError) return;
         
         if (response?.success && response.rankData) {
-          // Add the badge to the message
           addBadgeToMessage(usernameElement, response.rankData);
         }
       }
@@ -872,29 +629,25 @@ function fetchRankFromBackground(username, usernameElement) {
   }
 }
 
+/**
+ * Add rank badge to chat message
+ */
 function addBadgeToMessage(usernameElement, rankData) {
-  // Skip if no rank data
   if (!rankData?.tier) return; 
   
-  // Check if badge already exists in this message
   const messageContainer = usernameElement.closest('.chat-line__message, .chat-line');
   if (messageContainer?.querySelector('.eloward-rank-badge')) return;
   
-  // Create badge container
   const badgeContainer = document.createElement('div');
   badgeContainer.className = 'eloward-rank-badge';
-  
-  // Store rank text as a data attribute for tooltip
   badgeContainer.dataset.rankText = formatRankText(rankData);
   
-  // Create the rank image
   const rankImg = document.createElement('img');
   rankImg.alt = rankData.tier;
   rankImg.className = 'chat-badge';
   rankImg.width = 24;
   rankImg.height = 24;
   
-  // Set image source based on rank tier
   try {
     const tier = rankData.tier.toLowerCase();
     rankImg.src = `https://eloward-cdn.unleashai.workers.dev/lol/${tier}.png`;
@@ -903,24 +656,24 @@ function addBadgeToMessage(usernameElement, rankData) {
     return;
   }
   
-  // Add the image to the badge container
   badgeContainer.appendChild(rankImg);
   
-  // Setup tooltip functionality
+  // Setup tooltip
   badgeContainer.addEventListener('mouseenter', showTooltip);
   badgeContainer.addEventListener('mouseleave', hideTooltip);
   
-  // Store rank data as attributes for tooltip
   badgeContainer.dataset.rank = rankData.tier;
   badgeContainer.dataset.division = rankData.division || '';
   badgeContainer.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
                               rankData.leaguePoints.toString() : '';
   badgeContainer.dataset.username = rankData.summonerName || '';
   
-  // Insert badge using the most reliable method - before the username element
-    usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
+  usernameElement.parentNode.insertBefore(badgeContainer, usernameElement);
 }
 
+/**
+ * Format rank text for display
+ */
 function formatRankText(rankData) {
   if (!rankData || !rankData.tier || rankData.tier.toUpperCase() === 'UNRANKED') {
     return 'UNRANKED';
@@ -928,12 +681,10 @@ function formatRankText(rankData) {
   
   let rankText = rankData.tier;
   
-  // Add division for ranks that have divisions (not Master, Grandmaster, Challenger)
   if (rankData.division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankData.tier.toUpperCase())) {
     rankText += ' ' + rankData.division;
   }
   
-  // Add LP for ranked players (not for Unranked)
   if (rankData.tier.toUpperCase() !== 'UNRANKED' && 
       rankData.leaguePoints !== undefined && 
       rankData.leaguePoints !== null) {
@@ -947,107 +698,90 @@ function formatRankText(rankData) {
   return rankText;
 }
 
-// Tooltip functions
+/**
+ * Show tooltip on badge hover
+ */
 function showTooltip(event) {
-  // Clear any existing timeout
   if (tooltipShowTimeout) {
     clearTimeout(tooltipShowTimeout);
   }
 
-  // Create tooltip element if it doesn't exist globally
   if (!tooltipElement) {
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'eloward-tooltip';
     document.body.appendChild(tooltipElement);
   }
   
-  // Get rank data from the badge's dataset
   const badge = event.currentTarget;
   const rankTier = badge.dataset.rank || 'UNRANKED';
   const division = badge.dataset.division || '';
-  
-  // Ensure LP is properly formatted
   let lp = badge.dataset.lp || '';
-  // If LP is a number, make sure it's formatted properly
+  
   if (lp && !isNaN(Number(lp))) {
-    lp = Number(lp).toString(); // Convert to clean number string
+    lp = Number(lp).toString();
   }
   
-  const username = badge.dataset.username || '';
-  
-  // Format the tooltip text using same logic as formatRankText
-  // Handle unranked case
+  // Format tooltip text
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
     tooltipElement.textContent = 'Unranked';
   } else {
-    // For ranked players
-    // Properly capitalize the rank tier (only first letter uppercase)
     let formattedTier = rankTier.toLowerCase();
     formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
     
     let tooltipText = formattedTier;
     
-    // Add division for ranks that have divisions
     if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
       tooltipText += ' ' + division;
     }
     
-    // Always include LP for ranked players
     if (lp !== undefined && lp !== null && lp !== '') {
       tooltipText += ' - ' + lp + ' LP';
     }
     
-    // Set the tooltip content
     tooltipElement.textContent = tooltipText;
   }
   
-  // First reset the tooltip state and make it invisible
+  // Reset and position tooltip
   tooltipElement.style.visibility = 'hidden';
   tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
   tooltipElement.style.opacity = '0';
   tooltipElement.classList.remove('visible');
   
-  // Position after a delay
   tooltipShowTimeout = setTimeout(() => {
-    // Get badge position
     const rect = badge.getBoundingClientRect();
     const badgeCenter = rect.left + (rect.width / 2);
     
-    // Position tooltip above the badge with an offset for left-shifted arrow
     tooltipElement.style.left = `${badgeCenter}px`;
     tooltipElement.style.top = `${rect.top - 5}px`;
-    
-    // Make the element visible but with 0 opacity first
     tooltipElement.style.visibility = 'visible';
     
-    // Force a reflow to ensure the browser registers the initial state
     tooltipElement.offsetHeight;
-    
-    // Then add the visible class to trigger the transition
     tooltipElement.classList.add('visible');
   }, 300);
 }
 
+/**
+ * Hide tooltip
+ */
 function hideTooltip() {
-  // Clear any pending show timeout
   if (tooltipShowTimeout) {
     clearTimeout(tooltipShowTimeout);
     tooltipShowTimeout = null;
   }
   
   if (tooltipElement && tooltipElement.classList.contains('visible')) {
-    // Animate out - fade and scale down slightly
     tooltipElement.style.opacity = '0';
     tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
     
-    // Remove visible class after animation completes
     setTimeout(() => {
       tooltipElement.classList.remove('visible');
     }, 100);
   }
 }
 
-// Add the CSS needed for badges
+/**
+ * Add CSS styles for rank badges and tooltips
+ */
 function addExtensionStyles() {
   if (document.querySelector('#eloward-extension-styles')) return;
   
@@ -1092,29 +826,27 @@ function addExtensionStyles() {
       scale: 1 !important;
     }
     
-    /* Chat bubble style tooltip - base styles */
     .eloward-tooltip {
       position: absolute !important;
       z-index: 99999 !important;
       pointer-events: none !important;
-      transform: translate(-12%, -100%) scale(0.9) !important; /* Bubble position: adjust -30% to shift left/right */
+      transform: translate(-12%, -100%) scale(0.9) !important;
       font-size: 13px !important;
       font-weight: 600 !important;
       font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
       white-space: nowrap !important;
-      padding: 4px 6px !important; /* Reduced padding */
-      border-radius: 6px !important; /* Increased corner roundness (was 3px) */
+      padding: 4px 6px !important;
+      border-radius: 6px !important;
       line-height: 1.2 !important;
       opacity: 0 !important;
       transition: opacity 0.07s ease-in-out, transform 0.07s ease-in-out !important;
       text-align: center !important;
       border: none !important;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
-      margin-top: -2px !important; /* Offset to position it nicely */
-      will-change: transform, opacity !important; /* Hint for browser to optimize animations */
+      margin-top: -2px !important;
+      will-change: transform, opacity !important;
     }
     
-    /* Dark theme Twitch - show light tooltip */
     html.tw-root--theme-dark .eloward-tooltip,
     .tw-root--theme-dark .eloward-tooltip,
     body[data-a-theme="dark"] .eloward-tooltip,
@@ -1131,7 +863,6 @@ function addExtensionStyles() {
       border-color: white transparent transparent transparent !important;
     }
     
-    /* Light theme Twitch - show dark tooltip */
     html.tw-root--theme-light .eloward-tooltip,
     .tw-root--theme-light .eloward-tooltip,
     body[data-a-theme="light"] .eloward-tooltip,
@@ -1148,20 +879,19 @@ function addExtensionStyles() {
       border-color: #0e0e10 transparent transparent transparent !important;
     }
     
-    /* Chat bubble arrow at bottom pointing toward badge, offset to the left */
     .eloward-tooltip::after {
       content: "" !important;
       position: absolute !important;
-      bottom: -4px !important; /* Position at bottom */
-      left: 10% !important; /* Stem position: adjust this % to move stem left/right */
+      bottom: -4px !important;
+      left: 10% !important;
       margin-left: -4px !important;
-      border-width: 4px 4px 0 4px !important; /* Arrow pointing down */
+      border-width: 4px 4px 0 4px !important;
       border-style: solid !important;
     }
     
     .eloward-tooltip.visible {
       opacity: 1 !important;
-      transform: translate(-12%, -100%) scale(1) !important; /* Bubble position when visible: must match transform above */
+      transform: translate(-12%, -100%) scale(1) !important;
     }
   `;
   
