@@ -120,9 +120,11 @@ async function initializeChannel(channelName, initializationId) {
     if (isSubscribed) {
       channelState.subscribedChannels.add(normalizedChannel);
       extensionState.isChannelSubscribed = true;
+      console.log(`EloWard: ${channelName} - Subscribed ✅`);
     } else {
       channelState.subscribedChannels.delete(normalizedChannel);
       extensionState.isChannelSubscribed = false;
+      console.log(`EloWard: ${channelName} - Not Subscribed ❌`);
     }
     
     return isSubscribed;
@@ -319,6 +321,8 @@ function setupGameChangeObserver() {
         const oldGame = extensionState.currentGame;
         extensionState.currentGame = newGame;
         
+        console.log(`EloWard: Game detected - ${newGame || 'none'}`);
+        
         if (!isGameSupported(extensionState.currentGame)) {
           // Clean up for unsupported game
           if (window._eloward_chat_observer) {
@@ -394,6 +398,8 @@ function initializeExtension() {
     
     const detectedGame = getCurrentGame();
     extensionState.currentGame = detectedGame;
+    
+    console.log(`EloWard: Game detected - ${detectedGame || 'none'}`);
     
     // Always setup game observer to monitor for changes
     setupGameChangeObserver();
