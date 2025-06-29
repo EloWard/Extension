@@ -508,85 +508,29 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshRankBtn.classList.add('refreshing');
       refreshRankBtn.disabled = true; // Disable button while refreshing
       
-      // Get stored account info first
-      const accountInfo = await RiotAuth.getAccountInfo();
-      
-      if (!accountInfo || !accountInfo.puuid) {
-        throw new Error('Account information not available');
-      }
-      
-      // Get the current selected region
-      const selectedRegion = regionSelect.value;
-      console.log('Using selected region during refresh:', selectedRegion);
-      
-      // Force a fresh rank lookup using PUUID
-      const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
-      
-      // Get the freshly updated user data
-      const userData = await RiotAuth.getUserData(true);
-      
-      // Update the UI with the fresh data
-      updateUserInterface(userData);
-      
-      // Update persistent storage with the fresh user data including new rank
-      await PersistentStorage.storeRiotUserData(userData);
-      console.log('Updated persistent storage with refreshed rank information');
-      
-      // Update rank in the database
-      try {
-        // Get current Twitch username
-        const twitchData = await new Promise(resolve => {
-          chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
-        });
-        
-        const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
-        
-        if (twitchUsername && userData.soloQueueRank) {
-          console.log('Uploading updated rank data to database for:', twitchUsername);
-          
-          // Import RankAPI
-          const { RankAPI } = await import('./rankAPI.js');
-          
-          // Format rank data for upload
-          const rankData = {
-            puuid: userData.puuid,
-            gameName: userData.gameName,
-            tagLine: userData.tagLine,
-            tier: userData.soloQueueRank.tier,
-            rank: userData.soloQueueRank.rank,
-            leaguePoints: userData.soloQueueRank.leaguePoints
-          };
-          
-          // Upload rank to database
-          await RankAPI.uploadRank(twitchUsername, rankData);
-          console.log('Rank data updated in database successfully');
-        }
-      } catch (dbError) {
-        console.error('Error updating rank in database:', dbError);
-        // Don't fail the entire operation if database update fails
-      }
+      // Attempt to refresh rank data
+      await performRankRefresh();
       
       console.log('Rank information successfully refreshed');
     } catch (error) {
       // Check if it's the specific re-authentication error
       if (error.name === "ReAuthenticationRequiredError") {
-        console.log('Re-authentication required, initiating auth flow...');
+        console.log('Re-authentication required, performing silent re-authentication...');
         try {
-          // Silently trigger the RSO authentication flow
-          await RiotAuth.authenticate(regionSelect.value);
-          // Optionally: automatically re-call refreshRank after successful auth?
-          // For now, let the user click refresh again after auth completes.
-          console.log('Re-authentication flow initiated. User should try refreshing again after completion.');
-          // Keep the refreshing state until auth completes or user cancels
-          // Do NOT remove refreshing class here, let the finally block handle it only if auth isn't triggered.
+          // Perform silent re-authentication to get fresh tokens
+          const region = regionSelect.value;
+          await RiotAuth.performSilentReauth(region);
+          
+          // After successful silent re-auth, automatically retry the rank refresh
+          console.log('Silent re-authentication successful, retrying rank refresh...');
+          await performRankRefresh();
+          
+          console.log('Rank refresh completed successfully after silent re-authentication');
         } catch (authError) {
-          console.error('Error during re-authentication attempt:', authError);
-          // If re-auth fails, stop the spinner and maybe show a generic error
-          refreshRankBtn.classList.remove('refreshing');
-          refreshRankBtn.disabled = false;
-          showAuthError('Re-auth failed');
+          console.error('Error during silent re-authentication:', authError);
+          // If silent re-auth fails, show error but don't break connection
+          showAuthError('Authentication failed. Please try refreshing again.');
         }
-        // Important: Do not fall through to general error handling if re-auth is triggered
         return; // Exit the catch block
       }
       
@@ -613,14 +557,72 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
       }
     } finally {
-      // The spinner is now primarily handled within the catch block
-      // Only remove here if the try block completed successfully OR
-      // if a non-ReAuthenticationRequiredError occurred and wasn't handled above.
-      // Check if the refreshing class is still present before removing/re-enabling.
+      // Remove loading state
       if (refreshRankBtn.classList.contains('refreshing')) {
         refreshRankBtn.classList.remove('refreshing');
         refreshRankBtn.disabled = false;
       }
+    }
+  }
+
+  // Helper function to perform the actual rank refresh logic
+  async function performRankRefresh() {
+    // Get stored account info first
+    const accountInfo = await RiotAuth.getAccountInfo();
+    
+    if (!accountInfo || !accountInfo.puuid) {
+      throw new Error('Account information not available');
+    }
+    
+    // Get the current selected region
+    const selectedRegion = regionSelect.value;
+    console.log('Using selected region during refresh:', selectedRegion);
+    
+    // Force a fresh rank lookup using PUUID
+    const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
+    
+    // Get the freshly updated user data
+    const userData = await RiotAuth.getUserData(true);
+    
+    // Update the UI with the fresh data
+    updateUserInterface(userData);
+    
+    // Update persistent storage with the fresh user data including new rank
+    await PersistentStorage.storeRiotUserData(userData);
+    console.log('Updated persistent storage with refreshed rank information');
+    
+    // Update rank in the database
+    try {
+      // Get current Twitch username
+      const twitchData = await new Promise(resolve => {
+        chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
+      });
+      
+      const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
+      
+      if (twitchUsername && userData.soloQueueRank) {
+        console.log('Uploading updated rank data to database for:', twitchUsername);
+        
+        // Import RankAPI
+        const { RankAPI } = await import('./rankAPI.js');
+        
+        // Format rank data for upload
+        const rankData = {
+          puuid: userData.puuid,
+          gameName: userData.gameName,
+          tagLine: userData.tagLine,
+          tier: userData.soloQueueRank.tier,
+          rank: userData.soloQueueRank.rank,
+          leaguePoints: userData.soloQueueRank.leaguePoints
+        };
+        
+        // Upload rank to database
+        await RankAPI.uploadRank(twitchUsername, rankData);
+        console.log('Rank data updated in database successfully');
+      }
+    } catch (dbError) {
+      console.error('Error updating rank in database:', dbError);
+      // Don't fail the entire operation if database update fails
     }
   }
 

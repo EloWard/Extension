@@ -122,9 +122,10 @@ export const RiotAuth = {
    * High-level authentication method for popup.js
    * Initiates the Riot authentication flow and handles the entire process
    * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
+   * @param {boolean} isSilentReauth - Whether this is a silent re-authentication
    * @returns {Promise<object>} - Resolves with user data on success
    */
-  async authenticate(region) {
+  async authenticate(region, isSilentReauth = false) {
     try {
       console.log('Starting authentication for region:', region);
       
@@ -836,7 +837,7 @@ export const RiotAuth = {
 
     if (!refreshToken) {
       console.warn('No refresh token found in storage. Cannot refresh.');
-      await this.logout(false); // Use logout to clear data consistently
+      // Instead of logging out immediately, throw error to trigger silent re-auth
       throw new ReAuthenticationRequiredError("No refresh token available for refresh.");
     }
 
@@ -847,7 +848,8 @@ export const RiotAuth = {
       };
       
       console.log('Refreshing access token via worker...');
-      const tokenUrl = `${this.config.proxyBaseUrl}/auth/riot/refresh`; 
+      // Fix the URL to match the server endpoint
+      const tokenUrl = `${this.config.proxyBaseUrl}/auth/riot/token/refresh`; 
       console.log('Making token refresh request to:', tokenUrl);
 
       const response = await fetch(tokenUrl, {
@@ -859,23 +861,26 @@ export const RiotAuth = {
       });
 
       if (!response.ok) {
-        console.warn(`Token refresh failed with status ${response.status}. User needs to re-authenticate.`);
-        await this.logout(false); // Clear potentially stale/invalid tokens
+        console.warn(`Token refresh failed with status ${response.status}. Token likely expired, will attempt silent re-authentication.`);
+        // Instead of logging out, throw error to trigger silent re-auth
         throw new ReAuthenticationRequiredError(`Token refresh failed with status ${response.status}`);
       }
 
       const newTokens = await response.json();
-      console.log('Token refresh successful, received new tokens:', newTokens);
+      console.log('Token refresh successful, received new tokens');
+
+      // Handle the response structure from the server (data wrapper)
+      const actualTokenData = newTokens.data || newTokens;
 
       // Prepare data for storage, ensuring expiry is calculated
       const tokensToStore = {
-        access_token: newTokens.access_token,
-        id_token: newTokens.id_token || storedData?.id_token, // Keep old id_token if not refreshed
-        refresh_token: newTokens.refresh_token || refreshToken, // IMPORTANT: Use the new refresh token if provided
-        expires_at: Date.now() + (newTokens.expires_in * 1000), // Calculate new expiry time
+        access_token: actualTokenData.access_token,
+        id_token: actualTokenData.id_token || storedData?.id_token, // Keep old id_token if not refreshed
+        refresh_token: actualTokenData.refresh_token || refreshToken, // IMPORTANT: Use the new refresh token if provided
+        expires_at: Date.now() + (actualTokenData.expires_in * 1000), // Calculate new expiry time
         // Add other relevant fields if necessary, e.g., scope, token_type
-        scope: newTokens.scope || storedData?.scope,
-        token_type: newTokens.token_type || storedData?.token_type,
+        scope: actualTokenData.scope || storedData?.scope,
+        token_type: actualTokenData.token_type || storedData?.token_type,
         // Keep issued_at if it exists and wasn't part of the refresh response
         issued_at: storedData?.issued_at 
       };
@@ -890,15 +895,66 @@ export const RiotAuth = {
 
     } catch (error) {
       console.error('Error during token refresh:', error);
-      // If it's our specific re-auth error, re-throw it
+      // If it's our specific re-auth error, re-throw it for handling upstream
       if (error instanceof ReAuthenticationRequiredError) {
         throw error;
       }
-      // For other errors, log and return null or throw a generic error
-      // Depending on desired behavior, returning null might allow fallback logic
-      // Throwing ensures the failure is propagated
-      await this.logout(false); // Clear data on unexpected errors too
-      throw new Error(`Unexpected error during token refresh: ${error.message}`); // Throw a generic error for unexpected issues
+      // For other errors, also throw re-auth error to trigger silent re-authentication
+      throw new ReAuthenticationRequiredError(`Unexpected error during token refresh: ${error.message}`);
+    }
+  },
+  
+  /**
+   * Perform silent re-authentication to get fresh tokens
+   * @param {string} region - The region for authentication
+   * @returns {Promise<Object>} - The new user data
+   */
+  async performSilentReauth(region) {
+    console.log('Performing silent re-authentication...');
+    
+    try {
+      // Clear any existing callbacks to ensure clean auth flow
+      await new Promise(resolve => {
+        chrome.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback'], resolve);
+      });
+      
+      // Generate a unique state for this silent auth
+      const state = this._generateRandomState();
+      await this._storeAuthState(state);
+      
+      // Get authentication URL from backend
+      const authUrl = await this._getAuthUrl(region, state);
+      
+      // Open auth window for silent re-authentication
+      console.log('Opening silent re-authentication window');
+      this._openAuthWindow(authUrl);
+      
+      // Wait for the authentication callback
+      const authResult = await this._waitForAuthCallback();
+      
+      if (!authResult || !authResult.code) {
+        throw new Error('Silent re-authentication cancelled or failed');
+      }
+      
+      // Verify state
+      if (authResult.state !== state) {
+        throw new Error('Silent re-authentication security verification failed');
+      }
+      
+      // Exchange code for tokens
+      const tokenData = await this.exchangeCodeForTokens(authResult.code);
+      
+      // Get fresh user data
+      const userData = await this.getUserData();
+      
+      // Update persistent storage
+      await PersistentStorage.storeRiotUserData(userData);
+      
+      console.log('Silent re-authentication completed successfully');
+      return userData;
+    } catch (error) {
+      console.error('Silent re-authentication failed:', error);
+      throw error;
     }
   },
   
@@ -1194,10 +1250,6 @@ export const RiotAuth = {
     
     return platformMap[platform] || 'americas'; // Default to americas if platform not found
   },
-  
-
-  
-
   
   /**
    * Get rank data for the specified PUUID

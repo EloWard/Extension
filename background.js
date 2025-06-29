@@ -1342,7 +1342,7 @@ async function refreshAccessToken(refreshToken) {
     }
     
     // Use the Riot RSO proxy to refresh the token
-    const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/refresh`, {
+    const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/token/refresh`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
