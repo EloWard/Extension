@@ -196,10 +196,7 @@ export const RiotAuth = {
         console.log('State verification passed using primary check');
       }
       
-      console.log('Proceeding with token exchange for code:', {
-        codeLength: authResult.code.length,
-        codePrefix: authResult.code.substring(0, 8) + '...'
-      });
+
       
       // Exchange code for tokens
       const tokenData = await this.exchangeCodeForTokens(authResult.code);
@@ -522,8 +519,6 @@ export const RiotAuth = {
    */
   async _storeTokens(tokenData) {
     try {
-      console.log('Storing token data with fields:', Object.keys(tokenData).join(', '));
-      
       // Validate required token fields
       if (!tokenData.access_token || typeof tokenData.access_token !== 'string') {
         throw new Error('Missing or invalid access_token in token data');
@@ -531,7 +526,7 @@ export const RiotAuth = {
       
       // Validate access token format
       if (tokenData.access_token.length < 20) {
-        throw new Error(`Access token appears to be invalid (length: ${tokenData.access_token.length})`);
+        throw new Error('Access token appears to be invalid');
       }
       
       // Calculate expiry time - ensure it's a numeric value
@@ -542,25 +537,20 @@ export const RiotAuth = {
       
       // Calculate expiry timestamp as milliseconds since epoch
       const tokenExpiry = Date.now() + (expiresIn * 1000);
-      console.log(`Token will expire at: ${new Date(tokenExpiry).toISOString()} (${expiresIn} seconds from now)`);
-      
-      // Create structured data to store
-      const storageData = {
-        [this.config.storageKeys.accessToken]: tokenData.access_token,
-        [this.config.storageKeys.tokenExpiry]: tokenExpiry, // Store as numeric timestamp
-        [this.config.storageKeys.tokens]: {
-          ...tokenData,
-          stored_at: Date.now(), // Add timestamp for debugging
+              // Create structured data to store
+        const storageData = {
+          [this.config.storageKeys.accessToken]: tokenData.access_token,
+          [this.config.storageKeys.tokenExpiry]: tokenExpiry,
+          [this.config.storageKeys.tokens]: {
+            ...tokenData,
+            stored_at: Date.now(),
+          }
+        };
+        
+        // Optional: refreshToken (only if provided and valid)
+        if (tokenData.refresh_token && typeof tokenData.refresh_token === 'string' && tokenData.refresh_token.length > 20) {
+          storageData[this.config.storageKeys.refreshToken] = tokenData.refresh_token;
         }
-      };
-      
-      // Optional: refreshToken (only if provided and valid)
-      if (tokenData.refresh_token && typeof tokenData.refresh_token === 'string' && tokenData.refresh_token.length > 20) {
-        storageData[this.config.storageKeys.refreshToken] = tokenData.refresh_token;
-        console.log('Valid refresh token included in storage data');
-      } else {
-        console.warn('No valid refresh token available to store');
-      }
       
       // If we have user info from the token, store that too
       if (tokenData.user_info && typeof tokenData.user_info === 'object') {
@@ -598,7 +588,7 @@ export const RiotAuth = {
       await new Promise(resolve => {
         chrome.storage.local.set(storageData, resolve);
       });
-      console.log('Tokens stored in chrome.storage successfully');
+
     } catch (error) {
       console.error('Error storing tokens:', error);
       throw error;
@@ -646,151 +636,93 @@ export const RiotAuth = {
    */
   async getValidToken(ignoreNoTokenError = false) {
     try {
-      console.log('Getting valid token');
+      // Get tokens from storage using centralized method
+      const { accessToken, refreshToken, tokenExpiry } = await this._getTokensFromStorage();
       
-      // Try to get token from all possible storage keys
-      const tokenData = await new Promise(resolve => {
-        chrome.storage.local.get([
-          this.config.storageKeys.accessToken,
-          this.config.storageKeys.refreshToken,
-          this.config.storageKeys.tokenExpiry,
-          'eloward_riot_access_token',
-          'eloward_riot_refresh_token',
-          'eloward_riot_token_expiry',
-          'riotAuth'
-        ], resolve);
-      });
-      
-      // Try standard keys first
-      let accessToken = tokenData[this.config.storageKeys.accessToken];
-      let refreshToken = tokenData[this.config.storageKeys.refreshToken];
-      let tokenExpiry = tokenData[this.config.storageKeys.tokenExpiry];
-      
-      // If not found, try the eloward_riot_* format (from background.js)
-      if (!accessToken && tokenData.eloward_riot_access_token) {
-        accessToken = tokenData.eloward_riot_access_token;
-        console.log('Found access token in eloward_riot_access_token');
-      }
-      
-      if (!refreshToken && tokenData.eloward_riot_refresh_token) {
-        refreshToken = tokenData.eloward_riot_refresh_token;
-        console.log('Found refresh token in eloward_riot_refresh_token');
-      }
-      
-      if (!tokenExpiry && tokenData.eloward_riot_token_expiry) {
-        tokenExpiry = tokenData.eloward_riot_token_expiry;
-        console.log('Found token expiry in eloward_riot_token_expiry');
-      }
-      
-      // Last resort: try the riotAuth object
-      if (!accessToken && tokenData.riotAuth && tokenData.riotAuth.access_token) {
-        accessToken = tokenData.riotAuth.access_token;
-        console.log('Found access token in riotAuth object');
-        
-        if (!refreshToken && tokenData.riotAuth.refresh_token) {
-          refreshToken = tokenData.riotAuth.refresh_token;
-          console.log('Found refresh token in riotAuth object');
-        }
-        
-        if (!tokenExpiry) {
-          if (tokenData.riotAuth.expires_at) {
-            tokenExpiry = tokenData.riotAuth.expires_at;
-            console.log('Found token expiry (expires_at) in riotAuth object');
-          } else if (tokenData.riotAuth.issued_at && tokenData.riotAuth.expires_in) {
-            tokenExpiry = tokenData.riotAuth.issued_at + (tokenData.riotAuth.expires_in * 1000);
-            console.log('Calculated token expiry from issued_at and expires_in in riotAuth object');
-          }
-        }
-      }
-      
-      console.log('Token check results:', {
-        hasAccessToken: !!accessToken,
-        accessTokenLength: accessToken ? accessToken.length : 0,
-        hasRefreshToken: !!refreshToken,
-        refreshTokenLength: refreshToken ? refreshToken.length : 0,
-        hasExpiryTimestamp: !!tokenExpiry,
-        expiryTimeISO: tokenExpiry ? new Date(parseInt(tokenExpiry)).toISOString() : 'undefined'
-      });
-      
-      // If no access token is found, return null - do not auto-authenticate
       if (!accessToken) {
-        console.log('No access token found in storage');
         return null;
       }
       
-      // Check if token is expired or will expire soon
+      // Validate token expiry
       const now = Date.now();
       const tokenExpiryMs = typeof tokenExpiry === 'string' ? parseInt(tokenExpiry) : tokenExpiry;
       
       if (isNaN(tokenExpiryMs)) {
-        console.error('Invalid token expiry timestamp:', tokenExpiry);
-        
-        // If we have a refresh token, try to use it instead of failing
         if (refreshToken) {
-          console.log('Invalid expiry but refresh token available, attempting refresh');
           const refreshResult = await this.refreshToken();
-          
-          // If refresh returns null (no error but no token), return null
-          if (refreshResult === null) {
-            console.log('Token refresh returned null, no valid token available');
-            return null;
-          }
-          
-          return refreshResult.access_token;
+          return refreshResult?.access_token || null;
         }
-        
-        // If no refresh token or refresh fails, return null
         return null;
       }
       
       const expiresInMs = tokenExpiryMs - now;
-      const fiveMinutesInMs = 5 * 60 * 1000;
+      const twoMinutesInMs = 2 * 60 * 1000;
       
-      // Log expiry details
-      const expiresInMinutes = Math.round(expiresInMs / 60000);
-      console.log(`Token expires in ${expiresInMinutes} minutes (${expiresInMs} ms)`);
+      // Use existing token if valid for more than 2 minutes
+      if (expiresInMs > twoMinutesInMs) {
+        return accessToken;
+      }
       
-      // If token expires in less than 5 minutes, refresh it
-      if (expiresInMs < fiveMinutesInMs) {
-        console.log('Token expires soon, attempting refresh');
-        
-        if (!refreshToken) {
-          console.error('Access token expired and no refresh token available');
-          return null;
-        }
-        
-        // Refresh the token
-        console.log('Refreshing access token using refresh token');
+      // Refresh if expires within 2 minutes or already expired
+      if (refreshToken) {
         try {
           const refreshResult = await this.refreshToken();
-          
-          // If refresh returns null (no error but no token), return null
-          if (refreshResult === null) {
-            console.log('Token refresh returned null, no valid token available');
-            return null;
-          }
-          
-          console.log('Token refresh successful');
-          return refreshResult.access_token;
+          return refreshResult?.access_token || null;
         } catch (refreshError) {
-          console.error('Error refreshing token:', refreshError);
-          return null;
+          throw refreshError;
         }
       }
       
-      // Token is valid
-      console.log('Using existing valid access token');
-      return accessToken;
-    } catch (error) {
-      console.error('Error getting valid token:', error);
+      // No refresh token available
+      if (expiresInMs <= 0) {
+        throw new ReAuthenticationRequiredError('Token expired and no refresh token available');
+      }
+      
       return null;
+    } catch (error) {
+      if (error instanceof ReAuthenticationRequiredError) {
+        throw error;
+      }
+      console.error('Error getting valid token:', error);
+      throw error;
     }
   },
   
-  // Helper method for token handling - now just returns null instead of auto-authenticating
-  async _initiateAuthFlowForNewToken() {
-    console.log('Auto-authentication disabled, returning null instead of initiating auth flow');
-    return null;
+  /**
+   * Centralized method to get tokens from various storage locations
+   * @returns {Promise<Object>} - Object with accessToken, refreshToken, tokenExpiry
+   * @private
+   */
+  async _getTokensFromStorage() {
+    const tokenData = await new Promise(resolve => {
+      chrome.storage.local.get([
+        this.config.storageKeys.accessToken,
+        this.config.storageKeys.refreshToken,
+        this.config.storageKeys.tokenExpiry,
+        'eloward_riot_access_token',
+        'eloward_riot_refresh_token',
+        'eloward_riot_token_expiry',
+        'riotAuth'
+      ], resolve);
+    });
+    
+    let accessToken = tokenData[this.config.storageKeys.accessToken] || tokenData.eloward_riot_access_token;
+    let refreshToken = tokenData[this.config.storageKeys.refreshToken] || tokenData.eloward_riot_refresh_token;
+    let tokenExpiry = tokenData[this.config.storageKeys.tokenExpiry] || tokenData.eloward_riot_token_expiry;
+    
+    // Fallback to riotAuth object
+    if (!accessToken && tokenData.riotAuth) {
+      accessToken = tokenData.riotAuth.access_token;
+      refreshToken = refreshToken || tokenData.riotAuth.refresh_token;
+      
+      if (!tokenExpiry) {
+        tokenExpiry = tokenData.riotAuth.expires_at || 
+          (tokenData.riotAuth.issued_at && tokenData.riotAuth.expires_in ? 
+           tokenData.riotAuth.issued_at + (tokenData.riotAuth.expires_in * 1000) : null);
+      }
+    }
+    
+    return { accessToken, refreshToken, tokenExpiry };
   },
   
   /**
@@ -800,28 +732,18 @@ export const RiotAuth = {
    * @private
    */
   async _getStoredValue(key) {
-    try {
-      if (!key) throw new Error('No storage key provided');
-      
-      console.log(`Getting stored value for key: ${key}`);
-      
-      // Get only from chrome.storage.local for consistency
-      return new Promise((resolve) => {
-        chrome.storage.local.get([key], (result) => {
-          const error = chrome.runtime.lastError;
-          if (error) {
-            console.error(`Error retrieving value for key ${key}:`, error);
-            resolve(null);
-          } else {
-            console.log(`Successfully retrieved value for key: ${key}, exists: ${!!result[key]}`);
-            resolve(result[key]);
-          }
-        });
+    if (!key) return null;
+    
+    return new Promise((resolve) => {
+      chrome.storage.local.get([key], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error(`Error retrieving value for key ${key}:`, chrome.runtime.lastError);
+          resolve(null);
+        } else {
+          resolve(result[key]);
+        }
       });
-    } catch (error) {
-      console.error(`Error in _getStoredValue for key: ${key}`, error);
-      return null;
-    }
+    });
   },
   
   /**
@@ -829,77 +751,49 @@ export const RiotAuth = {
    * @returns {Promise<Object>} - The refreshed token data or null if refresh fails
    */
   async refreshToken() {
-    console.log('Attempting to refresh access token');
-    
-    // Retrieve stored tokens directly using the internal helper
     const storedData = await this._getStoredValue('riotAuth'); 
-    const refreshToken = storedData?.refresh_token; // Get refresh token from stored data
+    const refreshToken = storedData?.refresh_token;
 
     if (!refreshToken) {
-      console.warn('No refresh token found in storage. Cannot refresh.');
-      // Instead of logging out immediately, throw error to trigger silent re-auth
       throw new ReAuthenticationRequiredError("No refresh token available for refresh.");
     }
 
     try {
-      const refreshTokenPayload = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken // Use the retrieved refresh token
-      };
-      
-      console.log('Refreshing access token via worker...');
-      // Fix the URL to match the server endpoint
-      const tokenUrl = `${this.config.proxyBaseUrl}/auth/riot/token/refresh`; 
-      console.log('Making token refresh request to:', tokenUrl);
-
-      const response = await fetch(tokenUrl, {
+      const response = await fetch(`${this.config.proxyBaseUrl}/auth/riot/token/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(refreshTokenPayload),
+        body: JSON.stringify({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        }),
       });
 
       if (!response.ok) {
-        console.warn(`Token refresh failed with status ${response.status}. Token likely expired, will attempt silent re-authentication.`);
-        // Instead of logging out, throw error to trigger silent re-auth
         throw new ReAuthenticationRequiredError(`Token refresh failed with status ${response.status}`);
       }
 
       const newTokens = await response.json();
-      console.log('Token refresh successful, received new tokens');
-
-      // Handle the response structure from the server (data wrapper)
       const actualTokenData = newTokens.data || newTokens;
 
-      // Prepare data for storage, ensuring expiry is calculated
       const tokensToStore = {
         access_token: actualTokenData.access_token,
-        id_token: actualTokenData.id_token || storedData?.id_token, // Keep old id_token if not refreshed
-        refresh_token: actualTokenData.refresh_token || refreshToken, // IMPORTANT: Use the new refresh token if provided
-        expires_at: Date.now() + (actualTokenData.expires_in * 1000), // Calculate new expiry time
-        // Add other relevant fields if necessary, e.g., scope, token_type
+        id_token: actualTokenData.id_token || storedData?.id_token,
+        refresh_token: actualTokenData.refresh_token || refreshToken,
+        expires_at: Date.now() + (actualTokenData.expires_in * 1000),
         scope: actualTokenData.scope || storedData?.scope,
         token_type: actualTokenData.token_type || storedData?.token_type,
-        // Keep issued_at if it exists and wasn't part of the refresh response
         issued_at: storedData?.issued_at 
       };
 
-      // Use the internal _storeTokens method to update storage
-      await this._storeTokens(tokensToStore); 
-      console.log('Updated tokens stored after refresh using _storeTokens');
-      
-      // Return only the necessary parts (like access token) or the whole new object as needed
-      // Returning the full stored object might be useful for consistency elsewhere
+      await this._storeTokens(tokensToStore);
       return tokensToStore; 
 
     } catch (error) {
-      console.error('Error during token refresh:', error);
-      // If it's our specific re-auth error, re-throw it for handling upstream
       if (error instanceof ReAuthenticationRequiredError) {
         throw error;
       }
-      // For other errors, also throw re-auth error to trigger silent re-authentication
       throw new ReAuthenticationRequiredError(`Unexpected error during token refresh: ${error.message}`);
     }
   },
@@ -910,8 +804,6 @@ export const RiotAuth = {
    * @returns {Promise<Object>} - The new user data
    */
   async performSilentReauth(region) {
-    console.log('Performing silent re-authentication...');
-    
     try {
       // Clear any existing callbacks to ensure clean auth flow
       await new Promise(resolve => {
@@ -926,7 +818,6 @@ export const RiotAuth = {
       const authUrl = await this._getAuthUrl(region, state);
       
       // Open auth window for silent re-authentication
-      console.log('Opening silent re-authentication window');
       this._openAuthWindow(authUrl);
       
       // Wait for the authentication callback
@@ -942,7 +833,7 @@ export const RiotAuth = {
       }
       
       // Exchange code for tokens
-      const tokenData = await this.exchangeCodeForTokens(authResult.code);
+      await this.exchangeCodeForTokens(authResult.code);
       
       // Get fresh user data
       const userData = await this.getUserData();
@@ -950,7 +841,6 @@ export const RiotAuth = {
       // Update persistent storage
       await PersistentStorage.storeRiotUserData(userData);
       
-      console.log('Silent re-authentication completed successfully');
       return userData;
     } catch (error) {
       console.error('Silent re-authentication failed:', error);
@@ -1012,19 +902,12 @@ export const RiotAuth = {
    * @private
    */
   _generateRandomState() {
-    // Generate 32 bytes (256 bits) of random data
     const randomBytes = new Uint8Array(32);
     crypto.getRandomValues(randomBytes);
     
-    // Convert to hex string
-    const hexString = Array.from(randomBytes)
+    return Array.from(randomBytes)
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
-    
-    console.log(`Generated secure random state (${hexString.length} chars):`, 
-                hexString.substring(0, 6) + '...' + hexString.substring(hexString.length - 6));
-    
-    return hexString;
   },
   
   /**
@@ -1036,15 +919,14 @@ export const RiotAuth = {
       // Get access token for API request
       const accessToken = await this.getValidToken();
       
-      console.log('Retrieved valid access token for API request (token length: ' + accessToken.length + ')');
-      console.log('Token prefix: ' + accessToken.substring(0, 8) + '...');
+
       
       // Determine regional route based on platform/region
       const storedRegion = await this._getStoredValue('selectedRegion');
       const platform = storedRegion || 'na1';
       const regionalRoute = this._getRegionalRouteFromPlatform(platform);
       
-      console.log(`Using regional route: ${regionalRoute} for platform: ${platform}`);
+
       
       // We'll try multiple endpoints to get account info
       let accountInfo = null;
@@ -1053,7 +935,6 @@ export const RiotAuth = {
       // Try the actual Cloudflare Worker endpoint first
       try {
         const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/${regionalRoute}`;
-        console.log(`Making account info request to: ${requestUrl}`);
         
         const response = await fetch(requestUrl, {
           method: 'GET',
@@ -1062,11 +943,8 @@ export const RiotAuth = {
           }
         });
         
-        console.log('Account info response status:', response.status, response.statusText);
-        
         if (response.ok) {
           accountInfo = await response.json();
-          console.log('Successfully retrieved account info from Riot Account API');
         } else {
           // Store error but continue to fallback methods
           const errorData = await response.json().catch(() => ({}));

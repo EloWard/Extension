@@ -494,12 +494,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Refresh rank function to update player rank information
   async function refreshRank() {
     try {
-      console.log('Refreshing rank information...');
-      
       // First check if the user is authenticated
       const isAuthenticated = await RiotAuth.isAuthenticated();
       if (!isAuthenticated) {
-        console.log('User is not authenticated, cannot refresh rank');
         showAuthError('Please connect your account first');
         return;
       }
@@ -511,21 +508,16 @@ document.addEventListener('DOMContentLoaded', () => {
       // Attempt to refresh rank data
       await performRankRefresh();
       
-      console.log('Rank information successfully refreshed');
     } catch (error) {
       // Check if it's the specific re-authentication error
       if (error.name === "ReAuthenticationRequiredError") {
-        console.log('Re-authentication required, performing silent re-authentication...');
         try {
           // Perform silent re-authentication to get fresh tokens
           const region = regionSelect.value;
           await RiotAuth.performSilentReauth(region);
           
           // After successful silent re-auth, automatically retry the rank refresh
-          console.log('Silent re-authentication successful, retrying rank refresh...');
           await performRankRefresh();
-          
-          console.log('Rank refresh completed successfully after silent re-authentication');
         } catch (authError) {
           console.error('Error during silent re-authentication:', authError);
           // If silent re-auth fails, show error but don't break connection
@@ -576,7 +568,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Get the current selected region
     const selectedRegion = regionSelect.value;
-    console.log('Using selected region during refresh:', selectedRegion);
     
     // Force a fresh rank lookup using PUUID
     const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
@@ -589,7 +580,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Update persistent storage with the fresh user data including new rank
     await PersistentStorage.storeRiotUserData(userData);
-    console.log('Updated persistent storage with refreshed rank information');
     
     // Update rank in the database
     try {
@@ -601,8 +591,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
       
       if (twitchUsername && userData.soloQueueRank) {
-        console.log('Uploading updated rank data to database for:', twitchUsername);
-        
         // Import RankAPI
         const { RankAPI } = await import('./rankAPI.js');
         
@@ -618,7 +606,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Upload rank to database
         await RankAPI.uploadRank(twitchUsername, rankData);
-        console.log('Rank data updated in database successfully');
       }
     } catch (dbError) {
       console.error('Error updating rank in database:', dbError);
