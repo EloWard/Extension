@@ -442,12 +442,7 @@ function initializeExtension() {
  * Setup URL change observer for SPA navigation
  */
 function setupUrlChangeObserver() {
-  if (window._eloward_url_observer) {
-    console.log('URL observer already exists, skipping setup');
-    return;
-  }
-  
-  console.log('Setting up URL change observer');
+  if (window._eloward_url_observer) return;
   
   const urlObserver = new MutationObserver(function(mutations) {
     const currentChannel = getCurrentChannelName();
@@ -462,8 +457,6 @@ function setupUrlChangeObserver() {
     
     // Handle channel changes (including from homepage to channel)
     if (currentChannel && currentChannel !== extensionState.channelName) {
-      console.log(`EloWard: Navigation detected from ${extensionState.channelName || 'homepage'} to ${currentChannel}`);
-      
       if (extensionState.channelName) {
         cleanupChannel(extensionState.channelName);
       }
@@ -471,18 +464,15 @@ function setupUrlChangeObserver() {
       extensionState.channelName = currentChannel;
       clearRankCache();
       
-      // Use a short delay to ensure page content is loaded
       setTimeout(() => {
         const verifyChannel = getCurrentChannelName();
         if (verifyChannel === currentChannel) {
-          console.log(`EloWard: Initializing for channel: ${currentChannel}`);
           initializeExtension();
         }
       }, 500);
     }
     // Handle navigation away from channels (e.g., to homepage)
     else if (!currentChannel && extensionState.channelName) {
-      console.log(`EloWard: Navigation detected away from channel ${extensionState.channelName}`);
       cleanupChannel(extensionState.channelName);
       extensionState.channelName = null;
     }
@@ -490,7 +480,6 @@ function setupUrlChangeObserver() {
   
   urlObserver.observe(document, { subtree: true, childList: true });
   window._eloward_url_observer = urlObserver;
-  console.log('URL observer setup complete');
 }
 
 /**
