@@ -849,20 +849,18 @@ export const RiotAuth = {
   },
   
   /**
-   * Logout from Riot - clear tokens and user data
-   * @param {boolean} forceReload - Whether to reload the extension after logout
-   * @returns {Promise<boolean>} - Whether logout was successful
+   * Completely disconnect and clear all Riot data including persistent storage
+   * @returns {Promise<boolean>} - Whether disconnect was successful
    */
-  async logout(forceReload = true) {
+  async disconnect() {
     try {
-      console.log('Logging out of Riot account');
+      console.log('Completely disconnecting Riot account');
       
-      // The most important part - clear the persistent user data first
-      // This ensures the user appears logged out even if token clearing fails
+      // Clear persistent user data
       await PersistentStorage.clearServiceData('riot');
       console.log('Cleared persistent Riot user data');
       
-      // Now clear all the tokens and related data
+      // Clear all the tokens and session data
       let keysToRemove = [
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
@@ -872,26 +870,19 @@ export const RiotAuth = {
         this.config.storageKeys.accountInfo,
         this.config.storageKeys.rankInfo,
         this.config.storageKeys.authState,
-        'riotAuth', // Add the main riotAuth object to be cleared
-        'riot_auth_callback', // Also clear any auth callbacks
-        'eloward_auth_callback' // Clear common auth callback key
+        'riotAuth',
+        'riot_auth_callback',
+        'eloward_auth_callback'
       ];
       
       // Clear from chrome.storage
       await chrome.storage.local.remove(keysToRemove);
-      console.log('Cleared Riot tokens from chrome.storage');
+      console.log('Cleared all Riot data from chrome.storage');
       
-      if (forceReload) {
-        console.log('Reloading extension after Riot logout');
-        setTimeout(() => {
-          chrome.runtime.reload();
-        }, 500);
-      }
-      
-      console.log('Riot logout completed successfully');
+      console.log('Riot disconnect completed successfully');
       return true;
     } catch (error) {
-      console.error('Error during Riot logout:', error);
+      console.error('Error during Riot disconnect:', error);
       return false;
     }
   },

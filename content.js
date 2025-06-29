@@ -141,7 +141,7 @@ async function initializeChannel(channelName, initializationId) {
   }
 }
 
-// Initialize storage and load user data
+// Initialize storage and load user data (preserved across sessions)
 function initializeStorage() {
   chrome.storage.local.get(null, (allData) => {
     extensionState.currentUser = findCurrentUser(allData);
@@ -151,16 +151,19 @@ function initializeStorage() {
         action: 'set_current_user',
         username: extensionState.currentUser
       });
+      console.log(`EloWard: Current user identified as ${extensionState.currentUser} (from persistent storage)`);
     }
   });
 }
 
-// Find current Twitch user from storage
+// Find current Twitch user from storage (prioritizes persistent storage)
 function findCurrentUser(allData) {
+  // Check persistent storage first (preserved even when tokens expire)
   if (allData.eloward_persistent_twitch_user_data?.login) {
     return allData.eloward_persistent_twitch_user_data.login.toLowerCase();
   } 
   
+  // Fallback to legacy storage keys
   if (allData.twitchUsername) {
     return allData.twitchUsername.toLowerCase();
   }
@@ -581,7 +584,7 @@ function processNewMessage(messageNode) {
   
   const username = usernameElement.textContent.trim().toLowerCase();
   
-  // Handle current user with stored Riot data
+  // Handle current user with stored Riot data (even if tokens expired)
   if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
     chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
       const riotData = data.eloward_persistent_riot_user_data;

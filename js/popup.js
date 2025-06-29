@@ -240,29 +240,44 @@ document.addEventListener('DOMContentLoaded', () => {
       const persistentConnectedState = await PersistentStorage.getConnectedState();
       console.log('Persistent connected state:', persistentConnectedState);
       
-      // If Riot is connected in persistent storage, display that data immediately
-      if (persistentConnectedState.riot) {
-        const storedRiotData = await PersistentStorage.getRiotUserData();
-        if (storedRiotData) {
-          console.log('Using Riot data from persistent storage for initial UI display');
-          // Adapt stored data to match the format expected by updateUserInterface
-          const userData = {
-            gameName: storedRiotData.gameName,
-            tagLine: storedRiotData.tagLine,
-            puuid: storedRiotData.puuid,
-            soloQueueRank: storedRiotData.rankInfo
-          };
+      // Check persistent storage for user data (even if not "connected" due to expired tokens)
+      const storedRiotData = await PersistentStorage.getRiotUserData();
+      if (storedRiotData) {
+        console.log('Found Riot data in persistent storage');
+        // Adapt stored data to match the format expected by updateUserInterface
+        const userData = {
+          gameName: storedRiotData.gameName,
+          tagLine: storedRiotData.tagLine,
+          puuid: storedRiotData.puuid,
+          soloQueueRank: storedRiotData.rankInfo
+        };
+        
+        if (persistentConnectedState.riot) {
+          // User is actively connected with valid tokens
+          console.log('User has valid connection and stored data');
           updateUserInterface(userData);
           refreshRankBtn.classList.remove('hidden'); // Show refresh button
+        } else {
+          // User has stored data but tokens may be expired
+          console.log('User has stored data but may need to reconnect for fresh rank updates');
+          updateUserInterface(userData);
+          // Still show refresh button - it will handle re-authentication if needed
+          refreshRankBtn.classList.remove('hidden');
           
-          // Get the connected region from storage and update the selector
-          chrome.storage.local.get(['selectedRegion'], (result) => {
-            if (result.selectedRegion) {
-              console.log('Setting region selector to connected region:', result.selectedRegion);
-              regionSelect.value = result.selectedRegion;
-            }
-          });
+          // Show connection status as the stored username (data preserved)
+          const riotId = `${userData.gameName}#${userData.tagLine}`;
+          riotConnectionStatus.textContent = riotId;
+          riotConnectionStatus.classList.add('connected');
+          connectRiotBtn.textContent = 'Disconnect';
         }
+        
+        // Get the connected region from storage and update the selector
+        chrome.storage.local.get(['selectedRegion'], (result) => {
+          if (result.selectedRegion) {
+            console.log('Setting region selector to stored region:', result.selectedRegion);
+            regionSelect.value = result.selectedRegion;
+          }
+        });
       } else {
         // Show not connected UI for Riot
         console.log('No Riot data in persistent storage, showing not connected UI');
@@ -287,15 +302,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
       
-      // If Twitch is connected in persistent storage, display that data immediately
-      if (persistentConnectedState.twitch) {
-        const storedTwitchData = await PersistentStorage.getTwitchUserData();
-        if (storedTwitchData) {
-          console.log('Using Twitch data from persistent storage for initial UI display');
-          twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
-          twitchConnectionStatus.classList.add('connected');
-          connectTwitchBtn.textContent = 'Disconnect';
+      // Check persistent storage for Twitch data (even if not "connected" due to expired tokens)
+      const storedTwitchData = await PersistentStorage.getTwitchUserData();
+      if (storedTwitchData) {
+        console.log('Found Twitch data in persistent storage');
+        
+        if (persistentConnectedState.twitch) {
+          // User is actively connected with valid tokens
+          console.log('User has valid Twitch connection and stored data');
+        } else {
+          // User has stored data but tokens may be expired
+          console.log('User has stored Twitch data but may need to reconnect');
         }
+        
+        // Show user data regardless of connection status (data preserved)
+        twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
+        twitchConnectionStatus.classList.add('connected');
+        connectTwitchBtn.textContent = 'Disconnect';
       }
       
       // Check Twitch authentication status
@@ -397,14 +420,10 @@ document.addEventListener('DOMContentLoaded', () => {
           riotConnectionStatus.classList.add('disconnecting');
           
           try {
-            // Clear persistent storage data for Riot before logout
-            await PersistentStorage.clearServiceData('riot');
-            console.log('Cleared Riot persistent storage data during disconnect');
+            // Use disconnect method to clear both tokens and persistent data
+            await RiotAuth.disconnect();
             
-            // Log out via RiotAuth WITHOUT forcing reload (smooth transition)
-            await RiotAuth.logout(false);
-            
-            // Update UI manually instead of relying on page reload
+            // Update UI manually
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('connected', 'disconnecting');
             connectRiotBtn.textContent = 'Connect';
@@ -683,11 +702,8 @@ document.addEventListener('DOMContentLoaded', () => {
         connectTwitchBtn.textContent = 'Disconnecting...';
         connectTwitchBtn.disabled = true;
         
-        // Clear persistent storage data for Twitch before logout
-        await PersistentStorage.clearServiceData('twitch');
-        console.log('Cleared Twitch persistent storage data during disconnect');
-        
-        await TwitchAuth.logout();
+        // Use disconnect method to clear both tokens and persistent data
+        await TwitchAuth.disconnect();
         
         // Update UI after logout
         twitchConnectionStatus.textContent = 'Not Connected';

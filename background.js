@@ -1405,15 +1405,17 @@ function getUserLinkedAccount(twitchUsername) {
         return;
       }
       
-      // Single fallback - check if current user matches
+      // Check persistent storage for user data (even if tokens expired)
       chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'eloward_persistent_riot_user_data'], currentUserData => {
         const currentTwitchData = currentUserData.eloward_persistent_twitch_user_data;
         const currentRiotData = currentUserData.eloward_persistent_riot_user_data;
         
+        // Check if this username matches our stored user data
         if (currentTwitchData?.login?.toLowerCase() === normalizedTwitchUsername && currentRiotData) {
+          console.log(`Found stored user data for ${normalizedTwitchUsername} (tokens may be expired but data preserved)`);
           resolve(currentRiotData);
-            return;
-          }
+          return;
+        }
         
         resolve(null);
       });

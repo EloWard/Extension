@@ -21,12 +21,15 @@ export const PersistentStorage = {
   /**
    * Initialize persistence
    * Sets up the persistence flag to ensure data doesn't expire
+   * User data is preserved across sessions even when tokens expire
    */
   init() {
     chrome.storage.local.set({
-      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
+      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true,
+      // Add timestamp for tracking when persistence was enabled
+      eloward_persistence_initialized_at: Date.now()
     });
-    console.log('PersistentStorage initialized with infinite persistence');
+    console.log('PersistentStorage initialized - user data will be preserved across sessions even when tokens expire');
   },
   
   /**
@@ -209,5 +212,61 @@ export const PersistentStorage = {
     ]);
     
     console.log('All persistent user data cleared successfully');
+  },
+
+  /**
+   * Get stored usernames even if not currently connected (for database access)
+   * @returns {Promise<Object>} - Object with Twitch and Riot usernames if available
+   */
+  async getStoredUsernames() {
+    try {
+      const [twitchData, riotData] = await Promise.all([
+        this.getTwitchUserData(),
+        this.getRiotUserData()
+      ]);
+
+      return {
+        twitchUsername: twitchData?.login || null,
+        riotUsername: riotData?.gameName && riotData?.tagLine 
+          ? `${riotData.gameName}#${riotData.tagLine}` 
+          : null,
+        puuid: riotData?.puuid || null
+      };
+    } catch (error) {
+      console.error('Error getting stored usernames:', error);
+      return {
+        twitchUsername: null,
+        riotUsername: null,
+        puuid: null
+      };
+    }
+  },
+
+  /**
+   * Check if we have stored user data (regardless of connection status)
+   * @returns {Promise<Object>} - Object indicating what data is available
+   */
+  async hasStoredUserData() {
+    try {
+      const [twitchData, riotData] = await Promise.all([
+        this.getTwitchUserData(),
+        this.getRiotUserData()
+      ]);
+
+      return {
+        hasTwitchData: !!twitchData?.login,
+        hasRiotData: !!(riotData?.gameName && riotData?.puuid),
+        hasRankData: !!riotData?.rankInfo,
+        canAccessDatabase: !!(twitchData?.login && riotData?.puuid)
+      };
+    } catch (error) {
+      console.error('Error checking stored user data:', error);
+      return {
+        hasTwitchData: false,
+        hasRiotData: false,
+        hasRankData: false,
+        canAccessDatabase: false
+      };
+    }
   }
 }; 
