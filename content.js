@@ -32,6 +32,11 @@ let tooltipShowTimeout = null;
 
 // Initialize extension
 initializeStorage();
+
+// Always setup URL observer first, regardless of current page
+setupUrlChangeObserver();
+
+// Then initialize if on a channel page
 initializeExtension();
 
 // Handle SPA navigation
@@ -387,9 +392,6 @@ function initializeExtension() {
     newChannel: currentChannel
   });
   
-  // Setup URL observer
-  setupUrlChangeObserver();
-  
   // Get current game and initialize
   setTimeout(() => {
     if (extensionState.currentInitializationId !== initializationId) {
@@ -440,20 +442,28 @@ function initializeExtension() {
  * Setup URL change observer for SPA navigation
  */
 function setupUrlChangeObserver() {
-  if (window._eloward_url_observer) return;
+  if (window._eloward_url_observer) {
+    console.log('URL observer already exists, skipping setup');
+    return;
+  }
+  
+  console.log('Setting up URL change observer');
   
   const urlObserver = new MutationObserver(function(mutations) {
     const currentChannel = getCurrentChannelName();
     
-    if (!currentChannel || 
-        window.location.pathname.includes('oauth2') || 
+    // Skip if on auth pages
+    if (window.location.pathname.includes('oauth2') || 
         window.location.pathname.includes('auth/') ||
         window.location.href.includes('auth/callback') ||
         window.location.href.includes('auth/redirect')) {
       return;
     }
     
-    if (currentChannel !== extensionState.channelName) {
+    // Handle channel changes (including from homepage to channel)
+    if (currentChannel && currentChannel !== extensionState.channelName) {
+      console.log(`EloWard: Navigation detected from ${extensionState.channelName || 'homepage'} to ${currentChannel}`);
+      
       if (extensionState.channelName) {
         cleanupChannel(extensionState.channelName);
       }
@@ -461,17 +471,26 @@ function setupUrlChangeObserver() {
       extensionState.channelName = currentChannel;
       clearRankCache();
       
+      // Use a short delay to ensure page content is loaded
       setTimeout(() => {
         const verifyChannel = getCurrentChannelName();
         if (verifyChannel === currentChannel) {
+          console.log(`EloWard: Initializing for channel: ${currentChannel}`);
           initializeExtension();
         }
       }, 500);
+    }
+    // Handle navigation away from channels (e.g., to homepage)
+    else if (!currentChannel && extensionState.channelName) {
+      console.log(`EloWard: Navigation detected away from channel ${extensionState.channelName}`);
+      cleanupChannel(extensionState.channelName);
+      extensionState.channelName = null;
     }
   });
   
   urlObserver.observe(document, { subtree: true, childList: true });
   window._eloward_url_observer = urlObserver;
+  console.log('URL observer setup complete');
 }
 
 /**
