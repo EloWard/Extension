@@ -29,7 +29,6 @@ export const PersistentStorage = {
       // Add timestamp for tracking when persistence was enabled
       eloward_persistence_initialized_at: Date.now()
     });
-    console.log('PersistentStorage initialized - user data will be preserved across sessions even when tokens expire');
   },
   
   /**
@@ -40,10 +39,7 @@ export const PersistentStorage = {
   async storeRiotUserData(userData) {
     if (!userData) return;
     
-    console.log('Storing persistent Riot user data');
-    
     // Extract only the necessary data for display
-    // This reduces storage size and removes sensitive data
     const persistentData = {
       gameName: userData.gameName,
       tagLine: userData.tagLine,
@@ -71,8 +67,6 @@ export const PersistentStorage = {
     
     // Update connected state
     await this.updateConnectedState('riot', true);
-    
-    console.log('Persistent Riot user data stored successfully');
   },
   
   /**
@@ -80,12 +74,8 @@ export const PersistentStorage = {
    * @returns {Promise<Object|null>} - The stored Riot user data or null if not found
    */
   async getRiotUserData() {
-    console.log('Getting persistent Riot user data');
-    
     const data = await chrome.storage.local.get([STORAGE_KEYS.RIOT_USER_DATA]);
     const userData = data[STORAGE_KEYS.RIOT_USER_DATA];
-    
-    console.log('Persistent Riot user data retrieved:', userData ? 'found' : 'not found');
     
     return userData || null;
   },
@@ -97,8 +87,6 @@ export const PersistentStorage = {
    */
   async storeTwitchUserData(userData) {
     if (!userData) return;
-    
-    console.log('Storing persistent Twitch user data');
     
     // Extract only the necessary data for display
     const persistentData = {
@@ -117,8 +105,6 @@ export const PersistentStorage = {
     
     // Update connected state
     await this.updateConnectedState('twitch', true);
-    
-    console.log('Persistent Twitch user data stored successfully');
   },
   
   /**
@@ -126,12 +112,8 @@ export const PersistentStorage = {
    * @returns {Promise<Object|null>} - The stored Twitch user data or null if not found
    */
   async getTwitchUserData() {
-    console.log('Getting persistent Twitch user data');
-    
     const data = await chrome.storage.local.get([STORAGE_KEYS.TWITCH_USER_DATA]);
     const userData = data[STORAGE_KEYS.TWITCH_USER_DATA];
-    
-    console.log('Persistent Twitch user data retrieved:', userData ? 'found' : 'not found');
     
     return userData || null;
   },
@@ -143,8 +125,6 @@ export const PersistentStorage = {
    * @returns {Promise<void>}
    */
   async updateConnectedState(service, isConnected) {
-    console.log(`Updating ${service} connected state to: ${isConnected}`);
-    
     // Get current state
     const data = await chrome.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
     const connectedState = data[STORAGE_KEYS.CONNECTED_STATE] || {};
@@ -183,8 +163,6 @@ export const PersistentStorage = {
    * @returns {Promise<void>}
    */
   async clearServiceData(service) {
-    console.log(`Clearing persistent data for ${service}`);
-    
     if (service === 'riot') {
       await chrome.storage.local.remove([STORAGE_KEYS.RIOT_USER_DATA]);
     } else if (service === 'twitch') {
@@ -193,8 +171,6 @@ export const PersistentStorage = {
     
     // Update connected state
     await this.updateConnectedState(service, false);
-    
-    console.log(`Persistent data for ${service} cleared successfully`);
   },
   
   /**
@@ -202,16 +178,12 @@ export const PersistentStorage = {
    * @returns {Promise<void>}
    */
   async clearAllData() {
-    console.log('Clearing all persistent user data');
-    
     await chrome.storage.local.remove([
       STORAGE_KEYS.RIOT_USER_DATA,
       STORAGE_KEYS.TWITCH_USER_DATA,
       STORAGE_KEYS.LAST_UPDATED,
       STORAGE_KEYS.CONNECTED_STATE
     ]);
-    
-    console.log('All persistent user data cleared successfully');
   },
 
   /**

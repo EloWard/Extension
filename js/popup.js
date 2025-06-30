@@ -45,7 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Add event listener for Twitch connect button
   if (connectTwitchBtn) {
-    console.log('Adding click event listener to Twitch connect button');
     connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   } else {
     console.error('Could not find connect-twitch button');
@@ -70,16 +69,10 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Listen for messages from the auth window or background script
   window.addEventListener('message', function(event) {
-    // Log all messages for debugging
-    console.log('Popup received window message:', event);
-    console.log('Popup received window message data:', event.data);
-    
     // Handle auth callback messages
     if (!processingMessage && event.data && 
         ((event.data.type === 'auth_callback' && event.data.code) || 
          (event.data.source === 'eloward_auth' && event.data.code))) {
-      
-      console.log('Received auth callback via window message with code - forwarding to RiotAuth');
       
       // Set flag to prevent recursion
       processingMessage = true;
@@ -89,8 +82,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'auth_callback': event.data,
         'eloward_auth_callback': event.data
       }, () => {
-        console.log('Stored auth callback data in chrome.storage from popup');
-        
         // Process the auth callback now
         processAuthCallback(event.data);
         
@@ -101,25 +92,20 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Handle retry authentication
     if (event.data && event.data.type === 'eloward_auth_retry') {
-      console.log('Retrying authentication...');
       connectRiotAccount();
     }
   });
   
   // Listen for messages from the background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('Popup received message:', message);
-    
     // Handle auth callback messages
     if (message.type === 'auth_callback' && message.params) {
-      console.log('Received auth callback via chrome message');
       processAuthCallback(message.params);
       sendResponse({ success: true });
     }
     
     // Handle clear_local_storage message (kept for backward compatibility)
     if (message.action === 'clear_local_storage') {
-      console.log('Received clear_local_storage message (deprecated)');
       // No action needed as we only use chrome.storage.local now
       sendResponse({ success: true });
     }
@@ -130,8 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Process auth callback from various sources
   async function processAuthCallback(params) {
     try {
-      console.log('Processing auth callback with params:', params);
-      
       // Store the auth callback data in chrome.storage for processing by authenticator
       await new Promise(resolve => {
         chrome.storage.local.set({ 'auth_callback': { code: params.code, state: params.state } }, resolve);
@@ -139,10 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resolve();
       });
       
-      console.log('Stored auth callback in chrome.storage, connection flow will handle data retrieval');
-      
-      // We don't automatically retrieve user data here anymore
-      // The connect button flow will handle this when explicitly triggered by the user
     } catch (error) {
       console.error('Error processing auth callback:', error);
       // Only show error if the connection button isn't in a "connecting" state
@@ -155,8 +135,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update UI based on user data
   function updateUserInterface(userData) {
     try {
-      console.log('Updating UI with user data:', userData);
-      
       if (userData && userData.gameName) {
         // Show Riot ID
         const riotId = `${userData.gameName}#${userData.tagLine}`;
@@ -194,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
           rankInfo = userData.rankInfo;
         }
         
-        console.log('Adapted rank info for display:', rankInfo);
+
         
         // Show rank if available
         if (rankInfo) {
@@ -239,7 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
       // Check persistent storage for user data (even if not "connected" due to expired tokens)
       const storedRiotData = await PersistentStorage.getRiotUserData();
       if (storedRiotData) {
-        console.log('Found Riot data in persistent storage');
         // Adapt stored data to match the format expected by updateUserInterface
         const userData = {
           gameName: storedRiotData.gameName,
@@ -250,12 +227,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (persistentConnectedState.riot) {
           // User is actively connected with valid tokens
-          console.log('User has valid connection and stored data');
           updateUserInterface(userData);
           refreshRankBtn.classList.remove('hidden'); // Show refresh button
         } else {
           // User has stored data but tokens may be expired
-          console.log('User has stored data but may need to reconnect for fresh rank updates');
           updateUserInterface(userData);
           // Still show refresh button - it will handle re-authentication if needed
           refreshRankBtn.classList.remove('hidden');
@@ -270,13 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get the connected region from storage and update the selector
         chrome.storage.local.get(['selectedRegion'], (result) => {
           if (result.selectedRegion) {
-            console.log('Setting region selector to stored region:', result.selectedRegion);
             regionSelect.value = result.selectedRegion;
           }
         });
       } else {
         // Show not connected UI for Riot
-        console.log('No Riot data in persistent storage, showing not connected UI');
         riotConnectionStatus.textContent = 'Not Connected';
         riotConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
         connectRiotBtn.textContent = 'Connect';
@@ -301,16 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
       // Check persistent storage for Twitch data (even if not "connected" due to expired tokens)
       const storedTwitchData = await PersistentStorage.getTwitchUserData();
       if (storedTwitchData) {
-        console.log('Found Twitch data in persistent storage');
-        
-        if (persistentConnectedState.twitch) {
-          // User is actively connected with valid tokens
-          console.log('User has valid Twitch connection and stored data');
-        } else {
-          // User has stored data but tokens may be expired
-          console.log('User has stored Twitch data but may need to reconnect');
-        }
-        
         // Show user data regardless of connection status (data preserved)
         twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
         twitchConnectionStatus.classList.add('connected');
@@ -319,9 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Check Twitch authentication status
       try {
-        console.log('Checking Twitch authentication status...');
         const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
-        console.log('Twitch auth status:', isTwitchAuthenticated);
         
         let isTwitchConnected = false;
         if (isTwitchAuthenticated) {
@@ -429,8 +390,6 @@ document.addEventListener('DOMContentLoaded', () => {
             rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
             rankBadgePreview.style.transform = 'translateY(-3px)';
             refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
-            
-            console.log('Successfully disconnected from Riot account');
           } catch (error) {
             console.error('Error disconnecting:', error);
             
@@ -458,23 +417,18 @@ document.addEventListener('DOMContentLoaded', () => {
       riotConnectionStatus.classList.remove('error');
       riotConnectionStatus.classList.add('connecting');
       
-      console.log('Connecting to Riot with region:', region);
-      
       try {
         // Use the Riot RSO authentication module
         const userData = await RiotAuth.authenticate(region);
-        console.log('Authentication successful:', userData);
         
         // Store user data in persistent storage
         await PersistentStorage.storeRiotUserData(userData);
-        console.log('Stored Riot user data in persistent storage during connect');
         
         // Update UI with the user data
         updateUserInterface(userData);
         
         // Store the connected region in storage and ensure the region selector reflects the current region
         await chrome.storage.local.set({ selectedRegion: region });
-        console.log('Stored region in storage:', region);
       } catch (error) {
         console.error('Error in connectRiotAccount:', error);
         
@@ -502,8 +456,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
     chrome.storage.local.set({ selectedRegion });
-    console.log('Region preference saved:', selectedRegion);
-    // Region change should not trigger a refresh - only store the preference for next connection
   }
 
   // Refresh rank function to update player rank information
@@ -673,8 +625,6 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Function to handle Twitch account connection and disconnection
   async function connectTwitchAccount() {
-    console.log('connectTwitchAccount function called');
-    
     // Check if TwitchAuth is available
     if (typeof TwitchAuth === 'undefined') {
       console.error('TwitchAuth module is not loaded properly');
@@ -683,12 +633,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    console.log('TwitchAuth object:', Object.keys(TwitchAuth));
-    
     try {
       // Check if user is already authenticated
       const isAuthenticated = await TwitchAuth.isAuthenticated();
-      console.log('Twitch auth status:', isAuthenticated);
       
       if (isAuthenticated) {
         // Disconnect flow
@@ -717,17 +664,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           // First authenticate to get tokens - this now also updates persistent storage
           await TwitchAuth.authenticate();
-          console.log('Twitch authentication successful');
           
           // Try to get user info but don't fail if this part has issues
           try {
             const userData = await TwitchAuth.getUserInfo();
-            console.log('Twitch user info retrieved:', userData);
             
             // Store user data in persistent storage
             if (userData) {
               await PersistentStorage.storeTwitchUserData(userData);
-              console.log('Stored Twitch user data in persistent storage during connect');
               
               // Update UI with user data
               twitchConnectionStatus.textContent = userData.display_name || userData.login;

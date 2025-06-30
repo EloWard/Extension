@@ -146,7 +146,6 @@ async function initializeChannel(channelName, initializationId) {
   }
 }
 
-// Initialize storage and load user data (preserved across sessions)
 function initializeStorage() {
   chrome.storage.local.get(null, (allData) => {
     extensionState.currentUser = findCurrentUser(allData);
@@ -156,19 +155,15 @@ function initializeStorage() {
         action: 'set_current_user',
         username: extensionState.currentUser
       });
-
     }
   });
 }
 
-// Find current Twitch user from storage (prioritizes persistent storage)
 function findCurrentUser(allData) {
-  // Check persistent storage first (preserved even when tokens expire)
   if (allData.eloward_persistent_twitch_user_data?.login) {
     return allData.eloward_persistent_twitch_user_data.login.toLowerCase();
   } 
   
-  // Fallback to legacy storage keys
   if (allData.twitchUsername) {
     return allData.twitchUsername.toLowerCase();
   }
@@ -314,11 +309,11 @@ async function getCurrentGame() {
     
     if (game) {
       const gameName = game.name || game.displayName;
-      console.log(`EloWard: Game detected via Twitch API: ${gameName} (ID: ${game.id})`);
+      console.log(`EloWard: Game detected - ${gameName}`);
       return gameName;
     }
     
-    console.log(`EloWard: No game detected for ${channelName} (channel may be offline or no game set)`);
+
     return null;
   } catch (error) {
     console.error('EloWard: Error fetching game from Twitch API:', error);
