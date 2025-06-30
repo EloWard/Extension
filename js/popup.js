@@ -16,8 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const connectTwitchBtn = document.getElementById('connect-twitch');
   const twitchConnectionStatus = document.getElementById('twitch-connection-status');
   
-  console.log('TwitchAuth module loaded:', typeof TwitchAuth !== 'undefined');
-  console.log('Element check - connect-twitch button exists:', !!connectTwitchBtn);
+
 
   // Helper function to disable/enable Riot controls
   function setRiotControlsDisabled(isDisabled) {
@@ -27,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize persistent storage
   PersistentStorage.init();
-  console.log('Persistent storage initialized');
+  
 
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
@@ -234,11 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Functions
   async function checkAuthStatus() {
     try {
-      console.log('Checking auth status...');
-      
       // First check persistent storage for connected states
       const persistentConnectedState = await PersistentStorage.getConnectedState();
-      console.log('Persistent connected state:', persistentConnectedState);
       
       // Check persistent storage for user data (even if not "connected" due to expired tokens)
       const storedRiotData = await PersistentStorage.getRiotUserData();

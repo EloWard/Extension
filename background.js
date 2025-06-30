@@ -268,22 +268,6 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
 /* Listen for messages from content scripts, popup, and other extension components */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Skip logging for frequent message types to reduce console spam
-  const frequentActions = [
-    'fetch_rank_for_username', 
-    'check_streamer_subscription', 
-    'set_rank_data', 
-    'set_current_user',
-    'increment_db_reads',
-    'increment_successful_lookups'
-  ];
-  if (!frequentActions.includes(message.action)) {
-    if (message?.type) {
-      console.log('Message received:', message.type, message?.action || '');
-    } else {
-      console.log('Message received:', message.action || 'unknown');
-    }
-  }
   
   // METRICS TRACKING
   if (message.action === 'increment_db_reads' && message.channel) {
@@ -302,7 +286,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // TWITCH AUTH CALLBACK HANDLING
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
-    console.log('Received Twitch auth callback');
     
     try {
       // Extract params depending on message format
@@ -361,20 +344,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // AUTH RELATED MESSAGES
   if (message.type === 'get_auth_callback') {
-    console.log('Handling get_auth_callback request');
     // Also check for Twitch-specific callback
     chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
       // Try to find the callback data in any of the possible storage keys
       const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
-      
-      if (callback) {
-        console.log('Found auth callback data to return', {
-          keys: Object.keys(callback),
-          service: callback.service || callback.source
-        });
-      } else {
-        console.log('No auth callback data found');
-      }
       
       sendResponse({ data: callback });
     });
@@ -383,7 +356,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'auth_callback') {
     if (message.code) {
-      console.log('Auth callback from redirect page');
       // Auth windows are cleaned up automatically by the periodic cleanup
     } else {
       handleAuthCallback(message.params);
@@ -412,7 +384,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           createdAt: Date.now()
         };
         
-        console.log(`Opened auth window with ID ${windowId}`, window);
+
         sendResponse({ success: true, windowId });
       });
     } else {
@@ -430,7 +402,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       'eloward_riot_tokens',
       'riotAuth'
     ], (data) => {
-      console.log('Auth token check results:', data);
       sendResponse({ data });
     });
     return true; // Required for async sendResponse
@@ -448,7 +419,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           issued_at: Date.now()
         }
       }, () => {
-        console.log('Stored auth tokens');
         sendResponse({ success: true });
       });
     } else {
@@ -459,7 +429,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // RIOT AUTH HANDLING
   if (message.action === 'initiate_riot_auth') {
-    console.log('Handling initiate_riot_auth request for region:', message.region);
     
     // Use the provided state or generate a new one for CSRF protection
     const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
@@ -685,16 +654,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const streamer = message.streamer;
     const skipCache = !!message.skipCache; // Default to using cache
     
-    // Log only for direct check requests from content script (not rank fetches)
-    if (skipCache) {
-      console.log(`Received subscription check for ${streamer}${skipCache ? ' (bypass cache)' : ''}`);
-    }
-    
     checkStreamerSubscription(streamer, skipCache)
       .then(subscribed => {
         // Only log the response for direct checks
         if (skipCache) {
-          console.log(`Sending subscription result for ${streamer}: ${subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+          console.log(`${streamer}: ${subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
         }
         sendResponse({ subscribed: subscribed });
       })
@@ -776,7 +740,6 @@ setInterval(() => {
   Object.keys(authWindows).forEach(id => {
     const windowData = authWindows[id];
     if (now - windowData.createdAt > maxAge) {
-      console.log(`Cleaning up old auth window ${id}`);
       delete authWindows[id];
     }
   });
@@ -784,8 +747,6 @@ setInterval(() => {
 
 // Listen for window messages (for callback.html communication)
 self.addEventListener('message', (event) => {
-  console.log('Background script received window message:', event.data);
-  
   // Check if it's an auth callback message
   if (event.data && event.data.type === 'auth_callback') {
     handleAuthCallback(event.data.params);
@@ -830,7 +791,6 @@ chrome.runtime.onInstalled.addListener((details) => {
 function clearAllStoredData() {
   return new Promise((resolve) => {
     try {
-      console.log('Clearing stored data');
       
       // Define the keys to remove from chrome.storage
       const keysToRemove = [
@@ -863,13 +823,9 @@ function clearAllStoredData() {
       
       // Clear from chrome.storage
       chrome.storage.local.remove(keysToRemove, () => {
-        console.log('Cleared auth data');
-        
         // Clear persistent storage
         PersistentStorage.clearAllData()
           .then(() => {
-            console.log('Cleared persistent storage');
-            
             // Initialize persistent storage to reset persistence flag
             PersistentStorage.init();
             
@@ -911,8 +867,6 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     console.error(`Error incrementing db_read for ${normalizedName} during subscription check:`, error);
   });
   
-  console.log(`Performing subscription check API call for ${normalizedName}`);
-  
   // Call the subscription API to check subscription status
   return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
     method: 'POST',
@@ -931,13 +885,10 @@ function checkStreamerSubscription(channelName, skipCache = false) {
     // Get the boolean subscription status
     const isSubscribed = !!data.subscribed;
     
-    console.log(`Subscription API result for ${normalizedName}: ${isSubscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
-    
     return isSubscribed;
   })
   .catch(error => {
     console.error(`Error checking subscription for ${normalizedName}:`, error);
-    console.log(`Error in subscription check, defaulting ${normalizedName} to not subscribed`);
     return false;
   });
 }

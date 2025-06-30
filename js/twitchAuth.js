@@ -1,5 +1,5 @@
 // EloWard Twitch Authentication
-console.log('Loading TwitchAuth module...');
+
 
 import { PersistentStorage } from './persistentStorage.js';
 

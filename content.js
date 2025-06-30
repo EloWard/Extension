@@ -151,7 +151,7 @@ function initializeStorage() {
         action: 'set_current_user',
         username: extensionState.currentUser
       });
-      console.log(`EloWard: Current user identified as ${extensionState.currentUser} (from persistent storage)`);
+
     }
   });
 }
