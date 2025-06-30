@@ -271,20 +271,57 @@ function getCurrentChannelName() {
 }
 
 /**
- * Get current game being streamed
+ * Get current game being streamed using Twitch GraphQL API (same method as FFZ addon)
+ * This is the most reliable method and matches what the FFZ addon uses
  */
-function getCurrentGame() {
+async function getCurrentGame() {
+  const channelName = getCurrentChannelName();
+  if (!channelName) {
+    return null;
+  }
+  
   try {
-    const gameElement = document.querySelector('a[data-a-target="stream-game-link"]');
-    if (gameElement) {
-      const gameName = gameElement.textContent?.trim();
-      if (gameName && gameName !== 'Just Chatting') {
-        return gameName;
-      }
+    const response = await fetch('https://gql.twitch.tv/gql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko'
+      },
+      body: JSON.stringify({
+        query: `
+          query {
+            user(login: "${channelName}") {
+              stream {
+                game {
+                  id
+                  name
+                  displayName
+                }
+              }
+            }
+          }
+        `
+      })
+    });
+
+    if (!response.ok) {
+      console.error(`EloWard: Twitch API error: ${response.status}`);
+      return null;
     }
+
+    const data = await response.json();
+    const game = data?.data?.user?.stream?.game;
+    
+    if (game) {
+      const gameName = game.name || game.displayName;
+      console.log(`EloWard: Game detected via Twitch API: ${gameName} (ID: ${game.id})`);
+      return gameName;
+    }
+    
+    console.log(`EloWard: No game detected for ${channelName} (channel may be offline or no game set)`);
     return null;
   } catch (error) {
-    console.error('EloWard: Error detecting game:', error);
+    console.error('EloWard: Error fetching game from Twitch API:', error);
     return null;
   }
 }
@@ -327,8 +364,8 @@ function setupGameChangeObserver() {
       clearTimeout(gameCheckTimeout);
     }
     
-    gameCheckTimeout = setTimeout(() => {
-      const newGame = getCurrentGame();
+    gameCheckTimeout = setTimeout(async () => {
+      const newGame = await getCurrentGame();
       
       if (newGame !== extensionState.currentGame) {
         const oldGame = extensionState.currentGame;
@@ -401,12 +438,12 @@ function initializeExtension() {
   });
   
   // Get current game and initialize
-  setTimeout(() => {
+  setTimeout(async () => {
     if (extensionState.currentInitializationId !== initializationId) {
       return;
     }
     
-    const detectedGame = getCurrentGame();
+    const detectedGame = await getCurrentGame();
     extensionState.currentGame = detectedGame;
     
     console.log(`EloWard: Game detected - ${detectedGame || 'none'}`);
@@ -921,4 +958,6 @@ function addExtensionStyles() {
   `;
   
   document.head.appendChild(styleElement);
-} 
+}
+
+ 
