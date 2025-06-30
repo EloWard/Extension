@@ -1,3 +1,8 @@
+// IMMEDIATE Chrome Extension Detection - Must be FIRST
+// This marks the Chrome extension as active so FFZ addon can detect it and disable itself
+document.body.setAttribute('data-eloward-chrome-ext', 'active');
+document.documentElement.setAttribute('data-eloward-chrome-ext', 'active'); // Backup on html element too
+
 // Extension state management
 const extensionState = {
   isChannelSubscribed: false,
