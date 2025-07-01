@@ -194,18 +194,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Show authentication error
+  // Show authentication error (hidden from user - just show not connected)
   function showAuthError(message) {
-    riotConnectionStatus.textContent = message || 'Authentication Failed';
-    riotConnectionStatus.classList.add('error');
+    // Don't show error to user, just display normal "Not Connected" state
+    riotConnectionStatus.textContent = 'Not Connected';
+    riotConnectionStatus.classList.remove('error', 'connecting', 'connected');
     connectRiotBtn.textContent = 'Connect';
     connectRiotBtn.disabled = false;
     
-    // Reset error state after 5 seconds
-    setTimeout(() => {
-      riotConnectionStatus.textContent = 'Not Connected';
-      riotConnectionStatus.classList.remove('error');
-    }, 5000);
+    // Log the actual error for debugging but don't show to user
+    console.log('Riot auth error (hidden from user):', message);
   }
 
   // Functions
@@ -393,11 +391,10 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (error) {
             console.error('Error disconnecting:', error);
             
-            // Update UI to show error state
-            connectRiotBtn.textContent = 'Disconnect';
-            riotConnectionStatus.textContent = error.message || 'Disconnection error';
-            riotConnectionStatus.classList.add('error');
-            riotConnectionStatus.classList.remove('disconnecting');
+            // Show normal not connected state instead of error
+            connectRiotBtn.textContent = 'Connect';
+            riotConnectionStatus.textContent = 'Not Connected';
+            riotConnectionStatus.classList.remove('error', 'disconnecting', 'connected');
           } finally {
             // Re-enable button
             connectRiotBtn.disabled = false;
@@ -432,11 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         console.error('Error in connectRiotAccount:', error);
         
-        // Update UI to show error state
+        // Show normal not connected state instead of error
         connectRiotBtn.textContent = 'Connect';
-        riotConnectionStatus.textContent = error.message || 'Connection error';
-        riotConnectionStatus.classList.add('error');
-        riotConnectionStatus.classList.remove('connecting');
+        riotConnectionStatus.textContent = 'Not Connected';
+        riotConnectionStatus.classList.remove('error', 'connecting', 'connected');
       } finally {
         // Remove connecting class if still present and not connected
         if (!riotConnectionStatus.classList.contains('connected')) {
@@ -506,14 +502,9 @@ document.addEventListener('DOMContentLoaded', () => {
         rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
       } else {
-        // For other errors, show brief error message
-        const originalText = currentRank.textContent;
-        currentRank.textContent = 'Refresh failed';
-        
-        // Reset to original text after a short delay
-        setTimeout(() => {
-          currentRank.textContent = originalText;
-        }, 3000);
+        // For other errors, don't show error to user - keep original text
+        console.log('Rank refresh error (hidden from user):', error.message);
+        // Keep the original rank text, no user-visible error
       }
     } finally {
       // Remove loading state
@@ -628,8 +619,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check if TwitchAuth is available
     if (typeof TwitchAuth === 'undefined') {
       console.error('TwitchAuth module is not loaded properly');
-      twitchConnectionStatus.textContent = 'Error: Module not loaded';
-      twitchConnectionStatus.classList.add('error');
+      twitchConnectionStatus.textContent = 'Not Connected';
+      twitchConnectionStatus.classList.remove('error', 'connecting', 'disconnecting', 'connected');
       return;
     }
     
@@ -686,48 +677,29 @@ document.addEventListener('DOMContentLoaded', () => {
               throw new Error('Failed to retrieve user info');
             }
           } catch (userInfoError) {
-            // User info failed - show error and reset connection state
+            // User info failed - show not connected state
             console.warn('Could not get user info:', userInfoError);
-            twitchConnectionStatus.textContent = 'Authentication Failed';
-            twitchConnectionStatus.classList.add('error');
-            twitchConnectionStatus.classList.remove('connecting');
+            twitchConnectionStatus.textContent = 'Not Connected';
+            twitchConnectionStatus.classList.remove('error', 'connecting', 'connected');
             connectTwitchBtn.textContent = 'Connect';
             setRiotControlsDisabled(true); // Ensure Riot controls disabled on error
-            
-            // Keep the auth token but don't show as connected
-            setTimeout(() => {
-              if (twitchConnectionStatus.classList.contains('error')) {
-                twitchConnectionStatus.textContent = 'Not Connected';
-                twitchConnectionStatus.classList.remove('error');
-              }
-            }, 5000);
           }
           
         } catch (authError) {
           console.error('Twitch authentication error:', authError);
-          twitchConnectionStatus.textContent = authError.message || 'Authentication Failed';
-          twitchConnectionStatus.classList.add('error');
-          twitchConnectionStatus.classList.remove('connecting');
+          twitchConnectionStatus.textContent = 'Not Connected';
+          twitchConnectionStatus.classList.remove('error', 'connecting', 'connected');
           connectTwitchBtn.textContent = 'Connect';
           setRiotControlsDisabled(true); // Ensure Riot controls disabled on error
           
           // Ensure the connected state is properly reset in case of error
           await PersistentStorage.updateConnectedState('twitch', false);
-          
-          // Reset error after 5 seconds
-          setTimeout(() => {
-            if (twitchConnectionStatus.classList.contains('error')) {
-              twitchConnectionStatus.textContent = 'Not Connected';
-              twitchConnectionStatus.classList.remove('error');
-            }
-          }, 5000);
         }
       }
     } catch (error) {
       console.error('Error in connectTwitchAccount:', error);
-      twitchConnectionStatus.textContent = error.message || 'Error';
-      twitchConnectionStatus.classList.add('error');
-      twitchConnectionStatus.classList.remove('connecting', 'disconnecting');
+      twitchConnectionStatus.textContent = 'Not Connected';
+      twitchConnectionStatus.classList.remove('error', 'connecting', 'disconnecting', 'connected');
       
       // Ensure connected state is reset on error
       await PersistentStorage.updateConnectedState('twitch', false);
