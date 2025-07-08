@@ -354,6 +354,7 @@ header h1 {
   transition: all 0.2s ease;
   padding: 0;
   outline: none;
+  margin-top: -8px;
 }
 
 .btn-icon:hover {
