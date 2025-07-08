@@ -20,35 +20,44 @@
       </div>
     </header>
     
-    <div class="card">
-      <h2>Account Connection</h2>
-      <div class="connection-item">
-        <div class="connection-info">
-          <span class="connection-label">Twitch</span>
-          <span id="twitch-connection-status" class="connection-status">Not Connected</span>
+    <div class="card tip-card">
+      <div class="collapsible-header" id="account-header">
+        <h2>Account Connection</h2>
+        <div class="dropdown-arrow">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9l6 6 6-6"></path>
+          </svg>
         </div>
-        <button id="connect-twitch" class="btn">Connect</button>
       </div>
-      <div class="connection-item">
-        <div class="connection-info">
-          <span class="connection-label">League of Legends</span>
-          <span id="riot-connection-status" class="connection-status">Not Connected</span>
+      <div class="tip-content" id="account-content" style="display: none;">
+        <div class="connection-item">
+          <div class="connection-info">
+            <span class="connection-label">Twitch</span>
+            <span id="twitch-connection-status" class="connection-status">Not Connected</span>
+          </div>
+          <button id="connect-twitch" class="btn">Connect</button>
         </div>
-        <div class="riot-connection-controls">
-          <button id="connect-riot" class="btn">Connect</button>
-          <select id="region" class="compact-select button-width" title="Select your region">
-            <option value="na1">NA</option>
-            <option value="euw1">EUW</option>
-            <option value="eun1">EUNE</option>
-            <option value="kr">KR</option>
-            <option value="br1">BR</option>
-            <option value="jp1">JP</option>
-            <option value="la1">LAN</option>
-            <option value="la2">LAS</option>
-            <option value="oc1">OCE</option>
-            <option value="tr1">TR</option>
-            <option value="ru">RU</option>
-          </select>
+        <div class="connection-item">
+          <div class="connection-info">
+            <span class="connection-label">League of Legends</span>
+            <span id="riot-connection-status" class="connection-status">Not Connected</span>
+          </div>
+          <div class="riot-connection-controls">
+            <button id="connect-riot" class="btn">Connect</button>
+            <select id="region" class="compact-select button-width" title="Select your region">
+              <option value="na1">NA</option>
+              <option value="euw1">EUW</option>
+              <option value="eun1">EUNE</option>
+              <option value="kr">KR</option>
+              <option value="br1">BR</option>
+              <option value="jp1">JP</option>
+              <option value="la1">LAN</option>
+              <option value="la2">LAS</option>
+              <option value="oc1">OCE</option>
+              <option value="tr1">TR</option>
+              <option value="ru">RU</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
@@ -74,7 +83,11 @@
     <div class="card tip-card">
       <div class="collapsible-header" id="streamer-header">
         <h2>Are you a streamer?</h2>
-        <div class="dropdown-arrow">▼</div>
+        <div class="dropdown-arrow">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9l6 6 6-6"></path>
+          </svg>
+        </div>
       </div>
       <div class="tip-content" id="streamer-content" style="display: none;">
         <p>Rank badges will only appear in chat when you have activated EloWard for your channel. Visit <a href="https://www.eloward.com/" target="_blank" style="color: #D9A336; font-weight: 600; text-decoration: none;">eloward.com</a> to subscribe.</p>

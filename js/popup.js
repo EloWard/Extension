@@ -15,6 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const dropdownArrow = streamerHeader.querySelector('.dropdown-arrow');
   const connectTwitchBtn = document.getElementById('connect-twitch');
   const twitchConnectionStatus = document.getElementById('twitch-connection-status');
+  const accountHeader = document.getElementById('account-header');
+  const accountContent = document.getElementById('account-content');
+  const accountDropdownArrow = accountHeader.querySelector('.dropdown-arrow');
   
 
 
@@ -30,7 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
-  dropdownArrow.textContent = '▼';
+
+  // Initialize the account dropdown as collapsed to match streamer section
+  accountContent.style.display = 'none';
 
   // Disable Riot controls initially
   setRiotControlsDisabled(true);
@@ -57,10 +62,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle the display of the content
     if (isHidden) {
       streamerContent.style.display = 'block';
-      dropdownArrow.textContent = '▲';
+      dropdownArrow.classList.add('rotated');
     } else {
       streamerContent.style.display = 'none';
-      dropdownArrow.textContent = '▼';
+      dropdownArrow.classList.remove('rotated');
+    }
+  });
+  
+  // Add toggle functionality for the account section
+  accountHeader.addEventListener('click', () => {
+    const isHidden = accountContent.style.display === 'none';
+    
+    // Toggle the display of the content
+    if (isHidden) {
+      accountContent.style.display = 'block';
+      accountDropdownArrow.classList.add('rotated');
+    } else {
+      accountContent.style.display = 'none';
+      accountDropdownArrow.classList.remove('rotated');
     }
   });
   

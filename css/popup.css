@@ -106,21 +106,29 @@ header h1 {
 }
 
 .dropdown-arrow {
-  color: var(--primary);
+  color: #D9A336;
   font-size: 14px;
-  transition: transform 0.3s ease;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-top: 1px;
-  font-weight: bold;
-  margin-right: 2px;
-  height: 100%;
+  width: 20px;
+  height: 20px;
+}
+
+.dropdown-arrow svg {
+  transition: transform 0.2s ease;
+}
+
+.dropdown-arrow.rotated svg {
+  transform: rotate(180deg);
 }
 
 .tip-content {
-  padding-top: 16px;
-  animation: fadeDown 0.3s ease-out;
+  padding: 16px 20px 0;
+  animation: fadeDown 0.3s ease;
 }
 
 @keyframes fadeDown {
