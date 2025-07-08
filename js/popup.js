@@ -34,8 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
 
-  // Initialize the account dropdown as collapsed to match streamer section
-  accountContent.style.display = 'none';
+  // Initialize the account dropdown state from storage (default to open on first install)
+  initializeAccountSectionState();
 
   // Disable Riot controls initially
   setRiotControlsDisabled(true);
@@ -81,7 +81,32 @@ document.addEventListener('DOMContentLoaded', () => {
       accountContent.style.display = 'none';
       accountDropdownArrow.classList.remove('rotated');
     }
+    
+    // Save the collapse state to chrome storage
+    chrome.storage.local.set({ 'accountSectionCollapsed': !isHidden });
   });
+
+  // Initialize account section state from storage
+  async function initializeAccountSectionState() {
+    try {
+      const result = await chrome.storage.local.get(['accountSectionCollapsed']);
+      const isCollapsed = result.accountSectionCollapsed;
+      
+      // Default to open (not collapsed) on first install
+      if (isCollapsed === undefined || isCollapsed === false) {
+        accountContent.style.display = 'block';
+        accountDropdownArrow.classList.add('rotated');
+      } else {
+        accountContent.style.display = 'none';
+        accountDropdownArrow.classList.remove('rotated');
+      }
+    } catch (error) {
+      console.error('Error loading account section state:', error);
+      // Default to open on error
+      accountContent.style.display = 'block';
+      accountDropdownArrow.classList.add('rotated');
+    }
+  }
   
   // Flag to prevent recursive message handling
   let processingMessage = false;
