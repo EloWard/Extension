@@ -336,6 +336,7 @@ header h1 {
   font-weight: 600;
   font-size: 16px;
   color: var(--primary);
+  margin-top: -8px;
 }
 
 /* Refresh Button Styling */
