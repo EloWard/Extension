@@ -59,7 +59,7 @@ header {
 .logo-container a {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   text-decoration: none;
   transition: opacity 0.2s ease;
 }
