@@ -5,23 +5,22 @@ document.documentElement.setAttribute('data-eloward-chrome-ext', 'active'); // B
 
 // Extension state management
 const extensionState = {
-  isChannelSubscribed: false,
+  isChannelActive: false,
   channelName: '',
   currentGame: null,
   currentUser: null,
   observerInitialized: false,
-  lastSubscriptionCheck: null,
+  lastChannelActiveCheck: null,
   initializationInProgress: false,
   currentInitializationId: null
 };
 
 // Channel state tracking
-const channelState = {
-  activeChannels: new Set(),
-  subscribedChannels: new Set(),
-  currentChannel: null,
-  activeAbortController: null
-};
+  const channelState = {
+    activeChannels: new Set(),
+    currentChannel: null,
+    activeAbortController: null
+  };
 
 // Processing state
 let processedMessages = new Set();
@@ -81,7 +80,6 @@ function cleanupChannel(channelName) {
   }
   
   channelState.activeChannels.delete(normalizedChannel);
-  channelState.subscribedChannels.delete(normalizedChannel);
   processedMessages.clear();
   
   if (window._eloward_chat_observer) {
@@ -96,8 +94,8 @@ function cleanupChannel(channelName) {
   
   // Reset state for fresh detection
   extensionState.observerInitialized = false;
-  extensionState.isChannelSubscribed = false;
-  extensionState.lastSubscriptionCheck = null;
+          extensionState.isChannelActive = false;
+      extensionState.lastChannelActiveCheck = null;
   extensionState.initializationInProgress = false;
   extensionState.currentInitializationId = null;
   extensionState.currentGame = null;
@@ -121,23 +119,23 @@ async function initializeChannel(channelName, initializationId) {
     channelState.activeChannels.add(normalizedChannel);
     channelState.currentChannel = normalizedChannel;
     
-    const isSubscribed = await checkChannelSubscription(channelName, true, abortController.signal);
+    const isActive = await checkChannelActive(channelName, true, abortController.signal);
     
     if (extensionState.currentInitializationId !== initializationId || abortController.signal.aborted) {
       return false;
     }
     
-    if (isSubscribed) {
-      channelState.subscribedChannels.add(normalizedChannel);
-      extensionState.isChannelSubscribed = true;
-      console.log(`EloWard: ${channelName} - Subscribed ✅`);
+    if (isActive) {
+      channelState.activeChannels.add(normalizedChannel);
+      extensionState.isChannelActive = true;
+      console.log(`EloWard: ${channelName} - Active ✅`);
     } else {
-      channelState.subscribedChannels.delete(normalizedChannel);
-      extensionState.isChannelSubscribed = false;
-      console.log(`EloWard: ${channelName} - Not Subscribed ❌`);
+      channelState.activeChannels.delete(normalizedChannel);
+      extensionState.isChannelActive = false;
+      console.log(`EloWard: ${channelName} - Not Active ❌`);
     }
     
-    return isSubscribed;
+    return isActive;
   } catch (error) {
     if (error.name !== 'AbortError') {
       console.error(`EloWard: Error initializing channel ${channelName}:`, error);
@@ -172,9 +170,9 @@ function findCurrentUser(allData) {
 }
 
 /**
- * Check if channel is subscribed with caching
+ * Check if channel is active with caching
  */
-async function checkChannelSubscription(channelName, forceCheck = false, signal = null) {
+async function checkChannelActive(channelName, forceCheck = false, signal = null) {
   if (!channelName) return false;
   
   if (signal?.aborted) {
@@ -184,10 +182,10 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
   // Use cache unless forced to check
   const now = Date.now();
   if (!forceCheck && 
-      extensionState.lastSubscriptionCheck && 
+      extensionState.lastChannelActiveCheck && 
       extensionState.channelName === channelName && 
-      (now - extensionState.lastSubscriptionCheck) < 30000) {
-    return extensionState.isChannelSubscribed;
+      (now - extensionState.lastChannelActiveCheck) < 30000) {
+    return extensionState.isChannelActive;
   }
   
   try {
@@ -207,7 +205,7 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
       
       chrome.runtime.sendMessage(
         { 
-          action: 'check_streamer_subscription', 
+          action: 'check_channel_active', 
           streamer: channelName,
           skipCache: true
         },
@@ -226,13 +224,13 @@ async function checkChannelSubscription(channelName, forceCheck = false, signal 
             return;
           }
           
-          const isSubscribed = response && response.subscribed === true;
+          const isActive = response && response.active === true;
           
           if (!signal?.aborted) {
-            extensionState.lastSubscriptionCheck = now;
+            extensionState.lastChannelActiveCheck = now;
           }
           
-          resolve(isSubscribed);
+          resolve(isActive);
         }
       );
     });
@@ -375,7 +373,7 @@ function setupGameChangeObserver() {
             window._eloward_chat_observer = null;
           }
           extensionState.observerInitialized = false;
-          extensionState.isChannelSubscribed = false;
+          extensionState.isChannelActive = false;
         } else if (isGameSupported(extensionState.currentGame) && !isGameSupported(oldGame)) {
           // Reinitialize for supported game
           if (extensionState.channelName && !extensionState.initializationInProgress) {
@@ -564,7 +562,7 @@ function findChatContainer() {
  */
 function setupChatObserver(chatContainer) {
   const chatObserver = new MutationObserver((mutations) => {
-    if (!extensionState.isChannelSubscribed) return;
+    if (!extensionState.isChannelActive) return;
     
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
@@ -612,7 +610,7 @@ function processNewMessage(messageNode) {
     toDelete.forEach(msg => processedMessages.delete(msg));
   }
   
-  if (!extensionState.isChannelSubscribed) return;
+  if (!extensionState.isChannelActive) return;
   
   const usernameElement = messageNode.querySelector('.chat-author__display-name') ||
                          messageNode.querySelector('[data-a-target="chat-message-username"]');

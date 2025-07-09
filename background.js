@@ -649,22 +649,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async response
   }
   
-  // SUBSCRIPTION CHECKING
-  if (message.action === 'check_streamer_subscription') {
+  // CHANNEL ACTIVE CHECKING
+  if (message.action === 'check_channel_active') {
     const streamer = message.streamer;
     const skipCache = !!message.skipCache; // Default to using cache
     
-    checkStreamerSubscription(streamer, skipCache)
-      .then(subscribed => {
+    checkChannelActive(streamer, skipCache)
+      .then(active => {
         // Only log the response for direct checks
         if (skipCache) {
-          console.log(`${streamer}: ${subscribed ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
+          console.log(`${streamer}: ${active ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
         }
-        sendResponse({ subscribed: subscribed });
+        sendResponse({ active: active });
       })
       .catch(error => {
-        console.error('Error checking streamer subscription:', error);
-        sendResponse({ subscribed: false, error: error.message });
+        console.error('Error checking channel active status:', error);
+        sendResponse({ active: false, error: error.message });
       });
     return true;
   }
@@ -846,28 +846,28 @@ function clearAllStoredData() {
 // Helper functions
 
 /**
- * Check if a streamer has an active subscription to the extension
+ * Check if a channel is active (channel_active = 1 in database)
  * Makes direct API calls without caching since this is only called when switching channels
  * 
  * @param {string} channelName - Twitch channel name to check
  * @param {boolean} skipCache - Parameter kept for backward compatibility but no longer used
- * @returns {Promise<boolean>} - Whether the streamer has an active subscription
+ * @returns {Promise<boolean>} - Whether the channel is active
  */
-function checkStreamerSubscription(channelName, skipCache = false) {
+function checkChannelActive(channelName, skipCache = false) {
   if (!channelName) {
-    console.error('Cannot check subscription: No channel name provided');
+    console.error('Cannot check channel status: No channel name provided');
     return Promise.resolve(false);
   }
   
   // Normalize the channel name to lowercase for consistency
   const normalizedName = channelName.toLowerCase();
   
-  // Increment db_read counter for subscription checks too
+  // Increment db_read counter for channel checks too
   incrementDbReadCounter(normalizedName).catch(error => {
-    console.error(`Error incrementing db_read for ${normalizedName} during subscription check:`, error);
+    console.error(`Error incrementing db_read for ${normalizedName} during channel check:`, error);
   });
   
-  // Call the subscription API to check subscription status
+  // Call the subscription API to check if channel is active (channel_active = 1)
   return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
     method: 'POST',
     headers: {
@@ -877,18 +877,18 @@ function checkStreamerSubscription(channelName, skipCache = false) {
   })
   .then(response => {
     if (!response.ok) {
-      throw new Error(`Subscription API returned ${response.status}`);
+      throw new Error(`Channel API returned ${response.status}`);
     }
     return response.json();
   })
   .then(data => {
-    // Get the boolean subscription status
-    const isSubscribed = !!data.subscribed;
+    // Get the boolean channel active status (API returns 'subscribed' but it checks channel_active)
+    const isActive = !!data.subscribed;
     
-    return isSubscribed;
+    return isActive;
   })
   .catch(error => {
-    console.error(`Error checking subscription for ${normalizedName}:`, error);
+    console.error(`Error checking channel active status for ${normalizedName}:`, error);
     return false;
   });
 }
