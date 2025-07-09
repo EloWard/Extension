@@ -6,7 +6,7 @@ import { PersistentStorage } from './js/persistentStorage.js';
 // Constants
 const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai.workers.dev'; // Updated to use deployed worker
 const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai.workers.dev'; // Rank Worker API endpoint
-const SUBSCRIPTION_API_URL = 'https://eloward-subscription-api.unleashai.workers.dev'; // Subscription API worker
+const STATUS_API_URL = 'https://eloward-subscription-api.unleashai.workers.dev'; // Channel Status API worker
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
 
@@ -867,8 +867,8 @@ function checkChannelActive(channelName, skipCache = false) {
     console.error(`Error incrementing db_read for ${normalizedName} during channel check:`, error);
   });
   
-  // Call the subscription API to check if channel is active (channel_active = 1)
-  return fetch(`${SUBSCRIPTION_API_URL}/subscription/verify`, {
+  // Call the channel status API to check if channel is active (channel_active = 1)
+  return fetch(`${STATUS_API_URL}/channelstatus/verify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -882,8 +882,8 @@ function checkChannelActive(channelName, skipCache = false) {
     return response.json();
   })
   .then(data => {
-    // Get the boolean channel active status (API returns 'subscribed' but it checks channel_active)
-    const isActive = !!data.subscribed;
+    // Get the boolean channel active status
+    const isActive = !!data.active;
     
     return isActive;
   })
@@ -1633,8 +1633,8 @@ async function incrementDbReadCounter(channelName) {
   try {
     const normalizedName = channelName.toLowerCase();
     
-    // Call the subscription API metrics endpoint
-    const response = await fetch(`${SUBSCRIPTION_API_URL}/metrics/db_read`, {
+    // Call the status API metrics endpoint
+    const response = await fetch(`${STATUS_API_URL}/metrics/db_read`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1669,8 +1669,8 @@ async function incrementSuccessfulLookupCounter(channelName) {
   try {
     const normalizedName = channelName.toLowerCase();
     
-    // Call the subscription API metrics endpoint
-    const response = await fetch(`${SUBSCRIPTION_API_URL}/metrics/successful_lookup`, {
+    // Call the status API metrics endpoint
+    const response = await fetch(`${STATUS_API_URL}/metrics/successful_lookup`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
