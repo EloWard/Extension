@@ -18,7 +18,6 @@ const defaultConfig = {
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
   endpoints: {
-    // These endpoints should match exactly what's in twitchRSO/src/index.ts
     authInit: '/auth/twitch/init',
     authToken: '/auth/twitch/token',
     authRefresh: '/auth/twitch/token/refresh',
