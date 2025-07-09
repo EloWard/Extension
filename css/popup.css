@@ -53,13 +53,13 @@ header {
 .logo-container {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .logo-container a {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   text-decoration: none;
   transition: opacity 0.2s ease;
 }
@@ -72,6 +72,7 @@ header {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
+  margin-top: -4px;
 }
 
 header h1 {
@@ -79,7 +80,7 @@ header h1 {
   font-weight: 700;
   color: #DC2123;
   margin: 0;
-  font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: Cinzel, serif;
 }
 
 .subtitle {
