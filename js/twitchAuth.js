@@ -786,6 +786,12 @@ export const TwitchAuth = {
       
       // Register user in database
       try {
+        // Ensure email is available before registration
+        if (!userInfo.email) {
+          console.warn('No email available for user, skipping database registration');
+          throw new Error('Email is required for user registration');
+        }
+        
         console.log('Registering user in database:', userInfo.login, userInfo.id, userInfo.email);
         await this._registerUserInDatabase(userInfo.login, userInfo.id, userInfo.email);
         console.log('User registered successfully in database');
@@ -857,12 +863,17 @@ export const TwitchAuth = {
    * Register user in database via subscription worker
    * @param {string} twitchUsername - The Twitch username/login
    * @param {string} twitchId - The Twitch user ID (numeric)
-   * @param {string} email - The Twitch email (optional)
+   * @param {string} email - The Twitch email (required)
    * @returns {Promise<Object>} Registration response
    * @private
    */
-  async _registerUserInDatabase(twitchUsername, twitchId, email = null) {
+  async _registerUserInDatabase(twitchUsername, twitchId, email) {
     try {
+      // Validate required parameters
+      if (!twitchUsername || !twitchId || !email) {
+        throw new Error('Missing required parameters: twitchUsername, twitchId, and email are all required');
+      }
+      
       const response = await fetch('https://eloward-users.unleashai.workers.dev/user/register', {
         method: 'POST',
         headers: {
@@ -905,7 +916,7 @@ export const TwitchAuth = {
         });
         
         // Ensure user is registered in database (for existing users)
-        if (userInfo.login && userInfo.id) {
+        if (userInfo.login && userInfo.id && userInfo.email) {
           try {
             console.log('Ensuring user is registered in database from stored data:', userInfo.login, userInfo.id, userInfo.email);
             await this._registerUserInDatabase(userInfo.login, userInfo.id, userInfo.email);
@@ -914,6 +925,8 @@ export const TwitchAuth = {
             console.warn('Failed to register user from stored data (non-fatal):', registerError);
             // Continue anyway, this is not critical
           }
+        } else if (userInfo.login && userInfo.id && !userInfo.email) {
+          console.warn('Stored user data missing email, skipping database registration');
         }
         
         return userInfo;
