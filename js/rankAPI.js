@@ -3,7 +3,7 @@
 
 export class RankAPI {
   // Base URL for the rank worker API from Database.txt
-  static API_BASE_URL = 'https://eloward-viewers-api.unleashai.workers.dev/api';
+  static API_BASE_URL = 'https://eloward-ranks.unleashai.workers.dev/api';
   
   // Local cache of rank data
   static #rankCache = new Map();

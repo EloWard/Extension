@@ -5,7 +5,7 @@ import { PersistentStorage } from './js/persistentStorage.js';
 
 // Constants
 const RIOT_AUTH_URL = 'https://eloward-riotrso.unleashai.workers.dev'; // Updated to use deployed worker
-const RANK_WORKER_API_URL = 'https://eloward-viewers-api.unleashai.workers.dev'; // Rank Worker API endpoint
+const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev'; // Rank Worker API endpoint
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev'; // Users API worker (formerly Channel Status API)
 const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
