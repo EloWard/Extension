@@ -864,7 +864,7 @@ export const TwitchAuth = {
    */
   async _registerUserInDatabase(twitchUsername, twitchId, email = null) {
     try {
-      const response = await fetch('https://eloward-subscription-api.unleashai.workers.dev/user/register', {
+      const response = await fetch('https://eloward-users.unleashai.workers.dev/user/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
