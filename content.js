@@ -102,7 +102,7 @@ function cleanupChannel(channelName) {
 }
 
 /**
- * Initialize channel and check subscription
+ * Initialize channel and check channel_active status
  */
 async function initializeChannel(channelName, initializationId) {
   if (!channelName) return false;
@@ -452,12 +452,12 @@ function initializeExtension() {
     
     // Initialize channel
     initializeChannel(extensionState.channelName, initializationId)
-      .then(subscribed => {
+      .then(channelActive => {
         if (extensionState.currentInitializationId !== initializationId) {
           return;
         }
         
-        if (subscribed) {
+        if (channelActive) {
           console.log("🛡️ EloWard Extension Active");
           
           if (!extensionState.observerInitialized) {
