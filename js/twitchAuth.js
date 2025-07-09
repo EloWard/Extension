@@ -153,7 +153,7 @@ export const TwitchAuth = {
         // because we have valid tokens
         
         try {
-          // Get user info
+          // Get user info (this already includes database registration)
           const userInfo = await this.getUserInfo();
           console.log('Retrieved Twitch user info for:', userInfo?.display_name || 'unknown user');
           
@@ -167,6 +167,19 @@ export const TwitchAuth = {
           
           // Ensure we still consider the user authenticated
           await PersistentStorage.updateConnectedState('twitch', true);
+          
+          // Try to register user with minimal token data if available
+          try {
+            // Get token to extract user ID if possible
+            const token = await this.getValidToken();
+            if (token) {
+              // We can't get full user info, but we could try to extract basic data
+              // For now, just log that registration was skipped
+              console.log('Skipping user registration due to getUserInfo failure');
+            }
+          } catch (tokenError) {
+            console.warn('Could not get token for fallback registration:', tokenError);
+          }
           
           // Return a minimal user object
           return { authenticated: true };
@@ -772,6 +785,16 @@ export const TwitchAuth = {
       // Also store in persistent storage
       await PersistentStorage.storeTwitchUserData(userInfo);
       
+      // Register user in database
+      try {
+        console.log('Registering user in database:', userInfo.login, userInfo.id, userInfo.email);
+        await this._registerUserInDatabase(userInfo.login, userInfo.id, userInfo.email);
+        console.log('User registered successfully in database');
+      } catch (registerError) {
+        console.error('Failed to register user in database:', registerError);
+        // Continue with auth flow even if registration fails
+      }
+      
       return userInfo;
     } catch (error) {
       console.error('Error getting Twitch user info:', error);
@@ -832,6 +855,40 @@ export const TwitchAuth = {
   },
   
   /**
+   * Register user in database via subscription worker
+   * @param {string} twitchUsername - The Twitch username/login
+   * @param {string} twitchId - The Twitch user ID (numeric)
+   * @param {string} email - The Twitch email (optional)
+   * @returns {Promise<Object>} Registration response
+   * @private
+   */
+  async _registerUserInDatabase(twitchUsername, twitchId, email = null) {
+    try {
+      const response = await fetch('https://eloward-subscription-api.unleashai.workers.dev/user/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          twitch_username: twitchUsername,
+          twitch_id: twitchId,
+          email: email
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to register user');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error registering user in database:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Get user info from persistent storage
    * @returns {Promise<Object|null>} User information or null if not found
    */
@@ -847,6 +904,19 @@ export const TwitchAuth = {
           display_name: userInfo.display_name,
           login: userInfo.login
         });
+        
+        // Ensure user is registered in database (for existing users)
+        if (userInfo.login && userInfo.id) {
+          try {
+            console.log('Ensuring user is registered in database from stored data:', userInfo.login, userInfo.id, userInfo.email);
+            await this._registerUserInDatabase(userInfo.login, userInfo.id, userInfo.email);
+            console.log('User registration verified from stored data');
+          } catch (registerError) {
+            console.warn('Failed to register user from stored data (non-fatal):', registerError);
+            // Continue anyway, this is not critical
+          }
+        }
+        
         return userInfo;
       }
       
