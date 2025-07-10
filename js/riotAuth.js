@@ -856,6 +856,52 @@ export const RiotAuth = {
     try {
       console.log('Completely disconnecting Riot account');
       
+      // Get Twitch username before clearing data (needed for database deletion)
+      let twitchUsername = null;
+      try {
+        const persistentTwitchData = await PersistentStorage.getTwitchUserData();
+        twitchUsername = persistentTwitchData?.login;
+        
+        // Fallback to other storage locations if not found in persistent storage
+        if (!twitchUsername) {
+          const storageData = await new Promise(resolve => {
+            chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
+          });
+          twitchUsername = storageData.eloward_persistent_twitch_user_data?.login || storageData.twitchUsername;
+        }
+      } catch (error) {
+        console.warn('Error getting Twitch username for rank deletion:', error);
+      }
+      
+      // Delete rank data from database if we have a Twitch username
+      if (twitchUsername) {
+        try {
+          console.log(`Deleting rank data for Twitch user: ${twitchUsername}`);
+          
+          const rankWorkerUrl = 'https://eloward-ranks.unleashai.workers.dev/api/ranks/lol';
+          const response = await fetch(`${rankWorkerUrl}/${twitchUsername.toLowerCase()}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log('Rank data deleted successfully:', result);
+          } else if (response.status === 404) {
+            console.log('No rank data found to delete (user was not ranked)');
+          } else {
+            console.warn(`Failed to delete rank data: ${response.status} ${response.statusText}`);
+          }
+        } catch (deleteError) {
+          console.error('Error deleting rank data from database:', deleteError);
+          // Don't fail the disconnect if database deletion fails
+        }
+      } else {
+        console.log('No Twitch username found, skipping rank data deletion');
+      }
+      
       // Clear persistent user data
       await PersistentStorage.clearServiceData('riot');
       console.log('Cleared persistent Riot user data');
