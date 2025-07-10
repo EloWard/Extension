@@ -1171,6 +1171,10 @@ async function handleAuthCallbackFromRedirect(code, state) {
 // Sign out the user
 async function signOutUser() {
   try {
+    // Get the current Twitch username before clearing data
+    const data = await chrome.storage.local.get(['twitchUsername', 'eloward_persistent_twitch_user_data']);
+    const twitchUsername = data.twitchUsername || data.eloward_persistent_twitch_user_data?.login;
+    
     // Remove auth data from all storage keys
     await chrome.storage.local.remove([
       'riotAuth',
@@ -1183,6 +1187,29 @@ async function signOutUser() {
     ]);
     
     console.log('Cleared Riot auth tokens from chrome.storage');
+    
+    // If we have a Twitch username, also delete the League account from the database
+    if (twitchUsername) {
+      try {
+        console.log('Deleting League account from database for:', twitchUsername);
+        
+        const response = await fetch(`https://eloward-ranks.unleashai.workers.dev/api/ranks/lol/${twitchUsername.toLowerCase()}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (response.ok) {
+          console.log('Successfully deleted League account from database for:', twitchUsername);
+        } else {
+          console.warn('Failed to delete League account from database:', response.status, response.statusText);
+        }
+      } catch (dbError) {
+        console.error('Error deleting League account from database:', dbError);
+        // Don't fail the entire sign out process if database deletion fails
+      }
+    }
     
     return { success: true };
   } catch (error) {
