@@ -69,8 +69,6 @@ export class RankAPI {
     return requestPromise;
   }
   
-
-  
   /**
    * Check the cache for rank data
    * @param {string} username - Twitch username
