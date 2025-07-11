@@ -756,7 +756,7 @@ export const TwitchAuth = {
       }
       
       // Call the secure backend endpoint to fetch and store user data
-      const response = await fetch('https://eloward-users.unleashai.workers.dev/store-user', {
+      const response = await fetch('https://eloward-twitchauth.unleashai.workers.dev/store-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
