@@ -27,6 +27,18 @@ document.addEventListener('DOMContentLoaded', () => {
     regionSelect.disabled = isDisabled;
   }
 
+  // Helper function to update button text and styling
+  function updateRiotButtonText(text) {
+    connectRiotBtn.textContent = text;
+    
+    // Apply red styling for "Sign In" button
+    if (text === 'Sign In') {
+      connectRiotBtn.classList.add('btn-signin');
+    } else {
+      connectRiotBtn.classList.remove('btn-signin');
+    }
+  }
+
   // Helper function to check if this is a first-time user (no stored Riot data)
   async function isFirstTimeUser() {
     try {
@@ -213,7 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.textContent = riotId;
         riotConnectionStatus.classList.add('connected');
         riotConnectionStatus.classList.remove('error', 'connecting');
-        connectRiotBtn.textContent = 'Disconnect';
+        updateRiotButtonText('Disconnect');
         connectRiotBtn.disabled = false;
         refreshRankBtn.classList.remove('hidden'); // Show refresh button
         
@@ -274,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Check if first-time user to determine button text
     const firstTime = await isFirstTimeUser();
-    connectRiotBtn.textContent = firstTime ? 'Sign In' : 'Connect';
+    updateRiotButtonText(firstTime ? 'Sign In' : 'Connect');
     connectRiotBtn.disabled = false;
     
     // Log the actual error for debugging but don't show to user
@@ -312,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const riotId = `${userData.gameName}#${userData.tagLine}`;
           riotConnectionStatus.textContent = riotId;
           riotConnectionStatus.classList.add('connected');
-          connectRiotBtn.textContent = 'Disconnect';
+          updateRiotButtonText('Disconnect');
         }
         
         // Get the connected region from storage and update the selector
@@ -328,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Check if first-time user to determine button text
         const firstTime = await isFirstTimeUser();
-        connectRiotBtn.textContent = firstTime ? 'Sign In' : 'Connect';
+        updateRiotButtonText(firstTime ? 'Sign In' : 'Connect');
         connectRiotBtn.disabled = false;
         currentRank.textContent = 'Unknown';
         rankBadgePreview.style.backgroundImage = 'none';
@@ -416,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
     riotConnectionStatus.textContent = firstTime ? 'Please Sign In' : 'Not Connected';
     riotConnectionStatus.classList.remove('connected', 'error', 'connecting');
     
-    connectRiotBtn.textContent = firstTime ? 'Sign In' : 'Connect';
+    updateRiotButtonText(firstTime ? 'Sign In' : 'Connect');
     connectRiotBtn.disabled = false;
     currentRank.textContent = 'Unknown';
     rankBadgePreview.style.backgroundImage = 'none';
@@ -452,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isAuthenticated) {
           // Disconnect flow
           // Show loading state
-          connectRiotBtn.textContent = 'Disconnecting...';
+          updateRiotButtonText('Disconnecting...');
           riotConnectionStatus.textContent = 'Disconnecting...';
           riotConnectionStatus.classList.add('disconnecting');
           
@@ -463,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update UI manually
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('connected', 'disconnecting');
-            connectRiotBtn.textContent = 'Connect';
+            updateRiotButtonText('Connect');
             
             // Show unranked rank display
             currentRank.textContent = 'Unranked';
@@ -474,7 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error disconnecting:', error);
             
             // Show normal not connected state instead of error
-            connectRiotBtn.textContent = 'Connect';
+            updateRiotButtonText('Connect');
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('error', 'disconnecting', 'connected');
           } finally {
@@ -490,14 +502,14 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (isFirstTime) {
         // First time - just change button text, don't show connecting state
-        connectRiotBtn.textContent = 'Signing In...';
+        updateRiotButtonText('Signing In...');
         // Keep status as "Please Sign In" for first time
         
         // Mark that sign-in button has been pressed so we switch to normal state afterwards
         await chrome.storage.local.set({ 'eloward_signin_attempted': true });
       } else {
         // Returning user - show normal connecting state
-        connectRiotBtn.textContent = 'Connecting...';
+        updateRiotButtonText('Connecting...');
         riotConnectionStatus.textContent = 'Connecting...';
         riotConnectionStatus.classList.remove('error');
         riotConnectionStatus.classList.add('connecting');
@@ -524,7 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
           // Show normal not connected state instead of error
           // After first sign-in attempt, always show normal state
           const firstTime = await isFirstTimeUser();
-          connectRiotBtn.textContent = firstTime ? 'Sign In' : 'Connect';
+          updateRiotButtonText(firstTime ? 'Sign In' : 'Connect');
           riotConnectionStatus.textContent = firstTime ? 'Please Sign In' : 'Not Connected';
           riotConnectionStatus.classList.remove('error', 'connecting', 'connected');
         } finally {
