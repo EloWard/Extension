@@ -69,61 +69,7 @@ export class RankAPI {
     return requestPromise;
   }
   
-  /**
-   * Get rank data for multiple users in a batch
-   * @param {Array<string>} usernames - Array of Twitch usernames
-   * @returns {Promise<Array<Object>>} Array of rank data objects
-   */
-  static async getBatchRanks(usernames) {
-    if (!usernames || !usernames.length) return [];
-    
-    // Normalize usernames
-    const normalizedUsernames = usernames.map(name => name.toLowerCase());
-    
-    // Check which usernames we need to fetch (not in cache)
-    const toFetch = [];
-    const cachedResults = {};
-    
-    for (const username of normalizedUsernames) {
-      const cachedData = this.#checkCache(username);
-      if (cachedData) {
-        cachedResults[username] = cachedData;
-      } else if (!this.#pendingRequests.has(username)) {
-        toFetch.push(username);
-      }
-    }
-    
-    // If we have everything in the cache, return it
-    if (toFetch.length === 0) {
-      return normalizedUsernames.map(username => cachedResults[username] || null);
-    }
-    
-    // Batch fetch for usernames not in cache
-    try {
-      const queryParams = toFetch.map(username => `username=${encodeURIComponent(username)}`).join('&');
-      const response = await fetch(`${this.API_BASE_URL}/ranks?${queryParams}`);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch batch rank data');
-      }
-      
-      const rankDataArray = await response.json();
-      
-      // Update cache with the fresh data
-      for (const rankData of rankDataArray) {
-        const username = rankData.twitch_username.toLowerCase();
-        this.#updateCache(username, rankData);
-        cachedResults[username] = rankData;
-      }
-      
-      // Return all results in the original order
-      return normalizedUsernames.map(username => cachedResults[username] || null);
-    } catch (error) {
-      console.error('Error fetching batch ranks:', error);
-      throw error;
-    }
-  }
+
   
   /**
    * Check the cache for rank data
