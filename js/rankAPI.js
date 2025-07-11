@@ -10,66 +10,8 @@ export class RankAPI {
   static #pendingRequests = new Map();
   static CACHE_TTL = 15 * 60 * 1000; // 15 minutes
   
-  /**
-   * Upload the user's rank to the server
-   * @param {string} twitchUsername - User's Twitch username
-   * @param {Object} rankData - User's rank data
-   * @returns {Promise<Object>} Response data
-   */
-  static async uploadRank(twitchUsername, rankData) {
-    if (!twitchUsername || !rankData) {
-      throw new Error('Missing required data for rank upload');
-    }
-    
-    // Validate PUUID is present (required for uniqueness)
-    if (!rankData.puuid) {
-      throw new Error('PUUID is required for rank upload');
-    }
-    
-    // Format the data for the API according to lol_ranks.sql schema
-    const payload = {
-      riot_puuid: rankData.puuid,
-      twitch_username: twitchUsername,
-      riot_id: rankData.gameName && rankData.tagLine ? `${rankData.gameName}#${rankData.tagLine}` : null,
-      rank_tier: rankData.tier || 'UNRANKED',
-      rank_division: rankData.division || rankData.rank || null,
-      lp: rankData.leaguePoints || 0,
-    };
-    
-    try {
-      // Use the POST endpoint from Database.txt
-      const response = await fetch(`${this.API_BASE_URL}/ranks/lol`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload rank data');
-      }
-      
-      const responseData = await response.json();
-      
-      // Update the cache with the fresh data
-      this.#updateCache(twitchUsername.toLowerCase(), {
-        riot_puuid: payload.riot_puuid,
-        twitch_username: twitchUsername.toLowerCase(),
-        riot_id: payload.riot_id,
-        rank_tier: payload.rank_tier,
-        rank_division: payload.rank_division,
-        lp: payload.lp,
-        last_updated: responseData.timestamp,
-      });
-      
-      return responseData;
-    } catch (error) {
-      console.error('Error uploading rank:', error);
-      throw error;
-    }
-  }
+  // NOTE: Rank uploading is now handled securely by the backend via /store-rank endpoint
+  // in riotauth-worker.ts. This class only handles fetching rank data for display.
   
   /**
    * Get rank data for a single user

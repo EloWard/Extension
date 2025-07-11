@@ -645,7 +645,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update persistent storage with the fresh user data including new rank
     await PersistentStorage.storeRiotUserData(userData);
     
-    // Update rank in the database
+    // Update rank in the database via secure backend
     try {
       // Get current Twitch username
       const twitchData = await new Promise(resolve => {
@@ -654,25 +654,42 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
       
-      if (twitchUsername && userData.soloQueueRank) {
-        // Import RankAPI
-        const { RankAPI } = await import('./rankAPI.js');
+      if (twitchUsername) {
+        // Get current access token and region
+        const accessToken = await RiotAuth.getValidToken();
+        const region = regionSelect.value;
         
-        // Format rank data for upload
-        const rankData = {
-          puuid: userData.puuid,
-          gameName: userData.gameName,
-          tagLine: userData.tagLine,
-          tier: userData.soloQueueRank.tier,
-          rank: userData.soloQueueRank.rank,
-          leaguePoints: userData.soloQueueRank.leaguePoints
-        };
+        // Get Twitch token for verification
+        const twitchToken = await TwitchAuth.getValidToken();
         
-        // Upload rank to database
-        await RankAPI.uploadRank(twitchUsername, rankData);
+        if (accessToken && twitchToken) {
+          // Call the secure backend endpoint
+          const response = await fetch(`https://eloward-riotauth.unleashai.workers.dev/store-rank`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              twitch_token: twitchToken,
+              riot_token: accessToken,
+              region: region,
+              twitch_username: twitchUsername
+            })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log('Rank data stored successfully via backend:', result);
+          } else {
+            const errorData = await response.json();
+            console.error('Error storing rank data via backend:', errorData);
+          }
+        } else {
+          console.warn('Missing tokens for secure rank storage');
+        }
       }
     } catch (dbError) {
-      console.error('Error updating rank in database:', dbError);
+      console.error('Error updating rank in database via backend:', dbError);
       // Don't fail the entire operation if database update fails
     }
   }

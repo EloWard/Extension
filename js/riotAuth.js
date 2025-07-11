@@ -1384,37 +1384,54 @@ export const RiotAuth = {
       // Store in persistent storage for future use
       await PersistentStorage.storeRiotUserData(userData);
       
-      // ADDED: Upload rank data to the database
+      // ADDED: Store rank data securely via backend
       try {
-        // Get current Twitch username from storage
+        // Get current Twitch username and token from storage
         const twitchData = await new Promise(resolve => {
           chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
         });
         
         const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
         
-        if (twitchUsername && userData.soloQueueRank) {
-          console.log('Uploading rank data to database for:', twitchUsername);
+        if (twitchUsername) {
+          console.log('Storing rank data securely via backend for:', twitchUsername);
           
-          // Import RankAPI dynamically to avoid circular dependencies
-          const { RankAPI } = await import('./rankAPI.js');
+          // Get current access token and region
+          const accessToken = await this.getValidToken();
+          const region = await this._getStoredValue('selectedRegion') || 'na1';
           
-          // Format rank data for upload
-          const rankData = {
-            puuid: userData.puuid,
-            gameName: userData.gameName,
-            tagLine: userData.tagLine,
-            tier: userData.soloQueueRank.tier,
-            rank: userData.soloQueueRank.rank,
-            leaguePoints: userData.soloQueueRank.leaguePoints
-          };
+          // Get Twitch token for verification
+          const { TwitchAuth } = await import('./twitchAuth.js');
+          const twitchToken = await TwitchAuth.getValidToken();
           
-          // Upload rank to database
-          await RankAPI.uploadRank(twitchUsername, rankData);
-          console.log('Rank data uploaded successfully');
+          if (accessToken && twitchToken) {
+            // Call the secure backend endpoint
+            const response = await fetch(`${this.config.proxyBaseUrl}/store-rank`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                twitch_token: twitchToken,
+                riot_token: accessToken,
+                region: region,
+                twitch_username: twitchUsername
+              })
+            });
+            
+            if (response.ok) {
+              const result = await response.json();
+              console.log('Rank data stored successfully via backend:', result);
+            } else {
+              const errorData = await response.json();
+              console.error('Error storing rank data via backend:', errorData);
+            }
+          } else {
+            console.warn('Missing tokens for secure rank storage');
+          }
         }
       } catch (uploadError) {
-        console.error('Error uploading rank data to database:', uploadError);
+        console.error('Error storing rank data via backend:', uploadError);
         // Don't fail the entire operation if upload fails
       }
       
