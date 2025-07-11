@@ -745,8 +745,8 @@ export const TwitchAuth = {
         return storedUserInfo;
       }
       
-      // If not in storage, get fresh data
-      console.log('No persistent data found, fetching from API...');
+      // If not in storage, get fresh data via secure backend
+      console.log('No persistent data found, fetching via secure backend...');
       
       // Get a valid access token
       const accessToken = await this.getValidToken();
@@ -755,50 +755,36 @@ export const TwitchAuth = {
         throw new Error('No valid access token for Twitch API');
       }
       
-      // Call the backend proxy to get user info
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.userInfo}`, {
+      // Call the secure backend endpoint to fetch and store user data
+      const response = await fetch('https://eloward-users.unleashai.workers.dev/store-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ access_token: accessToken })
+        body: JSON.stringify({
+          twitch_token: accessToken
+        })
       });
       
       if (!response.ok) {
-        throw new Error(`Error getting Twitch user info: ${response.status} ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Backend error: ${response.status} ${errorData.error || response.statusText}`);
       }
       
-      const data = await response.json();
+      const result = await response.json();
       
-      // Twitch API returns an array of users in the "data" field
-      if (!data.data || !data.data.length) {
-        throw new Error('No user data returned from Twitch API');
+      if (!result.success || !result.user_data) {
+        throw new Error('Backend did not return valid user data');
       }
       
-      // The first (and only) user is the one we're interested in
-      const userInfo = data.data[0];
+      const userInfo = result.user_data;
+      console.log('Twitch user info retrieved and stored successfully via secure backend');
       
-      // Store the user info for later use
+      // Store the user info locally for future use
       await this._storeUserInfo(userInfo);
       
       // Also store in persistent storage
       await PersistentStorage.storeTwitchUserData(userInfo);
-      
-      // Register user in database
-      try {
-        // Ensure email is available before registration
-        if (!userInfo.email) {
-          console.warn('No email available for user, skipping database registration');
-          throw new Error('Email is required for user registration');
-        }
-        
-        console.log('Registering user in database:', userInfo.login, userInfo.id, userInfo.email);
-        await this._registerUserInDatabase(userInfo.login, userInfo.id, userInfo.email);
-        console.log('User registered successfully in database');
-      } catch (registerError) {
-        console.error('Failed to register user in database:', registerError);
-        // Continue with auth flow even if registration fails
-      }
       
       return userInfo;
     } catch (error) {
@@ -859,44 +845,7 @@ export const TwitchAuth = {
     });
   },
   
-  /**
-   * Register user in database via subscription worker
-   * @param {string} twitchUsername - The Twitch username/login
-   * @param {string} twitchId - The Twitch user ID (numeric)
-   * @param {string} email - The Twitch email (required)
-   * @returns {Promise<Object>} Registration response
-   * @private
-   */
-  async _registerUserInDatabase(twitchUsername, twitchId, email) {
-    try {
-      // Validate required parameters
-      if (!twitchUsername || !twitchId || !email) {
-        throw new Error('Missing required parameters: twitchUsername, twitchId, and email are all required');
-      }
-      
-      const response = await fetch('https://eloward-users.unleashai.workers.dev/user/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          twitch_username: twitchUsername,
-          twitch_id: twitchId,
-          email: email
-        }),
-      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to register user');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error registering user in database:', error);
-      throw error;
-    }
-  },
 
   /**
    * Get user info from persistent storage
@@ -914,20 +863,6 @@ export const TwitchAuth = {
           display_name: userInfo.display_name,
           login: userInfo.login
         });
-        
-        // Ensure user is registered in database (for existing users)
-        if (userInfo.login && userInfo.id && userInfo.email) {
-          try {
-            console.log('Ensuring user is registered in database from stored data:', userInfo.login, userInfo.id, userInfo.email);
-            await this._registerUserInDatabase(userInfo.login, userInfo.id, userInfo.email);
-            console.log('User registration verified from stored data');
-          } catch (registerError) {
-            console.warn('Failed to register user from stored data (non-fatal):', registerError);
-            // Continue anyway, this is not critical
-          }
-        } else if (userInfo.login && userInfo.id && !userInfo.email) {
-          console.warn('Stored user data missing email, skipping database registration');
-        }
         
         return userInfo;
       }
