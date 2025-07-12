@@ -38,11 +38,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setRiotControlsDisabled(!isTwitchConnected);
     
     // Log for debugging
+    /*
     console.log('Riot controls updated:', {
       twitchStatus: twitchConnectionStatus.textContent,
       hasConnectedClass: twitchConnectionStatus.classList.contains('connected'),
       riotControlsEnabled: isTwitchConnected
     });
+    */
   }
 
   // Helper function to update button text and styling
@@ -159,7 +161,6 @@ document.addEventListener('DOMContentLoaded', () => {
         accountDropdownArrow.classList.remove('rotated');
       }
     } catch (error) {
-      console.error('Error loading account section state:', error);
       // Default to open on error
       accountContent.style.display = 'block';
       accountDropdownArrow.classList.add('rotated');
@@ -226,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
     } catch (error) {
-      console.error('Error processing auth callback:', error);
       // Only show error if the connection button isn't in a "connecting" state
       if (!riotConnectionStatus.classList.contains('connecting')) {
         showAuthError(error.message || 'Failed to process authentication');
@@ -290,7 +290,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showNotConnectedUI();
       }
     } catch (error) {
-      console.error('Error updating user interface:', error);
       // Fallback to not connected UI on error
       showNotConnectedUI();
     }
@@ -308,7 +307,6 @@ document.addEventListener('DOMContentLoaded', () => {
     connectRiotBtn.disabled = false;
     
     // Log the actual error for debugging but don't show to user
-    console.log('Riot auth error (hidden from user):', message);
   }
 
   // Functions
@@ -406,7 +404,6 @@ document.addEventListener('DOMContentLoaded', () => {
               await PersistentStorage.storeTwitchUserData(userData);
             }
           } catch (error) {
-            console.warn('Could not get Twitch user info for storage:', error);
           }
           isTwitchConnected = true; // Mark as connected based on live check
         } else if (!persistentConnectedState.twitch) {
@@ -421,7 +418,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateRiotControlsBasedOnTwitchStatus();
         
               } catch (twitchError) {
-          console.error('Error checking Twitch auth status:', twitchError);
           if (!persistentConnectedState.twitch) {
             // Only update UI if we haven't already displayed data from persistent storage
             twitchConnectionStatus.textContent = 'Not Connected';
@@ -433,7 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       
     } catch (error) {
-      console.error('Error checking auth status:', error);
       showNotConnectedUI();
     }
     
@@ -507,7 +502,6 @@ document.addEventListener('DOMContentLoaded', () => {
             rankBadgePreview.style.transform = 'translateY(-3px)';
             refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
           } catch (error) {
-            console.error('Error disconnecting:', error);
             
             // Show normal not connected state instead of error
             updateRiotButtonText('Connect');
@@ -555,7 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Store the connected region in storage and ensure the region selector reflects the current region
         await chrome.storage.local.set({ selectedRegion: region });
               } catch (error) {
-          console.error('Error in connectRiotAccount:', error);
           
           // Show normal not connected state instead of error
           // After first sign-in attempt, always show normal state
@@ -573,7 +566,6 @@ document.addEventListener('DOMContentLoaded', () => {
           connectRiotBtn.disabled = false;
         }
     } catch (error) {
-      console.error('Error checking authentication status:', error);
       // Re-enable button in case of a general error
       connectRiotBtn.disabled = false;
     }
@@ -612,7 +604,6 @@ document.addEventListener('DOMContentLoaded', () => {
           // After successful silent re-auth, automatically retry the rank refresh
           await performRankRefresh();
         } catch (authError) {
-          console.error('Error during silent re-authentication:', authError);
           // If silent re-auth fails, show error but don't break connection
           showAuthError('Authentication failed. Please try refreshing again.');
         }
@@ -620,7 +611,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       // Handle other errors (e.g., network issues, data not found)
-      console.error('Error refreshing rank:', error);
       
       // Show "Unranked" if there's a rank lookup error or no data found for this region
       if (error.message && (
@@ -633,7 +623,6 @@ document.addEventListener('DOMContentLoaded', () => {
         rankBadgePreview.style.transform = 'translateY(-3px)';
       } else {
         // For other errors, don't show error to user - keep original text
-        console.log('Rank refresh error (hidden from user):', error.message);
         // Keep the original rank text, no user-visible error
       }
     } finally {
@@ -703,17 +692,13 @@ document.addEventListener('DOMContentLoaded', () => {
           
           if (response.ok) {
             const result = await response.json();
-            console.log('Rank data stored successfully via backend:', result);
           } else {
             const errorData = await response.json();
-            console.error('Error storing rank data via backend:', errorData);
           }
         } else {
-          console.warn('Missing tokens for secure rank storage');
         }
       }
     } catch (dbError) {
-      console.error('Error updating rank in database via backend:', dbError);
       // Don't fail the entire operation if database update fails
     }
   }
@@ -765,7 +750,6 @@ document.addEventListener('DOMContentLoaded', () => {
   async function connectTwitchAccount() {
     // Check if TwitchAuth is available
     if (typeof TwitchAuth === 'undefined') {
-      console.error('TwitchAuth module is not loaded properly');
       twitchConnectionStatus.textContent = 'Not Connected';
       twitchConnectionStatus.classList.remove('error', 'connecting', 'disconnecting', 'connected');
       return;
@@ -829,7 +813,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           } catch (userInfoError) {
             // User info failed - show not connected state
-            console.warn('Could not get user info:', userInfoError);
             twitchConnectionStatus.textContent = 'Not Connected';
             twitchConnectionStatus.classList.remove('error', 'connecting', 'connected');
             connectTwitchBtn.textContent = 'Connect';
@@ -839,7 +822,6 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           
         } catch (authError) {
-          console.error('Twitch authentication error:', authError);
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('error', 'connecting', 'connected');
           connectTwitchBtn.textContent = 'Connect';
@@ -852,7 +834,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     } catch (error) {
-      console.error('Error in connectTwitchAccount:', error);
       twitchConnectionStatus.textContent = 'Not Connected';
       twitchConnectionStatus.classList.remove('error', 'connecting', 'disconnecting', 'connected');
       
