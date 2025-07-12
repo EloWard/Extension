@@ -4,163 +4,142 @@ import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
 
 // Constants
-const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev'; // Updated to use deployed worker
-const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev'; // Rank Worker API endpoint
-const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev'; // Users API worker (formerly Channel Status API)
-const MAX_RANK_CACHE_SIZE = 500; // Maximum entries in the rank cache
-const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // Cache entries expire after 1 hour
+const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev';
+const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
+const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
+const MAX_RANK_CACHE_SIZE = 500;
+const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// LFU Cache for user ranks - shared implementation with content.js
+// LFU Cache for user ranks with time-based expiration
 class UserRankCache {
   constructor(maxSize = MAX_RANK_CACHE_SIZE) {
     this.cache = new Map();
     this.maxSize = maxSize;
     this.currentUser = null;
-    
   }
-  
-  
+
   // Set current user to protect from eviction
   setCurrentUser(username) {
     if (username) {
       this.currentUser = username.toLowerCase();
     }
   }
-  
+
   // Get entry from cache
   get(username) {
     if (!username) return null;
     const normalizedUsername = username.toLowerCase();
     const entry = this.cache.get(normalizedUsername);
-    
+
     if (entry) {
-      // Check if entry has expired based on timestamp
-      // RANK_CACHE_EXPIRY is set to 1 hour in milliseconds
+      // Check if entry has expired
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(normalizedUsername);
         return null;
       }
-      
+
       // Increment frequency on access
       entry.frequency = (entry.frequency || 0) + 1;
       return entry.rankData;
     }
-    
+
     return null;
   }
-  
+
   // Add or update entry in cache
   set(username, rankData) {
     if (!username || !rankData) return;
-    
+
     const normalizedUsername = username.toLowerCase();
     let entry = this.cache.get(normalizedUsername);
-    
+
     if (entry) {
-      // Update existing entry
       entry.rankData = rankData;
       entry.frequency = (entry.frequency || 0) + 1;
       entry.timestamp = Date.now();
     } else {
-      // Add new entry
       entry = { 
         rankData, 
         frequency: 1,
         timestamp: Date.now()
       };
       this.cache.set(normalizedUsername, entry);
-      
-      // Check if we need to evict
+
       if (this.cache.size > this.maxSize) {
         this.evictLFU();
       }
     }
-    
   }
-  
+
   // Clear cache but preserve current user's data
   clear() {
-    // Store current user's entry if exists
     const currentUserEntry = this.currentUser ? this.cache.get(this.currentUser) : null;
-    const previousSize = this.cache.size;
-    
-    // Clear the cache
     this.cache.clear();
-    
-    // Restore current user's entry if it exists
+
     if (this.currentUser && currentUserEntry) {
       this.cache.set(this.currentUser, currentUserEntry);
-    } else {
     }
-    
   }
-  
-  // Evict the least frequently used entry (not current user)
+
+  // Evict the least frequently used entry (excluding current user)
   evictLFU() {
     let lowestFrequency = Infinity;
     let userToEvict = null;
-    
+
     for (const [key, entry] of this.cache.entries()) {
       // Skip current user
       if (key === this.currentUser) {
         continue;
       }
-      
-      // Check for expired entries first (time-based eviction)
-      // This ensures time-expired entries are removed before frequency-based eviction
+
+      // Prioritize expired entries for eviction
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(key);
-        return; // Successfully evicted an expired entry
+        return;
       }
-      
-      // If no expired entries, use frequency-based eviction
+
+      // Use frequency-based eviction for non-expired entries
       if (entry.frequency < lowestFrequency) {
         lowestFrequency = entry.frequency;
         userToEvict = key;
       }
     }
-    
-    // Evict if found
+
     if (userToEvict) {
       this.cache.delete(userToEvict);
     }
   }
-  
+
   // Check if cache has a username
   has(username) {
     if (!username) return false;
     const normalizedUsername = username.toLowerCase();
-    
-    // Check if entry exists and is not expired
+
     const entry = this.cache.get(normalizedUsername);
     if (entry && entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
       this.cache.delete(normalizedUsername);
       return false;
     }
-    
+
     return this.cache.has(normalizedUsername);
   }
-  
-  // Get cache size
+
   get size() {
     return this.cache.size;
   }
 }
 
-// Create the global rank cache instance
 const userRankCache = new UserRankCache();
 
-/* Track any open auth windows */
+// Track open auth windows
 let authWindows = {};
 
-/* Handle auth callbacks */
+// Handle auth callbacks from various sources
 function handleAuthCallback(params) {
-  // Only log basic info, not complete params
-  
   if (!params || !params.code) {
     return;
   }
-  
+
   // Store the auth callback data
   const promiseStorage = new Promise(resolve => {
     chrome.storage.local.set({
@@ -168,10 +147,10 @@ function handleAuthCallback(params) {
       'eloward_auth_callback': params
     }, resolve);
   });
-  
-  // Determine if this is a Twitch callback or a Riot callback
+
+  // Route to appropriate service handler
   const isTwitchCallback = params.service === 'twitch';
-  
+
   if (isTwitchCallback) {
     chrome.storage.local.set({
       'twitch_auth_callback': params
@@ -185,8 +164,8 @@ function handleAuthCallback(params) {
       initiateTokenExchange(params, 'riot');
     });
   }
-  
-  // Send message to any open popups
+
+  // Notify any open popups
   chrome.runtime.sendMessage({
     type: 'auth_callback',
     params: params
@@ -200,34 +179,25 @@ function handleAuthCallback(params) {
  */
 async function initiateTokenExchange(authData, service = 'riot') {
   try {
-    
     if (!authData || !authData.code) {
       throw new Error('Invalid auth data for token exchange');
     }
-    
+
     if (service === 'twitch') {
-      // Exchange code for Twitch tokens
       const tokenData = await TwitchAuth.exchangeCodeForTokens(authData.code);
-      
-      // Get user info
       const userInfo = await TwitchAuth.getUserInfo();
-      
-      // Store in persistent storage with indefinite retention
+
       await PersistentStorage.storeTwitchUserData(userInfo);
       await PersistentStorage.updateConnectedState('twitch', true);
-      
+
       return userInfo;
     } else {
-      // Exchange code for Riot tokens
       const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
-      
-      // Get user data
       const userData = await RiotAuth.getUserData();
-      
-      // Store in persistent storage with indefinite retention
+
       await PersistentStorage.storeRiotUserData(userData);
       await PersistentStorage.updateConnectedState('riot', true);
-      
+
       return userData;
     }
   } catch (error) {
@@ -235,29 +205,27 @@ async function initiateTokenExchange(authData, service = 'riot') {
   }
 }
 
-/* Listen for messages from content scripts, popup, and other extension components */
+// Handle messages from content scripts, popup, and other extension components
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
-  // METRICS TRACKING
+  // Metrics tracking
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
       .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep the message channel open for async response
+    return true;
   }
   
   if (message.action === 'increment_successful_lookups' && message.channel) {
     incrementSuccessfulLookupCounter(message.channel)
       .then(success => sendResponse({ success }))
       .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep the message channel open for async response
+    return true;
   }
   
-  // TWITCH AUTH CALLBACK HANDLING
+  // Twitch auth callback handling
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
-    
     try {
-      // Extract params depending on message format
       const params = message.params || {
         code: message.code,
         state: message.state,
@@ -273,7 +241,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
       }
       
-      // Process the auth data with enhanced metadata
       handleAuthCallback({
         ...params,
         source: 'twitch_auth_callback',
@@ -284,22 +251,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
       
-      // Send success response immediately and don't wait for async operations
       sendResponse({ 
         success: true, 
         message: 'Twitch auth callback received and processing',
       });
       
-      // Notify any listeners that we received a Twitch auth callback
+      // Notify listeners of successful processing
       setTimeout(() => {
         chrome.runtime.sendMessage({
           type: 'twitch_auth_processed',
           success: true,
           timestamp: Date.now()
-        }).catch(() => {/* Ignore errors; popup might not be open */});
+        }).catch(() => {});
       }, 500);
       
-      return true; // Keep the message channel open for the async response
+      return true;
     } catch (error) {
       sendResponse({ 
         success: false, 
@@ -309,16 +275,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
   
-  // AUTH RELATED MESSAGES
+  // Auth message handling
   if (message.type === 'get_auth_callback') {
-    // Also check for Twitch-specific callback
     chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
-      // Try to find the callback data in any of the possible storage keys
       const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
-      
       sendResponse({ data: callback });
     });
-    return true; // Required for async sendResponse
+    return true;
   }
   
   if (message.type === 'auth_callback') {
@@ -604,7 +567,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-/* Clean up old auth windows periodically */
+// Clean up old auth windows periodically
 setInterval(() => {
   const now = Date.now();
   const maxAge = 30 * 60 * 1000; // 30 minutes
@@ -615,7 +578,7 @@ setInterval(() => {
       delete authWindows[id];
     }
   });
-}, 5 * 60 * 1000); // Run every 5 minutes
+}, 5 * 60 * 1000); // Every 5 minutes
 
 // Listen for window messages (for callback.html communication)
 self.addEventListener('message', (event) => {
@@ -625,34 +588,29 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Initialize
+// Extension initialization
 chrome.runtime.onInstalled.addListener((details) => {
-  
-  // Clear all stored data to force a fresh start
   clearAllStoredData();
   
-  // Initialize storage
   chrome.storage.local.set({
-    selectedRegion: 'na1' // Default region
+    selectedRegion: 'na1'
   });
   
-  // Set icon badge to show it's active
+  // Show active badge temporarily
   chrome.action.setBadgeText({ text: 'ON' });
   chrome.action.setBadgeBackgroundColor({ color: '#DC2123' });
   
-  // Clear badge after 5 seconds
   setTimeout(() => {
     chrome.action.setBadgeText({ text: '' });
   }, 5000);
   
-  // Initialize the linkedAccounts storage
+  // Initialize linked accounts storage
   chrome.storage.local.get('linkedAccounts', (data) => {
     if (!data.linkedAccounts) {
       chrome.storage.local.set({ linkedAccounts: {} });
     }
   });
   
-  // Load any saved configuration
   loadConfiguration();
 });
 
@@ -715,11 +673,9 @@ function clearAllStoredData() {
 // Helper functions
 
 /**
- * Check if a channel is active (channel_active = 1 in database)
- * Makes direct API calls without caching since this is only called when switching channels
- * 
+ * Check if a channel is active in the database
  * @param {string} channelName - Twitch channel name to check
- * @param {boolean} skipCache - Parameter kept for backward compatibility but no longer used
+ * @param {boolean} skipCache - Kept for backward compatibility
  * @returns {Promise<boolean>} - Whether the channel is active
  */
 function checkChannelActive(channelName, skipCache = false) {
@@ -727,14 +683,10 @@ function checkChannelActive(channelName, skipCache = false) {
     return Promise.resolve(false);
   }
   
-  // Normalize the channel name to lowercase for consistency
   const normalizedName = channelName.toLowerCase();
   
-  // Increment db_read counter for channel checks too
-  incrementDbReadCounter(normalizedName).catch(error => {
-  });
+  incrementDbReadCounter(normalizedName).catch(() => {});
   
-  // Call the channel status API to check if channel is active (channel_active = 1)
   return fetch(`${STATUS_API_URL}/channelstatus/verify`, {
     method: 'POST',
     headers: {
@@ -749,10 +701,7 @@ function checkChannelActive(channelName, skipCache = false) {
     return response.json();
   })
   .then(data => {
-    // Get the boolean channel active status
-    const isActive = !!data.active;
-    
-    return isActive;
+    return !!data.active;
   })
   .catch(error => {
     return false;
@@ -1123,25 +1072,19 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
 
 
 
-// Add a function to preload and sync all linked accounts
+// Preload and sync linked accounts
 function preloadLinkedAccounts() {
-  
-  // First, ensure the linkedAccounts object exists in storage
   chrome.storage.local.get('linkedAccounts', (data) => {
     const linkedAccounts = data.linkedAccounts || {};
     
-    // Check if we have the current user's account info
     chrome.storage.local.get(['twitchUsername', 'riotAccountInfo'], (userData) => {
       let updated = false;
       
-      // If current user has linked their account, make sure it's in the linkedAccounts
       if (userData.twitchUsername && userData.riotAccountInfo) {
         const normalizedUsername = userData.twitchUsername.toLowerCase();
         
-        // Update or add current user's linked account
         if (!linkedAccounts[normalizedUsername] || 
             !linkedAccounts[normalizedUsername].puuid) {
-          
           
           linkedAccounts[normalizedUsername] = {
             ...userData.riotAccountInfo,
@@ -1155,13 +1098,9 @@ function preloadLinkedAccounts() {
         }
       }
       
-      // Store the updated linkedAccounts if changes were made
       if (updated) {
         chrome.storage.local.set({ linkedAccounts });
       }
-      
-      // Log only the count of linked accounts to reduce verbosity
-      const accountCount = Object.keys(linkedAccounts).length;
     });
   });
 }
@@ -1173,7 +1112,6 @@ preloadLinkedAccounts();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local') {
     if (changes.riotAccountInfo || changes.twitchUsername) {
-      // Don't log every automatic update
       preloadLinkedAccounts();
     }
   }
@@ -1181,14 +1119,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 
 
-// Function to handle when users switch channels
+// Handle channel switching
 function handleChannelSwitch(oldChannel, newChannel) {
-  
-  // Clear user rank cache when changing channels
   userRankCache.clear();
-  
-  
-  // Remove the redundant legacy region key if it exists
   chrome.storage.local.remove('connected_region');
 }
 

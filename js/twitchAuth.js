@@ -105,26 +105,13 @@ export const TwitchAuth = {
           await PersistentStorage.storeTwitchUserData(userInfo);
           
           return userInfo;
-        } catch (userInfoError) {
-          // Log error but don't fail the authentication process
-          
-          // Ensure we still consider the user authenticated
-          await PersistentStorage.updateConnectedState('twitch', true);
-          
-          // Try to register user with minimal token data if available
-          try {
-            // Get token to extract user ID if possible
-            const token = await this.getValidToken();
-            if (token) {
-              // We can't get full user info, but we could try to extract basic data
-              // For now, just log that registration was skipped
-            }
-          } catch (tokenError) {
+                  } catch (userInfoError) {
+            // Ensure we still consider the user authenticated
+            await PersistentStorage.updateConnectedState('twitch', true);
+            
+            // Return minimal user object if full info unavailable
+            return { authenticated: true };
           }
-          
-          // Return a minimal user object
-          return { authenticated: true };
-        }
       } catch (tokenError) {
         // Make sure the authentication state is cleared on token exchange failure
         await PersistentStorage.updateConnectedState('twitch', false);
@@ -365,10 +352,10 @@ export const TwitchAuth = {
           
           window.removeEventListener('message', messageListener);
           
-          // Store in chrome.storage for consistency (using all possible keys)
+          // Store in chrome.storage for consistency
           const callbackData = {
             ...event.data,
-            timestamp: Date.now() // Add timestamp for debugging
+            timestamp: Date.now()
           };
           
           chrome.storage.local.set({
@@ -731,12 +718,9 @@ export const TwitchAuth = {
    */
   async getUserInfoFromStorage() {
     try {
-      
-      // Try to get user info from persistent storage
       const userInfo = await PersistentStorage.getTwitchUserData();
       
       if (userInfo) {
-        
         return userInfo;
       }
       

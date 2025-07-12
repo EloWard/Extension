@@ -27,24 +27,14 @@ document.addEventListener('DOMContentLoaded', () => {
     regionSelect.disabled = isDisabled;
   }
 
-  // Helper function to check and update Riot controls based on current Twitch UI state
+  // Update Riot controls based on current Twitch connection status
   function updateRiotControlsBasedOnTwitchStatus() {
-    // Check if Twitch is actually connected based on UI state
     const isTwitchConnected = twitchConnectionStatus.classList.contains('connected') && 
                               twitchConnectionStatus.textContent !== 'Not Connected' &&
                               twitchConnectionStatus.textContent !== 'Connecting...' &&
                               twitchConnectionStatus.textContent !== 'Disconnecting...';
     
     setRiotControlsDisabled(!isTwitchConnected);
-    
-    // Log for debugging
-    /*
-    console.log('Riot controls updated:', {
-      twitchStatus: twitchConnectionStatus.textContent,
-      hasConnectedClass: twitchConnectionStatus.classList.contains('connected'),
-      riotControlsEnabled: isTwitchConnected
-    });
-    */
   }
 
   // Helper function to update button text and styling
@@ -111,8 +101,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Add event listener for Twitch connect button
   if (connectTwitchBtn) {
     connectTwitchBtn.addEventListener('click', connectTwitchAccount);
-  } else {
-    console.error('Could not find connect-twitch button');
   }
   
   // Add toggle functionality for the streamer section
@@ -247,19 +235,16 @@ document.addEventListener('DOMContentLoaded', () => {
         connectRiotBtn.disabled = false;
         refreshRankBtn.classList.remove('hidden'); // Show refresh button
         
-        // Adapt the new userData format to match what the UI expects
         let rankInfo = null;
         
-        // Try to get rank info from soloQueueRank field (new format)
+        // Extract rank info from various data formats
         if (userData.soloQueueRank) {
           rankInfo = {
             tier: userData.soloQueueRank.tier.charAt(0) + userData.soloQueueRank.tier.slice(1).toLowerCase(),
             division: userData.soloQueueRank.rank,
             leaguePoints: userData.soloQueueRank.leaguePoints
           };
-        } 
-        // Try to find it in ranks array (new format)
-        else if (userData.ranks && userData.ranks.length > 0) {
+        } else if (userData.ranks && userData.ranks.length > 0) {
           const soloQueueEntry = userData.ranks.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
           if (soloQueueEntry) {
             rankInfo = {
@@ -268,9 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
               leaguePoints: soloQueueEntry.leaguePoints
             };
           }
-        } 
-        // Check for rankInfo directly (old format)
-        else if (userData.rankInfo) {
+        } else if (userData.rankInfo) {
           rankInfo = userData.rankInfo;
         }
         
@@ -295,18 +278,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Show authentication error (hidden from user - just show not connected)
+  // Handle authentication errors gracefully
   async function showAuthError(message) {
-    // Don't show error to user, just display normal "Not Connected" state
     riotConnectionStatus.textContent = 'Not Connected';
     riotConnectionStatus.classList.remove('error', 'connecting', 'connected');
     
-    // Check if first-time user to determine button text
     const firstTime = await isFirstTimeUser();
     updateRiotButtonText(firstTime ? 'Sign In' : 'Connect');
     connectRiotBtn.disabled = false;
-    
-    // Log the actual error for debugging but don't show to user
   }
 
   // Functions
@@ -398,13 +377,14 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.classList.remove('connecting', 'disconnecting', 'error');
           connectTwitchBtn.textContent = 'Disconnect';
           
-          // Update persistent storage with latest data if available
-          try {
-            if (userData) {
-              await PersistentStorage.storeTwitchUserData(userData);
-            }
-          } catch (error) {
+                  // Update persistent storage with latest data
+        try {
+          if (userData) {
+            await PersistentStorage.storeTwitchUserData(userData);
           }
+        } catch (error) {
+          // Storage update failed
+        }
           isTwitchConnected = true; // Mark as connected based on live check
         } else if (!persistentConnectedState.twitch) {
           // Only update UI if we haven't already displayed data from persistent storage
@@ -634,28 +614,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Helper function to perform the actual rank refresh logic
+  // Perform the actual rank refresh operation
   async function performRankRefresh() {
-    // Get stored account info first
     const accountInfo = await RiotAuth.getAccountInfo();
     
     if (!accountInfo || !accountInfo.puuid) {
       throw new Error('Account information not available');
     }
     
-    // Get the current selected region
     const selectedRegion = regionSelect.value;
-    
-    // Force a fresh rank lookup using PUUID
     const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
-    
-    // Get the freshly updated user data
     const userData = await RiotAuth.getUserData(true);
     
-    // Update the UI with the fresh data
     updateUserInterface(userData);
-    
-    // Update persistent storage with the fresh user data including new rank
     await PersistentStorage.storeRiotUserData(userData);
     
     // Update rank in the database via secure backend

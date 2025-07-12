@@ -1,6 +1,4 @@
-/* EloWard Extension Styles - Only used styles */
-
-/* Only the rank badge styles are actually used */
+/* EloWard Extension Styles */
 .eloward-rank-badge {
   display: inline-flex !important;
   justify-content: center !important;

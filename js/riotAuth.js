@@ -413,7 +413,7 @@ export const RiotAuth = {
       // Calculate expiry time - ensure it's a numeric value
       const expiresIn = parseInt(tokenData.expires_in, 10) || 300; // Default to 5 minutes if invalid
       if (isNaN(expiresIn)) {
-        console.warn('Invalid expires_in value:', tokenData.expires_in, 'using default of 300 seconds');
+        // Invalid expires_in value, using default
       }
       
       // Calculate expiry timestamp as milliseconds since epoch
@@ -870,27 +870,25 @@ export const RiotAuth = {
         }
       }
       
-      // If we still don't have account info, try fallback legacy endpoint from logs
-      if (!accountInfo) {
-        try {
-          const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account?region=${regionalRoute}`;
-          
-          const response = await fetch(altRequestUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
+              // Try fallback endpoint if primary failed
+        if (!accountInfo) {
+          try {
+            const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account?region=${regionalRoute}`;
+            
+            const response = await fetch(altRequestUrl, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`
+              }
+            });
+            
+            if (response.ok) {
+              accountInfo = await response.json();
             }
-          });
-          
-          if (response.ok) {
-            accountInfo = await response.json();
-          } else {
-            // If this also fails, we're out of options
-            const errorData = await response.json().catch(() => ({}));
+          } catch (fallbackError) {
+            // Fallback also failed
           }
-        } catch (fallbackError) {
         }
-      }
       
       // If we still don't have account info after all attempts, we fail
       if (!accountInfo || !accountInfo.puuid) {
@@ -1068,14 +1066,7 @@ export const RiotAuth = {
       
       // Log the retrieved rank data summary
       
-      // Store the rank data for future reference
       await this._storeRankInfo(rankEntries);
-      
-      // Find the solo queue rank entry
-      const soloQueueEntry = rankEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-      if (soloQueueEntry) {
-      } else {
-      }
       
       return rankEntries;
     } catch (error) {
@@ -1173,14 +1164,10 @@ export const RiotAuth = {
       const userData = {
         ...accountInfo,
         ranks: rankInfo || [],
-        // Find and extract solo queue rank data
         soloQueueRank: rankInfo && rankInfo.length ? 
           rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null : null
       };
       
-      // Log the final data structure
-      
-      // Store in persistent storage for future use
       await PersistentStorage.storeRiotUserData(userData);
       
       // ADDED: Store rank data securely via backend
@@ -1274,22 +1261,14 @@ export const RiotAuth = {
       const jsonStr = atob(payload);
       const decodedPayload = JSON.parse(jsonStr);
       
-      
-      // Log just the keys of the decoded payload for security
-      
       // Extract account info from the ID token
-      // Note: Riot may include game_name and tag_line in newer ID tokens
-      // If they're not present, we'll handle that in the account info fetch
       const accountInfo = {
-        puuid: decodedPayload.sub, // In Riot's case, 'sub' is the PUUID
+        puuid: decodedPayload.sub,
         gameName: decodedPayload.game_name || null,
         tagLine: decodedPayload.tag_line || null
       };
       
-      // Store this partial account info
       await this._storeValue(this.config.storageKeys.accountInfo, accountInfo);
-      
-      // Log the extracted info (without revealing the full PUUID)
       
       return accountInfo;
     } catch (error) {
@@ -1308,16 +1287,6 @@ export const RiotAuth = {
     try {
       if (!key) throw new Error('No storage key provided');
       
-      // Log the operation (without revealing sensitive data)
-      const valueType = typeof value;
-      const logValue = valueType === 'object' 
-        ? `object with keys: ${value ? Object.keys(value).join(', ') : 'null'}`
-        : (valueType === 'string' && value.length > 20 
-            ? `string (length ${value.length})`
-            : String(value));
-      
-      
-      // Store in chrome.storage.local
       return new Promise((resolve, reject) => {
         chrome.storage.local.set({ [key]: value }, () => {
           const error = chrome.runtime.lastError;
