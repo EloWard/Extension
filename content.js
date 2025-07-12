@@ -806,7 +806,7 @@ function showTooltip(event) {
     
     tooltipElement.offsetHeight;
     tooltipElement.classList.add('visible');
-  }, 300);
+  }, 0);
 }
 
 /**
