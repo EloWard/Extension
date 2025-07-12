@@ -35,6 +35,8 @@ const defaultConfig = {
   }
 };
 
+console.log('TwitchAuth initialized with URL:', defaultConfig.proxyBaseUrl);
+
 export const TwitchAuth = {
   // Twitch Configuration
   config: defaultConfig,
@@ -49,6 +51,7 @@ export const TwitchAuth = {
   init(customConfig = {}) {
     // Merge custom config with default config
     if (customConfig) {
+      console.log('Initializing TwitchAuth with custom config:', Object.keys(customConfig));
       
       // Merge top-level properties
       for (const key in customConfig) {
@@ -74,6 +77,11 @@ export const TwitchAuth = {
       }
     }
     
+    console.log('TwitchAuth initialized with config:', {
+      proxyBaseUrl: this.config.proxyBaseUrl,
+      redirectUri: this.config.redirectUri,
+      scopes: this.config.scopes
+    });
   },
   
   /**
@@ -81,12 +89,15 @@ export const TwitchAuth = {
    */
   async authenticate() {
     try {
+      console.log('Starting Twitch authentication');
       
       // Clear any previous auth states
+      console.log('Clearing any previous auth states');
       await chrome.storage.local.remove([this.config.storageKeys.authState]);
       
       // Generate a unique state value for CSRF protection
       const state = this._generateRandomState();
+      console.log('Generated Twitch auth state:', state.substring(0, 8) + '...');
       
       // Store the state for verification when the user returns
       await this._storeAuthState(state);
@@ -95,11 +106,14 @@ export const TwitchAuth = {
       const authUrl = await this._getAuthUrl(state);
       
       // Clear any existing callbacks before opening the window
+      console.log('Clearing any existing auth callbacks');
       try {
         await new Promise(resolve => {
           chrome.storage.local.remove(['auth_callback', 'twitch_auth_callback'], resolve);
         });
+        console.log('Auth callback data cleared from storage');
       } catch (e) {
+        console.warn('Error clearing auth callbacks:', e);
         // Non-fatal error, continue with authentication
       }
       
@@ -115,18 +129,24 @@ export const TwitchAuth = {
       
       // Verify the state to prevent CSRF attacks
       if (authResult.state !== state) {
+        console.error('State mismatch in Twitch auth callback:', {
+          expected: state.substring(0, 8) + '...',
+          received: authResult.state ? authResult.state.substring(0, 8) + '...' : 'undefined'
+        });
         
         // Try fallback state verification
         const storedState = await this._getStoredAuthState();
         if (authResult.state !== storedState) {
           throw new Error('Security verification failed: state mismatch in Twitch auth');
         } else {
+          console.log('State verified via storage fallback');
         }
       }
       
       // Exchange the authorization code for tokens
       try {
         const tokenData = await this.exchangeCodeForTokens(authResult.code);
+        console.log('Successfully exchanged code for Twitch tokens');
         
         // Even if getting user info fails, authentication is still considered successful
         // because we have valid tokens
@@ -134,6 +154,7 @@ export const TwitchAuth = {
         try {
           // Get user info (this already includes database registration)
           const userInfo = await this.getUserInfo();
+          console.log('Retrieved Twitch user info for:', userInfo?.display_name || 'unknown user');
           
           // Store the user info in persistent storage
           await PersistentStorage.storeTwitchUserData(userInfo);
@@ -141,6 +162,7 @@ export const TwitchAuth = {
           return userInfo;
         } catch (userInfoError) {
           // Log error but don't fail the authentication process
+          console.warn('Could not retrieve user info, but token exchange was successful:', userInfoError);
           
           // Ensure we still consider the user authenticated
           await PersistentStorage.updateConnectedState('twitch', true);
@@ -152,23 +174,28 @@ export const TwitchAuth = {
             if (token) {
               // We can't get full user info, but we could try to extract basic data
               // For now, just log that registration was skipped
+              console.log('Skipping user registration due to getUserInfo failure');
             }
           } catch (tokenError) {
+            console.warn('Could not get token for fallback registration:', tokenError);
           }
           
           // Return a minimal user object
           return { authenticated: true };
         }
       } catch (tokenError) {
+        console.error('Error exchanging code for tokens:', tokenError);
         // Make sure the authentication state is cleared on token exchange failure
         await PersistentStorage.updateConnectedState('twitch', false);
         throw tokenError;
       }
     } catch (error) {
+      console.error('Twitch authentication error:', error);
       // Ensure the connected state is reset on any error
       try {
         await PersistentStorage.updateConnectedState('twitch', false);
       } catch (storageError) {
+        console.error('Failed to update persistent storage on auth error:', storageError);
       }
       throw error;
     }
@@ -183,6 +210,7 @@ export const TwitchAuth = {
     await new Promise(resolve => {
       chrome.storage.local.set({ [this.config.storageKeys.authState]: state }, resolve);
     });
+    console.log(`Stored Twitch auth state in chrome.storage: ${state}`);
   },
   
   /**
@@ -212,6 +240,7 @@ export const TwitchAuth = {
    */
   async _getAuthUrl(state) {
     try {
+      console.log('Fetching Twitch auth URL from:', `${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`);
       
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
         method: 'POST',
@@ -227,21 +256,26 @@ export const TwitchAuth = {
         })
       });
       
+      console.log('Auth URL response status:', response.status);
       
       // Check if the response is ok (status in the range 200-299)
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('Error response content:', errorText);
         throw new Error(`Failed to get Twitch auth URL: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
       
       if (!data || !data.authUrl) {
+        console.error('Auth URL not found in response data:', data);
         throw new Error('Auth URL not found in response');
       }
       
+      console.log('Received Twitch auth URL successfully');
       return data.authUrl;
     } catch (error) {
+      console.error('Error getting Twitch auth URL:', error);
       throw error;
     }
   },
@@ -252,6 +286,7 @@ export const TwitchAuth = {
    * @private
    */
   _openAuthWindow(authUrl) {
+    console.log('Opening Twitch auth window with URL');
     
     try {
       // Close any existing auth window
@@ -263,6 +298,7 @@ export const TwitchAuth = {
       this.authWindow = window.open(authUrl, 'twitchAuthWindow', 'width=500,height=700');
       
       if (this.authWindow) {
+        console.log('Twitch auth window opened with window.open');
         
         // Try to focus the window
         if (this.authWindow.focus) {
@@ -270,20 +306,25 @@ export const TwitchAuth = {
         }
       } else {
         // If window.open failed (likely due to popup blocker), try using the background script
+        console.log('window.open failed, trying chrome.runtime.sendMessage');
         chrome.runtime.sendMessage({
           type: 'open_auth_window',
           url: authUrl,
           service: 'twitch'
         }, response => {
           if (chrome.runtime.lastError) {
+            console.error('Failed to open auth window via background script:', chrome.runtime.lastError);
             throw new Error('Failed to open authentication window - popup may be blocked');
           } else if (response && response.success) {
+            console.log('Auth window opened via background script');
           } else {
+            console.error('Unknown error opening auth window via background script');
             throw new Error('Failed to open authentication window - unknown error');
           }
         });
       }
     } catch (error) {
+      console.error('Error opening auth window:', error);
       throw error;
     }
   },
@@ -294,6 +335,7 @@ export const TwitchAuth = {
    * @private
    */
   async _waitForAuthCallback() {
+    console.log('Waiting for Twitch authentication callback...');
     
     return new Promise(resolve => {
       const maxWaitTime = 300000; // 5 minutes
@@ -314,9 +356,16 @@ export const TwitchAuth = {
                          data[this.config.storageKeys.authCallback];
         
         if (callback) {
+          console.log('Auth callback found in chrome.storage:', {
+            hasCode: !!callback.code,
+            codeLength: callback.code ? callback.code.length : 0,
+            hasState: !!callback.state,
+            hasError: !!callback.error
+          });
           
           // Check for error in the callback
           if (callback.error) {
+            console.error('Auth callback contains error:', callback.error);
           }
           
           // Stop the interval
@@ -327,9 +376,11 @@ export const TwitchAuth = {
             chrome.storage.local.remove(
               ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], 
               () => {
+                console.log('Auth callback cleared from chrome.storage after use');
               }
             );
           } catch (e) {
+            console.warn('Error clearing auth callback after use:', e);
           }
           
           // Only resolve with the callback if it contains a code
@@ -338,6 +389,7 @@ export const TwitchAuth = {
             return true;
           } else if (callback.error) {
             // Resolve with null if there's an error to signal cancellation
+            console.warn('Auth error detected in callback, treating as cancelled');
             resolve(null);
             return true;
           }
@@ -345,6 +397,7 @@ export const TwitchAuth = {
         
         // Check if auth window was closed by user
         if (this.authWindow && this.authWindow.closed) {
+          console.log('Auth window was closed by user');
           clearInterval(intervalId);
           
           // Try to check storage for any last-moment callbacks that might have been missed
@@ -355,8 +408,10 @@ export const TwitchAuth = {
                                   lastCheck[this.config.storageKeys.authCallback];
                                   
               if (lastCallback && lastCallback.code) {
+                console.log('Found callback in final check after window close');
                 resolve(lastCallback);
               } else {
+                console.log('No callback found in final check, user cancelled');
                 resolve(null); // User cancelled
               }
               
@@ -372,6 +427,7 @@ export const TwitchAuth = {
         // Check if we've waited too long
         elapsedTime += checkInterval;
         if (elapsedTime >= maxWaitTime) {
+          console.log('Auth callback wait timeout');
           clearInterval(intervalId);
           resolve(null); // Timeout
           return true;
@@ -397,6 +453,7 @@ export const TwitchAuth = {
              (event.data.service === 'twitch' && event.data.code) ||
              (event.data.code && (event.data.state || event.data.scope || event.data.token_type)))) {
           
+          console.log('Auth callback received via window message');
           window.removeEventListener('message', messageListener);
           
           // Store in chrome.storage for consistency (using all possible keys)
@@ -414,6 +471,7 @@ export const TwitchAuth = {
           resolve(event.data);
         } else if (event.data && event.data.error) {
           // Handle error messages
+          console.warn('Auth error received via window message:', event.data.error);
           window.removeEventListener('message', messageListener);
           resolve(null); // Treat as cancellation
         }
@@ -430,6 +488,7 @@ export const TwitchAuth = {
    */
   async exchangeCodeForTokens(code) {
     try {
+      console.log('Exchanging code for Twitch tokens');
       
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
         method: 'POST',
@@ -456,6 +515,7 @@ export const TwitchAuth = {
         throw new Error('No access token found in response');
       }
       
+      console.log('Successfully exchanged code for Twitch tokens');
       
       // Store the tokens
       await this._storeTokens(tokenData);
@@ -463,9 +523,11 @@ export const TwitchAuth = {
       // Immediately update the persistent storage connected state to prevent auth errors
       // This ensures the user is considered authenticated even before getting user info
       await PersistentStorage.updateConnectedState('twitch', true);
+      console.log('Updated persistent storage connected state for Twitch');
       
       return tokenData;
     } catch (error) {
+      console.error('Error exchanging code for Twitch tokens:', error);
       throw error;
     }
   },
@@ -477,6 +539,7 @@ export const TwitchAuth = {
    */
   async _storeTokens(tokenData) {
     try {
+      console.log('Storing Twitch tokens');
       
       const now = Date.now();
       const expiresAt = now + (tokenData.expires_in * 1000);
@@ -493,7 +556,9 @@ export const TwitchAuth = {
         expires_at: expiresAt
       }));
       
+      console.log('Successfully stored Twitch tokens with expiry:', new Date(expiresAt).toISOString());
     } catch (error) {
+      console.error('Error storing Twitch tokens:', error);
       throw error;
     }
   },
@@ -509,6 +574,7 @@ export const TwitchAuth = {
       
       // If connected in persistent storage, return true immediately
       if (isConnectedInPersistentStorage) {
+        console.log('User is authenticated with Twitch according to persistent storage');
         return true;
       }
       
@@ -518,10 +584,12 @@ export const TwitchAuth = {
         const token = await this.getValidToken();
         hasValidToken = !!token;
       } catch (e) {
+        console.warn('Error getting valid Twitch token:', e);
       }
       
       return hasValidToken;
     } catch (error) {
+      console.error('Error checking Twitch authentication status:', error);
       return false;
     }
   },
@@ -538,6 +606,7 @@ export const TwitchAuth = {
       const tokenExpiry = await this._getStoredValue(this.config.storageKeys.tokenExpiry);
       
       if (!accessToken) {
+        console.log('No Twitch access token found');
         return null;
       }
       
@@ -551,6 +620,7 @@ export const TwitchAuth = {
       
       // Check if token is expired or about to expire (within 5 minutes)
       if (now >= expiryTime - (5 * 60 * 1000)) {
+        console.log('Twitch token expired or about to expire, refreshing');
         
         if (!refreshToken) {
           throw new Error('No refresh token found for expired access token');
@@ -564,6 +634,7 @@ export const TwitchAuth = {
       // Token is still valid
       return accessToken;
     } catch (error) {
+      console.error('Error getting valid Twitch token:', error);
       throw error;
     }
   },
@@ -575,6 +646,7 @@ export const TwitchAuth = {
    */
   async refreshToken(refreshToken) {
     try {
+      console.log('Refreshing Twitch access token');
       
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`, {
         method: 'POST',
@@ -600,12 +672,14 @@ export const TwitchAuth = {
         throw new Error('No access token found in refresh response');
       }
       
+      console.log('Successfully refreshed Twitch tokens');
       
       // Store the new tokens
       await this._storeTokens(tokenData);
       
       return tokenData;
     } catch (error) {
+      console.error('Error refreshing Twitch token:', error);
       throw error;
     }
   },
@@ -616,9 +690,11 @@ export const TwitchAuth = {
    */
   async disconnect() {
     try {
+      console.log('Completely disconnecting Twitch account');
       
       // Clear persistent user data
       await PersistentStorage.clearServiceData('twitch');
+      console.log('Cleared persistent Twitch user data');
       
       // Clear auth data from chrome.storage
       let keysToRemove = [
@@ -632,9 +708,12 @@ export const TwitchAuth = {
       ];
       
       await chrome.storage.local.remove(keysToRemove);
+      console.log('Cleared all Twitch data from chrome.storage');
       
+      console.log('Twitch disconnect completed successfully');
       return true;
     } catch (error) {
+      console.error('Error during Twitch disconnect:', error);
       return false;
     }
   },
@@ -657,14 +736,17 @@ export const TwitchAuth = {
    */
   async getUserInfo() {
     try {
+      console.log('Getting Twitch user info');
       
       // First try to get from persistent storage
       const storedUserInfo = await this.getUserInfoFromStorage();
       if (storedUserInfo) {
+        console.log('Using Twitch user info from persistent storage');
         return storedUserInfo;
       }
       
       // If not in storage, get fresh data via secure backend
+      console.log('No persistent data found, fetching via secure backend...');
       
       // Get a valid access token
       const accessToken = await this.getValidToken();
@@ -696,6 +778,7 @@ export const TwitchAuth = {
       }
       
       const userInfo = result.user_data;
+      console.log('Twitch user info retrieved and stored successfully via secure backend');
       
       // Store the user info locally for future use
       await this._storeUserInfo(userInfo);
@@ -705,6 +788,7 @@ export const TwitchAuth = {
       
       return userInfo;
     } catch (error) {
+      console.error('Error getting Twitch user info:', error);
       throw error;
     }
   },
@@ -717,7 +801,9 @@ export const TwitchAuth = {
   async _storeUserInfo(userInfo) {
     try {
       await this._storeValue(this.config.storageKeys.userInfo, JSON.stringify(userInfo));
+      console.log('Stored Twitch user info');
     } catch (error) {
+      console.error('Error storing Twitch user info:', error);
       throw error;
     }
   },
@@ -734,8 +820,10 @@ export const TwitchAuth = {
       chrome.storage.local.set({ [key]: value }, () => {
         const error = chrome.runtime.lastError;
         if (error) {
+          console.error(`Error storing value for key ${key}:`, error);
           reject(error);
         } else {
+          console.log(`Successfully stored value for key: ${key}`);
           resolve();
         }
       });
@@ -765,17 +853,24 @@ export const TwitchAuth = {
    */
   async getUserInfoFromStorage() {
     try {
+      console.log('Getting Twitch user info from persistent storage');
       
       // Try to get user info from persistent storage
       const userInfo = await PersistentStorage.getTwitchUserData();
       
       if (userInfo) {
+        console.log('Found stored Twitch user info:', {
+          display_name: userInfo.display_name,
+          login: userInfo.login
+        });
         
         return userInfo;
       }
       
+      console.log('No stored Twitch user info found');
       return null;
     } catch (error) {
+      console.error('Error getting Twitch user info from storage:', error);
       return null;
     }
   }
