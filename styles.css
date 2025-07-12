@@ -1,98 +1,40 @@
-/* EloWard Styles for Twitch Chat */
+/* EloWard Extension Styles - Only used styles */
 
-/* Notification */
-.eloward-notification {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: rgba(28, 30, 48, 0.95);
-  border: 1px solid rgba(217, 163, 54, 0.3);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  z-index: 9999;
-  max-width: 300px;
-  transform: translateY(20px);
-  opacity: 0;
-  transition: transform 0.3s ease, opacity 0.3s ease;
+/* Only the rank badge styles are actually used */
+.eloward-rank-badge {
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin-left: 0px !important;
+  margin-right: 0px !important;
+  margin-top: -2.5px !important;
+  vertical-align: middle !important;
+  cursor: pointer !important;
+  transform: none !important;
+  transition: none !important;
+  width: 24px !important;
+  height: 24px !important;
+  box-sizing: content-box !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
 }
 
-.eloward-notification.visible {
-  transform: translateY(0);
-  opacity: 1;
+.eloward-rank-badge:hover {
+  transform: none !important;
+  scale: 1 !important;
 }
 
-.eloward-notification-logo {
-  width: 32px;
-  height: 32px;
-  margin-right: 12px;
+.eloward-rank-badge img {
+  display: block !important;
+  width: 24px !important;
+  height: 24px !important;
+  transform: none !important;
+  transition: none !important;
+  object-fit: contain !important;
 }
 
-.eloward-notification-text {
-  font-weight: 600;
-  font-size: 14px;
-  color: #D9A336;
-}
-
-/* Rank-specific badge background images (fallback/legacy support) */
-.eloward-unranked {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png');
-}
-
-.eloward-iron {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/iron.png');
-}
-
-.eloward-bronze {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/bronze.png');
-}
-
-.eloward-silver {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/silver.png');
-}
-
-.eloward-gold {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/gold.png');
-}
-
-.eloward-platinum {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/platinum.png');
-}
-
-.eloward-emerald {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/emerald.png');
-}
-
-.eloward-diamond {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/diamond.png');
-}
-
-.eloward-master {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/master.png');
-}
-
-.eloward-grandmaster {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/grandmaster.png');
-}
-
-.eloward-challenger {
-  background-image: url('https://eloward-cdn.unleashai.workers.dev/lol/challenger.png');
-}
-
-/* Animation for newly added badges */
-@keyframes eloward-badge-appear {
-  from {
-    opacity: 0;
-    transform: scale(0.8) translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.eloward-badge-new {
-  animation: eloward-badge-appear 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+.eloward-rank-badge img:hover {
+  transform: none !important;
+  scale: 1 !important;
 } 

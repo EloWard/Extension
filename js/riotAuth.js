@@ -17,33 +17,6 @@ class ReAuthenticationRequiredError extends Error {
   }
 }
 
-// Safe storage utilities for Chrome extension
-const safeStorage = {
-  getItem: (key) => {
-    return new Promise((resolve) => {
-      chrome.storage.local.get([key], (result) => {
-        resolve(result[key] || null);
-      });
-    });
-  },
-  setItem: (key, value) => {
-    return new Promise((resolve) => {
-      const data = {};
-      data[key] = value;
-      chrome.storage.local.set(data, () => {
-        resolve(true);
-      });
-    });
-  },
-  removeItem: (key) => {
-    return new Promise((resolve) => {
-      chrome.storage.local.remove([key], () => {
-        resolve(true);
-      });
-    });
-  }
-};
-
 // Set default configuration if not provided
 const defaultConfig = {
   proxyBaseUrl: 'https://eloward-riotauth.unleashai.workers.dev',
@@ -54,7 +27,6 @@ const defaultConfig = {
     authToken: '/auth/token',
     authRefresh: '/auth/token/refresh',
     accountInfo: '/riot/account',
-
     leagueEntries: '/riot/league/entries'
   },
   storageKeys: {
@@ -76,40 +48,6 @@ export const RiotAuth = {
   
   // Reference to the auth window if opened
   authWindow: null,
-  
-  /**
-   * Initialize RiotAuth with optional custom configuration
-   * @param {Object} customConfig - Optional custom configuration
-   */
-  init(customConfig = {}) {
-    // Merge custom config with default config
-    if (customConfig) {
-      
-      // Merge top-level properties
-      for (const key in customConfig) {
-        if (key !== 'endpoints' && key !== 'storageKeys') {
-          this.config[key] = customConfig[key];
-        }
-      }
-      
-      // Merge endpoints if provided
-      if (customConfig.endpoints) {
-        this.config.endpoints = { 
-          ...this.config.endpoints, 
-          ...customConfig.endpoints 
-        };
-      }
-      
-      // Merge storage keys if provided
-      if (customConfig.storageKeys) {
-        this.config.storageKeys = { 
-          ...this.config.storageKeys, 
-          ...customConfig.storageKeys 
-        };
-      }
-    }
-    
-  },
   
   /**
    * High-level authentication method for popup.js
@@ -1420,31 +1358,6 @@ export const RiotAuth = {
     } catch (error) {
       return null;
     }
-  },
-  
-  /**
-   * Check for auth callback data in various storage mechanisms
-   * @returns {Promise<Object|null>} - The auth callback data or null if not found
-   * @private
-   */
-  async _checkForAuthCallback() {
-    // Check chrome.storage.local
-    const chromeData = await new Promise(resolve => {
-      chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], resolve);
-    });
-    
-    if (chromeData.auth_callback || chromeData.eloward_auth_callback) {
-      const callback = chromeData.auth_callback || chromeData.eloward_auth_callback;
-      
-      // Clean up the storage
-      await new Promise(resolve => {
-        chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], resolve);
-      });
-      
-      return callback;
-    }
-    
-    return null;
   },
   
   // Additional methods and helper functions can be added here

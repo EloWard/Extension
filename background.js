@@ -453,65 +453,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Indicate async response
   }
   
-  if (message.action === 'sign_out') {
-    signOutUser()
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  // USER PROFILE
-  if (message.action === 'get_user_profile') {
-    getUserProfile()
-      .then(profile => {
-        sendResponse(profile);
-      })
-      .catch(error => {
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  // UI ACTIONS
-  if (message.action === 'open_popup') {
-    // Open the extension popup
-    chrome.action.openPopup();
-    sendResponse({ success: true });
-    return true;
-  }
-  
+  // RANK DATA HANDLING
   if (message.action === 'get_rank_icon_url') {
     const iconUrl = getRankIconUrl(message.tier);
     sendResponse({ iconUrl: iconUrl });
-    return true;
-  }
-  
-  // RANK DATA HANDLING
-  if (message.action === 'get_rank_for_user') {
-    // Legacy method - kept for backward compatibility
-    fetchRankFromBackend(message.username, message.platform)
-      .then(rankData => {
-        sendResponse({ rank: rankData });
-      })
-      .catch(error => {
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
-  
-  if (message.action === 'get_rank_for_twitch_user') {
-    // New optimized method that uses Twitch username directly
-    fetchRankByTwitchUsername(message.twitchUsername, message.platform)
-      .then(rankData => {
-        sendResponse({ rank: rankData });
-      })
-      .catch(error => {
-        sendResponse({ error: error.message });
-      });
     return true;
   }
   
@@ -619,31 +564,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => {
         sendResponse({ active: false, error: error.message });
       });
-    return true;
-  }
-  
-  // AUTH STATUS
-  if (message.action === 'check_auth_status') {
-    checkRiotAuthStatus()
-      .then(status => {
-        sendResponse(status);
-      })
-      .catch(error => {
-        sendResponse({ authenticated: false, error: error.message });
-      });
-    return true; // Indicate async response
-  }
-  
-  // LINKED ACCOUNTS
-  if (message.action === 'refresh_linked_accounts') {
-    preloadLinkedAccounts();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // DEPRECATED ACTIONS
-  if (message.action === 'clear_local_storage') {
-    // Deprecated: This message is no longer needed as we only use chrome.storage.local
     return true;
   }
   
@@ -840,32 +760,6 @@ function checkChannelActive(channelName, skipCache = false) {
 }
 
 /**
- * Fetches rank data from the backend
- * @param {string} username - The username to fetch rank for
- * @param {string} platform - The platform code
- * @returns {Promise} - Resolves with the rank data
- */
-function fetchRankFromBackend(username, platform) {
-  return new Promise((resolve, reject) => {
-    // First, check if we have a linked account for this user
-    getUserLinkedAccount(username)
-      .then(linkedAccount => {
-        if (linkedAccount) {
-          // We have a linked account, get real rank data
-          getRankForLinkedAccount(linkedAccount, platform)
-            .then(resolve)
-            .catch(error => {
-              reject(new Error('Could not retrieve rank data for linked account'));
-            });
-        } else {
-          // No linked account found
-          reject(new Error('No linked account found'));
-        }
-      });
-  });
-}
-
-/**
  * Gets rank data for a player using the League V4 API via backend with PUUID
  * @param {string} token - The access token
  * @param {string} puuid - The player's PUUID
@@ -939,90 +833,9 @@ function getRankIconUrl(tier) {
   return `https://eloward-cdn.unleashai.workers.dev/lol/${iconFile.replace('.png', '')}.png`;
 }
 
-// Check if user is authenticated with Riot
-async function checkRiotAuthStatus() {
-  try {
-    // Get auth data from storage
-    const authData = await chrome.storage.local.get(['riotAuth']);
-    
-    // Check if auth data exists and token is not expired
-    if (authData.riotAuth && authData.riotAuth.access_token) {
-      const now = Date.now();
-      const expiresAt = authData.riotAuth.issued_at + (authData.riotAuth.expires_in * 1000);
-      
-      if (now < expiresAt) {
-        // Token is still valid
-        return { authenticated: true };
-      } else {
-        // Token expired, try to refresh it
-        try {
-          await refreshAccessToken(authData.riotAuth.refresh_token);
-          return { authenticated: true };
-        } catch (error) {
-          // If refresh failed, clear auth data
-          await chrome.storage.local.remove(['riotAuth']);
-          return { authenticated: false, error: 'Token expired and refresh failed' };
-        }
-      }
-    }
-    
-    // No auth data or no token
-    return { authenticated: false };
-  } catch (error) {
-    return { authenticated: false, error: error.message };
-  }
-}
 
-/**
- * Initiate Riot authentication
- * @param {string} region - The region code (e.g., 'na1', 'euw1')
- * @returns {Promise<object>} - Resolves with result of auth initialization
- */
-async function initiateRiotAuth(region) {
-  try {
-    // Generate a random state for CSRF protection
-    const state = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    
-    // Store state and region for verification after callback
-    await chrome.storage.local.set({
-      authState: state,
-      selectedRegion: region,
-      authInProgress: true // Add flag to detect when auth flow starts
-    });
-    
-    
-    // Request auth URL from our backend proxy
-    const response = await fetch(`${RIOT_AUTH_URL}/auth/init?state=${state}&region=${region}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.message || response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    // Open the authorization URL in a new window/tab
-    chrome.windows.create({
-      url: data.authorizationUrl,
-      type: 'popup',
-      width: 800,
-      height: 600
-    }, (createdWindow) => {
-      // Window is tracked automatically via the authWindows object in message handler
-    });
-    
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
+
+
 
 // Handle the authorization callback (called from callback.html)
 async function handleAuthCallbackFromRedirect(code, state) {
@@ -1100,156 +913,9 @@ async function handleAuthCallbackFromRedirect(code, state) {
   }
 }
 
-// Sign out the user
-async function signOutUser() {
-  try {
-    // Remove auth data from all storage keys
-    await chrome.storage.local.remove([
-      'riotAuth',
-      'eloward_riot_access_token',
-      'eloward_riot_refresh_token',
-      'eloward_riot_token_expiry',
-      'eloward_riot_account_info',
-      'eloward_riot_rank_info',
-      'authState'
-    ]);
-    
-    
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
-// Get user profile and rank data
-async function getUserProfile() {
-  try {
-    // Check if user is authenticated
-    const authStatus = await checkRiotAuthStatus();
-    if (!authStatus.authenticated) {
-      return { success: false, error: 'User not authenticated' };
-    }
-    
-    // Get auth data and region from storage
-    const data = await chrome.storage.local.get(['riotAuth', 'selectedRegion']);
-    
-    if (!data.riotAuth || !data.riotAuth.access_token) {
-      return { success: false, error: 'Auth data not found' };
-    }
-    
-    const region = data.selectedRegion || 'na1';
-    const accessToken = data.riotAuth.access_token;
-    
-    // Get account info from Riot API
-    const accountInfo = await fetchRiotAccountInfo(accessToken, region);
-    if (!accountInfo.success) {
-      return accountInfo;
-    }
-    
-    // Get rank info using PUUID
-    const rankInfo = await fetchRankInfo(accountInfo.puuid, region);
-    
-    // Return combined profile data
-    return {
-      success: true,
-      accountInfo: {
-        gameName: accountInfo.gameName,
-        tagLine: accountInfo.tagLine,
-        puuid: accountInfo.puuid
-      },
-      rankInfo: rankInfo.entries || []
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
-// Fetch account info from Riot API using access token
-async function fetchRiotAccountInfo(accessToken, region) {
-  try {
-    const response = await fetch(`${RIOT_AUTH_URL}/riot/account/${region}`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.message || response.statusText}`);
-    }
-    
-    const accountData = await response.json();
-    
-    return {
-      success: true,
-      gameName: accountData.gameName,
-      tagLine: accountData.tagLine,
-      puuid: accountData.puuid
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
-// Fetch rank info from Riot API using PUUID
-async function fetchRankInfo(puuid, platform) {
-  try {
-    const response = await fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${puuid}`);
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.message || response.statusText}`);
-    }
-    
-    const leagueData = await response.json();
-    
-    return {
-      success: true,
-      entries: leagueData
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// Refresh the access token using the refresh token
-async function refreshAccessToken(refreshToken) {
-  try {
-    if (!refreshToken) {
-      throw new Error('No refresh token provided');
-    }
-    
-    // Use the Riot RSO proxy to refresh the token
-    const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/token/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        refresh_token: refreshToken
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.message || response.statusText}`);
-    }
-    
-    const tokenData = await response.json();
-    
-    // Store the refreshed auth data
-    await chrome.storage.local.set({
-      riotAuth: {
-        ...tokenData.data,
-        issued_at: Date.now()
-      }
-    });
-    
-    return true;
-  } catch (error) {
-    throw error;
-  }
-}
 
 // Expose functions to be called from callback.html
 self.eloward = {

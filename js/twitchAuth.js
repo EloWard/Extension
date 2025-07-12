@@ -43,40 +43,6 @@ export const TwitchAuth = {
   authWindow: null,
   
   /**
-   * Initialize TwitchAuth with optional custom configuration
-   * @param {Object} customConfig - Optional custom configuration
-   */
-  init(customConfig = {}) {
-    // Merge custom config with default config
-    if (customConfig) {
-      
-      // Merge top-level properties
-      for (const key in customConfig) {
-        if (key !== 'endpoints' && key !== 'storageKeys') {
-          this.config[key] = customConfig[key];
-        }
-      }
-      
-      // Merge endpoints if provided
-      if (customConfig.endpoints) {
-        this.config.endpoints = { 
-          ...this.config.endpoints, 
-          ...customConfig.endpoints 
-        };
-      }
-      
-      // Merge storage keys if provided
-      if (customConfig.storageKeys) {
-        this.config.storageKeys = { 
-          ...this.config.storageKeys, 
-          ...customConfig.storageKeys 
-        };
-      }
-    }
-    
-  },
-  
-  /**
    * Start the Twitch authentication flow
    */
   async authenticate() {

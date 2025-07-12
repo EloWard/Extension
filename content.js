@@ -222,6 +222,7 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
           }
           
           const isActive = response && response.active === true;
+          console.log(`🔍 EloWard: Channel ${channelName} active check - ${isActive ? '✅ Active' : '❌ Inactive'}`);
           
           if (!signal?.aborted) {
             extensionState.lastChannelActiveCheck = now;
@@ -303,6 +304,7 @@ async function getCurrentGame() {
     
     if (game) {
       const gameName = game.name || game.displayName;
+      console.log(`🎮 EloWard: Game detected - ${gameName}`);
       return gameName;
     }
     
@@ -523,12 +525,14 @@ function initializeObserver() {
   if (chatContainer) {
     setupChatObserver(chatContainer);
     extensionState.observerInitialized = true;
+    console.log(`🚀 EloWard: Extension activated for ${extensionState.channelName}`);
   } else {
     setTimeout(() => {
       const chatContainer = findChatContainer();
       if (chatContainer) {
         setupChatObserver(chatContainer);
         extensionState.observerInitialized = true;
+        console.log(`🚀 EloWard: Extension activated for ${extensionState.channelName}`);
       }
     }, 1000);
   }
