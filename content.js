@@ -907,8 +907,8 @@ function addExtensionStyles() {
     }
     
     .eloward-tooltip-badge {
-      width: 80px !important;
-      height: 80px !important;
+      width: 90px !important;
+      height: 90px !important;
       object-fit: contain !important;
       display: block !important;
     }
@@ -919,7 +919,7 @@ function addExtensionStyles() {
       line-height: 1.2 !important;
       white-space: nowrap !important;
     }
-    
+      
     html.tw-root--theme-dark .eloward-tooltip,
     .tw-root--theme-dark .eloward-tooltip,
     body[data-a-theme="dark"] .eloward-tooltip,
