@@ -770,43 +770,58 @@ function showTooltip(event) {
     lp = Number(lp).toString();
   }
   
+  // Clear existing content
+  tooltipElement.innerHTML = '';
+  
+  // Create and add larger rank badge image
+  const tooltipBadge = document.createElement('img');
+  tooltipBadge.className = 'eloward-tooltip-badge';
+  
+  // Get the rank badge image source from the original badge
+  const originalImg = badge.querySelector('img');
+  if (originalImg && originalImg.src) {
+    tooltipBadge.src = originalImg.src;
+    tooltipBadge.alt = 'Rank Badge';
+  }
+  
+  tooltipElement.appendChild(tooltipBadge);
+  
+  // Create and add rank text
+  const tooltipText = document.createElement('div');
+  tooltipText.className = 'eloward-tooltip-text';
+  
   // Format tooltip text
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
-    tooltipElement.textContent = 'Unranked';
+    tooltipText.textContent = 'Unranked';
   } else {
     let formattedTier = rankTier.toLowerCase();
     formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
     
-    let tooltipText = formattedTier;
+    let rankText = formattedTier;
     
     if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
-      tooltipText += ' ' + division;
+      rankText += ' ' + division;
     }
     
     if (lp !== undefined && lp !== null && lp !== '') {
-      tooltipText += ' - ' + lp + ' LP';
+      rankText += ' - ' + lp + ' LP';
     }
     
-    tooltipElement.textContent = tooltipText;
+    tooltipText.textContent = rankText;
   }
   
-  // Reset and position tooltip
-  tooltipElement.style.visibility = 'hidden';
-  tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
-  tooltipElement.style.opacity = '0';
-  tooltipElement.classList.remove('visible');
+  tooltipElement.appendChild(tooltipText);
   
-  tooltipShowTimeout = setTimeout(() => {
-    const rect = badge.getBoundingClientRect();
-    const badgeCenter = rect.left + (rect.width / 2);
-    
-    tooltipElement.style.left = `${badgeCenter}px`;
-    tooltipElement.style.top = `${rect.top - 5}px`;
-    tooltipElement.style.visibility = 'visible';
-    
-    tooltipElement.offsetHeight;
-    tooltipElement.classList.add('visible');
-  }, 0);
+  // Position and show tooltip immediately
+  const rect = badge.getBoundingClientRect();
+  const badgeCenter = rect.left + (rect.width / 2);
+  
+  tooltipElement.style.left = `${badgeCenter}px`;
+  tooltipElement.style.top = `${rect.top - 5}px`;
+  tooltipElement.style.transform = 'translate(-50%, -100%)';
+  tooltipElement.style.visibility = 'visible';
+  tooltipElement.style.opacity = '1';
+  tooltipElement.classList.add('visible');
 }
 
 /**
@@ -820,11 +835,8 @@ function hideTooltip() {
   
   if (tooltipElement && tooltipElement.classList.contains('visible')) {
     tooltipElement.style.opacity = '0';
-    tooltipElement.style.transform = 'translate(-30%, -100%) scale(0.9)';
-    
-    setTimeout(() => {
-      tooltipElement.classList.remove('visible');
-    }, 100);
+    tooltipElement.style.visibility = 'hidden';
+    tooltipElement.classList.remove('visible');
   }
 }
 
@@ -879,21 +891,33 @@ function addExtensionStyles() {
       position: absolute !important;
       z-index: 99999 !important;
       pointer-events: none !important;
-      transform: translate(-12%, -100%) scale(0.9) !important;
-      font-size: 13px !important;
-      font-weight: 600 !important;
+      transform: translate(-50%, -100%) !important;
       font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-      white-space: nowrap !important;
-      padding: 4px 6px !important;
-      border-radius: 6px !important;
-      line-height: 1.2 !important;
+      padding: 8px !important;
+      border-radius: 8px !important;
       opacity: 0 !important;
-      transition: opacity 0.07s ease-in-out, transform 0.07s ease-in-out !important;
       text-align: center !important;
       border: none !important;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
-      margin-top: -2px !important;
-      will-change: transform, opacity !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+      margin-top: -8px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+    
+    .eloward-tooltip-badge {
+      width: 80px !important;
+      height: 80px !important;
+      object-fit: contain !important;
+      display: block !important;
+    }
+    
+    .eloward-tooltip-text {
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
     }
     
     html.tw-root--theme-dark .eloward-tooltip,
@@ -932,7 +956,7 @@ function addExtensionStyles() {
       content: "" !important;
       position: absolute !important;
       bottom: -4px !important;
-      left: 10% !important;
+      left: 50% !important;
       margin-left: -4px !important;
       border-width: 4px 4px 0 4px !important;
       border-style: solid !important;
@@ -940,7 +964,7 @@ function addExtensionStyles() {
     
     .eloward-tooltip.visible {
       opacity: 1 !important;
-      transform: translate(-12%, -100%) scale(1) !important;
+      transform: translate(-50%, -100%) !important;
     }
   `;
   
