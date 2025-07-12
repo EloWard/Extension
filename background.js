@@ -17,26 +17,14 @@ class UserRankCache {
     this.maxSize = maxSize;
     this.currentUser = null;
     
-    // Store the cache state for debugging
-    this._updateStorage();
   }
   
-  _updateStorage() {
-    // Store a serialized version of the cache in local storage for debugging
-    const cacheData = {};
-    this.cache.forEach((value, key) => {
-      cacheData[key] = value;
-    });
-    
-    chrome.storage.local.set({ 'UserRankCache': cacheData });
-  }
   
   // Set current user to protect from eviction
   setCurrentUser(username) {
     if (username) {
       this.currentUser = username.toLowerCase();
     }
-    this._updateStorage();
   }
   
   // Get entry from cache
@@ -50,13 +38,11 @@ class UserRankCache {
       // RANK_CACHE_EXPIRY is set to 1 hour in milliseconds
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(normalizedUsername);
-        this._updateStorage();
         return null;
       }
       
       // Increment frequency on access
       entry.frequency = (entry.frequency || 0) + 1;
-      this._updateStorage();
       return entry.rankData;
     }
     
@@ -90,7 +76,6 @@ class UserRankCache {
       }
     }
     
-    this._updateStorage();
   }
   
   // Clear cache but preserve current user's data
@@ -105,12 +90,9 @@ class UserRankCache {
     // Restore current user's entry if it exists
     if (this.currentUser && currentUserEntry) {
       this.cache.set(this.currentUser, currentUserEntry);
-      console.log(`UserRankCache: Cleared ${previousSize-1} entries, preserved user: ${this.currentUser}`);
     } else {
-      console.log(`UserRankCache: Cleared all ${previousSize} entries`);
     }
     
-    this._updateStorage();
   }
   
   // Evict the least frequently used entry (not current user)
@@ -128,7 +110,6 @@ class UserRankCache {
       // This ensures time-expired entries are removed before frequency-based eviction
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(key);
-        this._updateStorage();
         return; // Successfully evicted an expired entry
       }
       
@@ -142,7 +123,6 @@ class UserRankCache {
     // Evict if found
     if (userToEvict) {
       this.cache.delete(userToEvict);
-      this._updateStorage();
     }
   }
   
@@ -155,7 +135,6 @@ class UserRankCache {
     const entry = this.cache.get(normalizedUsername);
     if (entry && entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
       this.cache.delete(normalizedUsername);
-      this._updateStorage();
       return false;
     }
     
@@ -177,10 +156,8 @@ let authWindows = {};
 /* Handle auth callbacks */
 function handleAuthCallback(params) {
   // Only log basic info, not complete params
-  console.log('Auth callback received');
   
   if (!params || !params.code) {
-    console.error('Invalid auth callback data');
     return;
   }
   
@@ -196,14 +173,12 @@ function handleAuthCallback(params) {
   const isTwitchCallback = params.service === 'twitch';
   
   if (isTwitchCallback) {
-    console.log('Processing Twitch auth');
     chrome.storage.local.set({
       'twitch_auth_callback': params
     }, () => {
       initiateTokenExchange(params, 'twitch');
     });
   } else {
-    console.log('Processing Riot auth');
     chrome.storage.local.set({
       'riot_auth_callback': params
     }, () => {
@@ -225,7 +200,6 @@ function handleAuthCallback(params) {
  */
 async function initiateTokenExchange(authData, service = 'riot') {
   try {
-    console.log(`Initiating ${service} token exchange`);
     
     if (!authData || !authData.code) {
       throw new Error('Invalid auth data for token exchange');
@@ -234,11 +208,9 @@ async function initiateTokenExchange(authData, service = 'riot') {
     if (service === 'twitch') {
       // Exchange code for Twitch tokens
       const tokenData = await TwitchAuth.exchangeCodeForTokens(authData.code);
-      console.log('Twitch token exchange successful');
       
       // Get user info
       const userInfo = await TwitchAuth.getUserInfo();
-      console.log('Retrieved Twitch user info');
       
       // Store in persistent storage with indefinite retention
       await PersistentStorage.storeTwitchUserData(userInfo);
@@ -248,11 +220,9 @@ async function initiateTokenExchange(authData, service = 'riot') {
     } else {
       // Exchange code for Riot tokens
       const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
-      console.log('Riot token exchange successful');
       
       // Get user data
       const userData = await RiotAuth.getUserData();
-      console.log('Retrieved Riot user data');
       
       // Store in persistent storage with indefinite retention
       await PersistentStorage.storeRiotUserData(userData);
@@ -261,7 +231,6 @@ async function initiateTokenExchange(authData, service = 'riot') {
       return userData;
     }
   } catch (error) {
-    console.error(`Error during ${service} token exchange:`, error);
     throw error;
   }
 }
@@ -297,7 +266,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       };
       
       if (!params.code) {
-        console.error('Missing required code in Twitch auth callback');
         sendResponse({ 
           success: false, 
           error: 'Missing required authorization code' 
@@ -333,7 +301,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
       return true; // Keep the message channel open for the async response
     } catch (error) {
-      console.error('Error handling Twitch auth callback:', error);
       sendResponse({ 
         success: false, 
         error: error.message || 'Unknown error processing Twitch auth callback'
@@ -465,7 +432,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error('Auth URL request error:', error);
         sendResponse({
           success: false,
           error: error.message || 'Failed to obtain authorization URL'
@@ -482,7 +448,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse(result);
       })
       .catch(error => {
-        console.error('Error handling auth callback:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Indicate async response
@@ -494,7 +459,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
       })
       .catch(error => {
-        console.error('Error signing out:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Indicate async response
@@ -507,7 +471,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse(profile);
       })
       .catch(error => {
-        console.error('Error getting user profile:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Indicate async response
@@ -535,7 +498,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ rank: rankData });
       })
       .catch(error => {
-        console.error('Error fetching rank:', error);
         sendResponse({ error: error.message });
       });
     return true;
@@ -548,7 +510,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ rank: rankData });
       })
       .catch(error => {
-        console.error('Error fetching rank by Twitch username:', error);
         sendResponse({ error: error.message });
       });
     return true;
@@ -567,7 +528,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Increment db_read counter regardless of cache hit/miss
     if (channelName) {
       incrementDbReadCounter(channelName).catch(error => {
-          console.error(`Error incrementing db_read for ${channelName}:`, error);
       });
     }
     
@@ -577,7 +537,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // If we got a successful result from cache, increment successful_lookups
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(error => {
-            console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
         });
       }
       
@@ -602,7 +561,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // If we got a successful result from API, increment successful_lookups
           if (channelName && rankData?.tier) {
             incrementSuccessfulLookupCounter(channelName).catch(error => {
-                console.error(`Error incrementing successful_lookups for ${channelName}:`, error);
             });
           }
         }
@@ -615,7 +573,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-          console.error(`Error fetching rank for ${username}:`, error);
         sendResponse({ 
           success: false, 
           error: error.message || 'Error fetching rank data' 
@@ -637,12 +594,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ rank: rankData });
           })
           .catch(error => {
-            console.error('Error getting rank data:', error);
             sendResponse({ error: error.message });
           });
       })
       .catch(error => {
-        console.error('Error getting valid token:', error);
         sendResponse({ error: error.message });
       });
     
@@ -658,12 +613,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(active => {
         // Only log the response for direct checks
         if (skipCache) {
-          console.log(`${streamer}: ${active ? 'ACTIVE ✅' : 'NOT ACTIVE ❌'}`);
         }
         sendResponse({ active: active });
       })
       .catch(error => {
-        console.error('Error checking channel active status:', error);
         sendResponse({ active: false, error: error.message });
       });
     return true;
@@ -676,7 +629,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse(status);
       })
       .catch(error => {
-        console.error('Error checking auth status:', error);
         sendResponse({ authenticated: false, error: error.message });
       });
     return true; // Indicate async response
@@ -755,7 +707,6 @@ self.addEventListener('message', (event) => {
 
 // Initialize
 chrome.runtime.onInstalled.addListener((details) => {
-  console.log('EloWard extension installed or updated');
   
   // Clear all stored data to force a fresh start
   clearAllStoredData();
@@ -832,12 +783,10 @@ function clearAllStoredData() {
             resolve();
           })
           .catch(error => {
-            console.error('Error clearing persistent storage:', error);
             resolve(); // Still resolve to continue cleanup
           });
       });
     } catch (error) {
-      console.error('Error clearing stored data:', error);
       resolve(); // Still resolve to continue cleanup
     }
   });
@@ -855,7 +804,6 @@ function clearAllStoredData() {
  */
 function checkChannelActive(channelName, skipCache = false) {
   if (!channelName) {
-    console.error('Cannot check channel status: No channel name provided');
     return Promise.resolve(false);
   }
   
@@ -864,7 +812,6 @@ function checkChannelActive(channelName, skipCache = false) {
   
   // Increment db_read counter for channel checks too
   incrementDbReadCounter(normalizedName).catch(error => {
-    console.error(`Error incrementing db_read for ${normalizedName} during channel check:`, error);
   });
   
   // Call the channel status API to check if channel is active (channel_active = 1)
@@ -888,7 +835,6 @@ function checkChannelActive(channelName, skipCache = false) {
     return isActive;
   })
   .catch(error => {
-    console.error(`Error checking channel active status for ${normalizedName}:`, error);
     return false;
   });
 }
@@ -909,7 +855,6 @@ function fetchRankFromBackend(username, platform) {
           getRankForLinkedAccount(linkedAccount, platform)
             .then(resolve)
             .catch(error => {
-              console.error('Error getting rank for linked account:', error);
               reject(new Error('Could not retrieve rank data for linked account'));
             });
         } else {
@@ -1014,7 +959,6 @@ async function checkRiotAuthStatus() {
           await refreshAccessToken(authData.riotAuth.refresh_token);
           return { authenticated: true };
         } catch (error) {
-          console.error('Error refreshing token:', error);
           // If refresh failed, clear auth data
           await chrome.storage.local.remove(['riotAuth']);
           return { authenticated: false, error: 'Token expired and refresh failed' };
@@ -1025,7 +969,6 @@ async function checkRiotAuthStatus() {
     // No auth data or no token
     return { authenticated: false };
   } catch (error) {
-    console.error('Error checking auth status:', error);
     return { authenticated: false, error: error.message };
   }
 }
@@ -1049,7 +992,6 @@ async function initiateRiotAuth(region) {
       authInProgress: true // Add flag to detect when auth flow starts
     });
     
-    console.log('Initiating Riot authentication for region:', region);
     
     // Request auth URL from our backend proxy
     const response = await fetch(`${RIOT_AUTH_URL}/auth/init?state=${state}&region=${region}`, {
@@ -1067,7 +1009,6 @@ async function initiateRiotAuth(region) {
     const data = await response.json();
     
     // Open the authorization URL in a new window/tab
-    console.log('Opening auth URL:', data.authorizationUrl);
     chrome.windows.create({
       url: data.authorizationUrl,
       type: 'popup',
@@ -1079,7 +1020,6 @@ async function initiateRiotAuth(region) {
     
     return { success: true };
   } catch (error) {
-    console.error('Error initiating auth:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1094,16 +1034,11 @@ async function handleAuthCallbackFromRedirect(code, state) {
     // Verify state parameter to prevent CSRF attacks
     let stateValid = expectedState && expectedState === state;
     
-    // Log state verification status
-    console.log('State verification result:', stateValid ? 'valid' : 'invalid');
-    console.log('Expected state:', expectedState);
-    console.log('Received state:', state);
     
     if (!stateValid) {
       throw new Error('Security verification failed: state parameter mismatch');
     }
     
-    console.log('State validated, exchanging code for tokens');
     
     // Exchange code for tokens via our backend proxy
     const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/token`, {
@@ -1122,7 +1057,6 @@ async function handleAuthCallbackFromRedirect(code, state) {
     }
     
     const tokenData = await response.json();
-    console.log('Token exchange successful');
     
     // Store the auth data in chrome.storage.local with issued timestamp
     const tokenExpiry = Date.now() + (tokenData.data.expires_in * 1000);
@@ -1152,12 +1086,10 @@ async function handleAuthCallbackFromRedirect(code, state) {
       });
     } catch (e) {
       // Popup might not be open, that's okay
-      console.log('Could not notify popup of auth completion');
     }
     
     return { success: true, username: tokenData.data.user_info?.game_name };
   } catch (error) {
-    console.error('Error handling auth callback:', error);
     
     // Clear the auth in progress flag
     await chrome.storage.local.set({
@@ -1182,11 +1114,9 @@ async function signOutUser() {
       'authState'
     ]);
     
-    console.log('Cleared Riot auth tokens from chrome.storage');
     
     return { success: true };
   } catch (error) {
-    console.error('Error signing out:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1230,7 +1160,6 @@ async function getUserProfile() {
       rankInfo: rankInfo.entries || []
     };
   } catch (error) {
-    console.error('Error getting user profile:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1258,7 +1187,6 @@ async function fetchRiotAccountInfo(accessToken, region) {
       puuid: accountData.puuid
     };
   } catch (error) {
-    console.error('Error fetching account info:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1280,7 +1208,6 @@ async function fetchRankInfo(puuid, platform) {
       entries: leagueData
     };
   } catch (error) {
-    console.error('Error fetching rank info:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1320,7 +1247,6 @@ async function refreshAccessToken(refreshToken) {
     
     return true;
   } catch (error) {
-    console.error('Error refreshing token:', error);
     throw error;
   }
 }
@@ -1363,7 +1289,6 @@ function getUserLinkedAccount(twitchUsername) {
         
         // Check if this username matches our stored user data
         if (currentTwitchData?.login?.toLowerCase() === normalizedTwitchUsername && currentRiotData) {
-          console.log(`Found stored user data for ${normalizedTwitchUsername} (tokens may be expired but data preserved)`);
           resolve(currentRiotData);
           return;
         }
@@ -1422,7 +1347,6 @@ function loadConfiguration() {
  */
 function addLinkedAccount(twitchUsername, riotAccountInfo) {
   if (!twitchUsername || !riotAccountInfo) {
-    console.log('EloWard: Invalid params for adding linked account');
     return;
   }
   
@@ -1441,7 +1365,6 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
     };
     
     chrome.storage.local.set({ linkedAccounts }, () => {
-      console.log(`EloWard: Added/updated linked account for ${twitchUsername}`);
     });
   });
 }
@@ -1455,7 +1378,6 @@ async function fetchRankFromDatabase(twitchUsername) {
   if (!twitchUsername) return null;
   
   try {
-    console.log(`Fetching rank from database for Twitch user: ${twitchUsername}`);
     const normalizedUsername = twitchUsername.toLowerCase();
     
     // Use the Rank Worker API to fetch the rank directly from database
@@ -1463,7 +1385,6 @@ async function fetchRankFromDatabase(twitchUsername) {
     
     if (!response.ok) {
       if (response.status === 404) {
-        console.log(`No rank found in database for ${twitchUsername}`);
         return null;
       }
       throw new Error(`API error: ${response.status} ${response.statusText}`);
@@ -1481,7 +1402,6 @@ async function fetchRankFromDatabase(twitchUsername) {
       puuid: rankData.riot_puuid // Include PUUID for completeness
     };
   } catch (error) {
-    console.error(`Error fetching rank from database for ${twitchUsername}:`, error);
     return null;
   }
 }
@@ -1494,28 +1414,23 @@ async function fetchRankFromDatabase(twitchUsername) {
  */
 function fetchRankByTwitchUsername(twitchUsername, platform) {
   return new Promise((resolve, reject) => {
-    console.log(`Fetching rank for Twitch user: ${twitchUsername}`);
     
     // Look up the linked account by Twitch username
     getUserLinkedAccount(twitchUsername)
       .then(linkedAccount => {
         if (linkedAccount) {
-          console.log(`Found linked account for ${twitchUsername}`);
           
           // We have a linked account, get real rank data
           getRankForLinkedAccount(linkedAccount, platform)
             .then(rankData => {
-              console.log(`Got rank data for ${twitchUsername}`);
               resolve(rankData);
             })
             .catch(error => {
-              console.error(`Error getting rank for linked account ${twitchUsername}:`, error);
               
               // Try fetching from database as fallback
               fetchRankFromDatabase(twitchUsername)
                 .then(dbRankData => {
                   if (dbRankData) {
-                    console.log(`Got rank data from database for ${twitchUsername}`);
                     resolve(dbRankData);
                   } else {
                     resolve(null);
@@ -1525,15 +1440,12 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
             });
         } else {
           // No linked account found, try to fetch directly from database
-          console.log(`No linked account found for Twitch user ${twitchUsername}, trying database lookup`);
           
           fetchRankFromDatabase(twitchUsername)
             .then(rankData => {
               if (rankData) {
-                console.log(`Got rank data from database for ${twitchUsername}`);
                 resolve(rankData);
               } else {
-                console.log(`No rank data found in database for ${twitchUsername}`);
                 resolve(null);
               }
             })
@@ -1547,7 +1459,6 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
 
 // Add a function to preload and sync all linked accounts
 function preloadLinkedAccounts() {
-  console.log('Preloading linked accounts');
   
   // First, ensure the linkedAccounts object exists in storage
   chrome.storage.local.get('linkedAccounts', (data) => {
@@ -1565,7 +1476,6 @@ function preloadLinkedAccounts() {
         if (!linkedAccounts[normalizedUsername] || 
             !linkedAccounts[normalizedUsername].puuid) {
           
-          console.log(`Adding current user's account (${userData.twitchUsername}) to linked accounts`);
           
           linkedAccounts[normalizedUsername] = {
             ...userData.riotAccountInfo,
@@ -1586,7 +1496,6 @@ function preloadLinkedAccounts() {
       
       // Log only the count of linked accounts to reduce verbosity
       const accountCount = Object.keys(linkedAccounts).length;
-      console.log(`${accountCount} linked accounts available`);
     });
   });
 }
@@ -1608,12 +1517,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // Function to handle when users switch channels
 function handleChannelSwitch(oldChannel, newChannel) {
-  console.log(`Channel switched from ${oldChannel || 'unknown'} to ${newChannel}`);
   
   // Clear user rank cache when changing channels
   userRankCache.clear();
   
-  console.log(`🔄 UserRankCache: Cleared on channel switch from ${oldChannel || 'unknown'} to ${newChannel} (current user preserved)`);
   
   // Remove the redundant legacy region key if it exists
   chrome.storage.local.remove('connected_region');
@@ -1626,7 +1533,6 @@ function handleChannelSwitch(oldChannel, newChannel) {
  */
 async function incrementDbReadCounter(channelName) {
   if (!channelName) {
-    console.error('Cannot increment db_read: No channel name provided');
     return false;
   }
   
@@ -1643,14 +1549,12 @@ async function incrementDbReadCounter(channelName) {
     });
     
     if (!response.ok) {
-      console.error(`Error incrementing db_read for ${normalizedName}: ${response.status}`);
       return false;
     }
     
     const data = await response.json();
     return !!data.success;
   } catch (error) {
-    console.error(`Failed to increment db_read for ${channelName}:`, error);
     return false;
   }
 }
@@ -1662,7 +1566,6 @@ async function incrementDbReadCounter(channelName) {
  */
 async function incrementSuccessfulLookupCounter(channelName) {
   if (!channelName) {
-    console.error('Cannot increment successful_lookups: No channel name provided');
     return false;
   }
   
@@ -1679,14 +1582,12 @@ async function incrementSuccessfulLookupCounter(channelName) {
     });
     
     if (!response.ok) {
-      console.error(`Error incrementing successful_lookups for ${normalizedName}: ${response.status}`);
       return false;
     }
     
     const data = await response.json();
     return !!data.success;
   } catch (error) {
-    console.error(`Failed to increment successful_lookups for ${channelName}:`, error);
     return false;
   }
 } 

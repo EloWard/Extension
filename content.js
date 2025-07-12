@@ -128,17 +128,14 @@ async function initializeChannel(channelName, initializationId) {
     if (isActive) {
       channelState.activeChannels.add(normalizedChannel);
       extensionState.isChannelActive = true;
-      console.log(`EloWard: ${channelName} - Active ✅`);
     } else {
       channelState.activeChannels.delete(normalizedChannel);
       extensionState.isChannelActive = false;
-      console.log(`EloWard: ${channelName} - Not Active ❌`);
     }
     
     return isActive;
   } catch (error) {
     if (error.name !== 'AbortError') {
-      console.error(`EloWard: Error initializing channel ${channelName}:`, error);
     }
     return false;
   }
@@ -298,7 +295,6 @@ async function getCurrentGame() {
     });
 
     if (!response.ok) {
-      console.error(`EloWard: Twitch API error: ${response.status}`);
       return null;
     }
 
@@ -307,14 +303,12 @@ async function getCurrentGame() {
     
     if (game) {
       const gameName = game.name || game.displayName;
-      console.log(`EloWard: Game detected - ${gameName}`);
       return gameName;
     }
     
 
     return null;
   } catch (error) {
-    console.error('EloWard: Error fetching game from Twitch API:', error);
     return null;
   }
 }
@@ -364,7 +358,6 @@ function setupGameChangeObserver() {
         const oldGame = extensionState.currentGame;
         extensionState.currentGame = newGame;
         
-        console.log(`EloWard: Game detected - ${newGame || 'none'}`);
         
         if (!isGameSupported(extensionState.currentGame)) {
           // Clean up for unsupported game
@@ -439,7 +432,6 @@ function initializeExtension() {
     const detectedGame = await getCurrentGame();
     extensionState.currentGame = detectedGame;
     
-    console.log(`EloWard: Game detected - ${detectedGame || 'none'}`);
     
     // Always setup game observer to monitor for changes
     setupGameChangeObserver();
@@ -458,7 +450,6 @@ function initializeExtension() {
         }
         
         if (channelActive) {
-          console.log("🛡️ EloWard Extension Active");
           
           if (!extensionState.observerInitialized) {
             initializeObserver();
@@ -469,7 +460,6 @@ function initializeExtension() {
       })
       .catch(error => {
         if (error.name !== 'AbortError') {
-          console.error('EloWard: Error during channel initialization:', error);
         }
         extensionState.initializationInProgress = false;
       });
@@ -680,7 +670,6 @@ function fetchRankFromBackground(username, usernameElement) {
       }
     );
   } catch (error) {
-    console.error("Error sending rank lookup message:", error);
   }
 }
 
@@ -707,7 +696,6 @@ function addBadgeToMessage(usernameElement, rankData) {
     const tier = rankData.tier.toLowerCase();
     rankImg.src = `https://eloward-cdn.unleashai.workers.dev/lol/${tier}.png`;
   } catch (error) {
-    console.error("Error setting badge image source:", error);
     return;
   }
   

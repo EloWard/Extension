@@ -25,9 +25,7 @@ export const PersistentStorage = {
    */
   init() {
     chrome.storage.local.set({
-      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true,
-      // Add timestamp for tracking when persistence was enabled
-      eloward_persistence_initialized_at: Date.now()
+      [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
   },
   
@@ -205,7 +203,6 @@ export const PersistentStorage = {
         puuid: riotData?.puuid || null
       };
     } catch (error) {
-      console.error('Error getting stored usernames:', error);
       return {
         twitchUsername: null,
         riotUsername: null,
@@ -232,7 +229,6 @@ export const PersistentStorage = {
         canAccessDatabase: !!(twitchData?.login && riotData?.puuid)
       };
     } catch (error) {
-      console.error('Error checking stored user data:', error);
       return {
         hasTwitchData: false,
         hasRiotData: false,

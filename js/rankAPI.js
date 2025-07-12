@@ -55,7 +55,6 @@ export class RankAPI {
         this.#updateCache(username, rankData);
         resolve(rankData);
       } catch (error) {
-        console.error(`Error fetching rank for ${username}:`, error);
         reject(error);
       } finally {
         // Remove from pending requests
