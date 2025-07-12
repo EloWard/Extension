@@ -25,6 +25,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function setRiotControlsDisabled(isDisabled) {
     connectRiotBtn.disabled = isDisabled;
     regionSelect.disabled = isDisabled;
+    
+    if (isDisabled) {
+      connectRiotBtn.setAttribute('data-tooltip', 'Connect Twitch account first');
+      connectRiotBtn.classList.add('has-tooltip');
+    } else {
+      connectRiotBtn.removeAttribute('data-tooltip');
+      connectRiotBtn.classList.remove('has-tooltip');
+    }
   }
 
   // Update Riot controls based on current Twitch connection status
@@ -102,6 +110,61 @@ document.addEventListener('DOMContentLoaded', () => {
   if (connectTwitchBtn) {
     connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   }
+  
+  // Tooltip functionality for disabled buttons
+  let tooltipElement = null;
+  let tooltipTimeout = null;
+  
+  // Create tooltip element
+  function createTooltip() {
+    if (tooltipElement) return tooltipElement;
+    
+    tooltipElement = document.createElement('div');
+    tooltipElement.className = 'custom-tooltip';
+    document.body.appendChild(tooltipElement);
+    return tooltipElement;
+  }
+  
+  // Show tooltip
+  function showTooltip(event) {
+    const target = event.target;
+    const tooltipText = target.getAttribute('data-tooltip');
+    
+    if (!tooltipText || !target.disabled) return;
+    
+    clearTimeout(tooltipTimeout);
+    
+    const tooltip = createTooltip();
+    tooltip.textContent = tooltipText;
+    tooltip.style.visibility = 'hidden';
+    tooltip.style.display = 'block';
+    
+    // Position tooltip
+    const rect = target.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    
+    tooltip.style.left = `${rect.left + (rect.width - tooltipRect.width) / 2 - 40}px`;
+    tooltip.style.top = `${rect.top - tooltipRect.height - 8}px`;
+    
+    // Show tooltip with delay
+    tooltipTimeout = setTimeout(() => {
+      tooltip.style.visibility = 'visible';
+      tooltip.style.opacity = '1';
+    }, 100);
+  }
+  
+  // Hide tooltip
+  function hideTooltip() {
+    clearTimeout(tooltipTimeout);
+    if (tooltipElement) {
+      tooltipElement.style.opacity = '0';
+      tooltipElement.style.visibility = 'hidden';
+    }
+  }
+  
+  // Add tooltip event listeners to connect button
+  connectRiotBtn.addEventListener('mouseenter', showTooltip);
+  connectRiotBtn.addEventListener('mouseleave', hideTooltip);
   
   // Add toggle functionality for the streamer section
   streamerHeader.addEventListener('click', () => {
