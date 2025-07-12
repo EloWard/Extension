@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tooltipTimeout = setTimeout(() => {
       tooltip.style.visibility = 'visible';
       tooltip.style.opacity = '1';
-    }, 100);
+    }, 0);
   }
   
   // Hide tooltip
