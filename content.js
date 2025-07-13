@@ -1092,7 +1092,7 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   // Create 7TV-style badge
   const badge = document.createElement('div');
   badge.className = 'seventv-chat-badge eloward-rank-badge';
-  badge.style.cssText = 'display: inline-flex !important; align-items: center !important; margin-right: 0 !important; vertical-align: middle !important; position: relative !important; top: 0 !important;';
+  badge.style.cssText = 'display: inline-flex !important; align-items: center !important; margin-right: -4px !important; vertical-align: middle !important; position: relative !important; top: 0px !important;';
   badge.dataset.rankText = formatRankText(rankData);
   
   const img = document.createElement('img');
