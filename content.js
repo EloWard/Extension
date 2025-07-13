@@ -1092,13 +1092,14 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   // Create 7TV-style badge
   const badge = document.createElement('div');
   badge.className = 'seventv-chat-badge eloward-rank-badge';
+  badge.style.cssText = 'display: inline-flex !important; align-items: center !important; margin-right: 0 !important; vertical-align: middle !important; position: relative !important; top: 0 !important;';
   badge.dataset.rankText = formatRankText(rankData);
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
-  img.width = 18;
-  img.height = 18;
-  img.style.cssText = 'width: 18px !important; height: 18px !important; display: block !important; margin-right: 4px !important;';
+  img.width = 28;
+  img.height = 28;
+  img.style.cssText = 'width: 28px !important; height: 28px !important; display: block !important; margin-right: 0 !important; vertical-align: top !important; margin-top: 0 !important;';
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
@@ -1360,25 +1361,35 @@ function addExtensionStyles() {
     
     /* 7TV specific badge styling */
     .seventv-chat-badge.eloward-rank-badge {
-      display: inline-block !important;
-      margin-right: 4px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      margin-right: 6px !important;
       vertical-align: middle !important;
-      width: 18px !important;
-      height: 18px !important;
+      width: 28px !important;
+      height: 28px !important;
       margin-top: 0 !important;
+      position: relative !important;
+      top: -2px !important;
     }
     
     .seventv-chat-badge.eloward-rank-badge img {
-      width: 18px !important;
-      height: 18px !important;
+      width: 28px !important;
+      height: 28px !important;
       display: block !important;
-      border-radius: 2px !important;
+      border-radius: 3px !important;
     }
     
     /* Ensure 7TV badges don't get overridden */
     .seventv-chat-user-badge-list .eloward-rank-badge {
-      margin: 0 2px 0 0 !important;
+      margin: 0 4px 0 0 !important;
       padding: 0 !important;
+    }
+    
+    /* 7TV badge list container adjustments */
+    .seventv-chat-user-badge-list {
+      display: inline-flex !important;
+      align-items: center !important;
+      margin-right: 4px !important;
     }
     
     .eloward-tooltip {
