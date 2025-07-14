@@ -1448,8 +1448,10 @@ function addExtensionStyles() {
     
     /* Standard Chat Badge Size (30px) */
     .eloward-rank-badge.standard-size {
-      width: 30px !important;
-      height: 30px !important;
+      width: 28px !important;
+      height: 28px !important;
+      margin-right: -0.05rem !important;
+      margin-left: -0.35rem !important;
     }
     
     .eloward-rank-badge.standard-size .eloward-badge-img {
