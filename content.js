@@ -1186,8 +1186,8 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   const img = document.createElement('img');
   img.alt = rankData.tier;
   img.className = 'eloward-badge-img seventv-badge-img';
-  img.width = 28;
-  img.height = 28;
+  img.width = 32;
+  img.height = 32;
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
@@ -1460,13 +1460,13 @@ function addExtensionStyles() {
       vertical-align: middle !important;
       position: relative !important;
       top: 0px !important;
-      width: 28px !important;
-      height: 28px !important;
+      width: 32px !important;
+      height: 32px !important;
     }
     
     .seventv-badge-img {
-      width: 28px !important;
-      height: 28px !important;
+      width: 32px !important;
+      height: 32px !important;
       display: block !important;
       margin-right: 0 !important;
       vertical-align: top !important;
