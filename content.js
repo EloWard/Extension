@@ -1186,8 +1186,8 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   const img = document.createElement('img');
   img.alt = rankData.tier;
   img.className = 'eloward-badge-img seventv-badge-img';
-  img.width = 32;
-  img.height = 32;
+  img.width = 52;
+  img.height = 52;
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
@@ -1456,19 +1456,21 @@ function addExtensionStyles() {
     .seventv-chat-badge.eloward-rank-badge.seventv-integration {
       display: inline-flex !important;
       align-items: center !important;
-      margin-right: -4px !important;
+      margin-right: -4px !important;x
+      margin-left: -2px !important;
       vertical-align: middle !important;
       position: relative !important;
       top: 0px !important;
-      width: 32px !important;
-      height: 32px !important;
+      width: 28px !important;
+      height: 28px !important;
     }
     
     .seventv-badge-img {
-      width: 32px !important;
-      height: 32px !important;
+      width: 40px !important;
+      height: 40px !important;
       display: block !important;
       margin-right: 0 !important;
+      margin-left: 0 !important;
       vertical-align: top !important;
       margin-top: 0 !important;
       border-radius: 3px !important;
@@ -1477,11 +1479,11 @@ function addExtensionStyles() {
     .seventv-chat-user-badge-list {
       display: inline-flex !important;
       align-items: center !important;
-      margin-right: 4px !important;
+      margin-right: 2px !important;
     }
     
     .seventv-chat-user-badge-list .eloward-rank-badge {
-      margin: 0 4px 0 0 !important;
+      margin: 0 2px 0 0 !important;
       padding: 0 !important;
     }
     
