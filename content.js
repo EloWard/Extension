@@ -13,8 +13,6 @@ const extensionState = {
   lastChannelActiveCheck: null,
   initializationInProgress: false,
   currentInitializationId: null,
-  ffzDetected: false,
-  stvDetected: false,
   compatibilityMode: false,
   initializationComplete: false,
   lastInitAttempt: 0,
@@ -113,41 +111,45 @@ const SUPPORTED_GAMES = {
 // Tooltip delay
 let tooltipShowTimeout = null;
 
-// Chat mode detection and initialization
+// Robust chat mode detection using DOM-based detection (most reliable)
 function detectChatMode() {
-  const ffzDetected = !!(window.ffz || window.FrankerFaceZ || document.querySelector('[data-ffz-component]') || document.querySelector('.ffz-addon'));
-  const stvDetected = !!(document.querySelector('[data-seventv]') || document.querySelector('.seventv-paint') || window.SevenTV);
+  // Use DOM-based detection as primary method (most reliable)
+  const has7TVElements = !!(
+    document.querySelector('.seventv-message') ||
+    document.querySelector('.seventv-chat-user') ||
+    document.querySelector('[data-seventv]') ||
+    document.querySelector('.seventv-paint')
+  );
   
-  // Additional detection based on DOM elements
-  const has7TVMessages = !!document.querySelector('.seventv-message');
-  const hasFFZMessages = !!document.querySelector('.ffz-message-line, .ffz-chat-line');
+  const hasFFZElements = !!(
+    document.querySelector('.ffz-message-line') ||
+    document.querySelector('.ffz-chat-line') ||
+    document.querySelector('[data-ffz-component]') ||
+    document.querySelector('.ffz-addon')
+  );
   
+  // Determine mode based on DOM elements (most reliable)
   let detectedMode = 'standard';
-  
-  // Priority: 7TV > FFZ > Standard
-  if (stvDetected || has7TVMessages) {
+  if (has7TVElements) {
     detectedMode = 'seventv';
-  } else if (ffzDetected || hasFFZMessages) {
+  } else if (hasFFZElements) {
     detectedMode = 'ffz';
   }
   
-  const wasInCompatibilityMode = extensionState.compatibilityMode;
   const previousMode = extensionState.chatMode;
   
-  extensionState.ffzDetected = ffzDetected;
-  extensionState.stvDetected = stvDetected;
   extensionState.compatibilityMode = detectedMode !== 'standard';
   extensionState.chatMode = detectedMode;
   
-  console.log(`🔧 EloWard: Chat mode detected - ${detectedMode.toUpperCase()} (FFZ: ${ffzDetected}, 7TV: ${stvDetected})`);
+  console.log(`🔧 EloWard: Chat mode detected - ${detectedMode.toUpperCase()}`);
   
-  // If this is a new detection after initialization, restart ONLY if mode actually changed
+  // Only restart if mode actually changed after initialization
   if (extensionState.initializationComplete && detectedMode !== previousMode) {
     console.log(`🔧 EloWard: Chat mode changed from ${previousMode} to ${detectedMode} - Restarting`);
     restartExtension();
   }
   
-  return { ffzDetected, stvDetected, chatMode: detectedMode };
+  return { chatMode: detectedMode };
 }
 
 
@@ -180,57 +182,51 @@ function restartExtension() {
 
 // Setup compatibility monitoring
 function setupCompatibilityMonitor() {
-  let checkCount = 0;
-  const maxChecks = 2; // Only check twice to catch late-loading extensions
+  let detectionCount = 0;
+  const maxDetections = 2; // Maximum 2 detections total
   
-  // Limited checking for chat mode changes
-  const scheduleCheck = (delay) => {
-    setTimeout(() => {
-      if (checkCount < maxChecks) {
-        detectChatMode();
-        checkCount++;
-      }
-    }, delay);
+  // Single follow-up detection after 5 seconds (only if needed)
+  const scheduleFollowUpDetection = () => {
+    if (detectionCount < maxDetections && extensionState.chatMode === 'standard') {
+      setTimeout(() => {
+        if (detectionCount < maxDetections) {
+          detectionCount++;
+          detectChatMode();
+        }
+      }, 5000); // Single check at 5 seconds
+    }
   };
   
-  // Check at 2 seconds and 10 seconds after initialization
-  scheduleCheck(2000);  // First check
-  scheduleCheck(10000); // Second check
+  // Schedule follow-up detection
+  scheduleFollowUpDetection();
   
-  // Monitor for extension loading/unloading (but only for major DOM changes)
+  // Lightweight monitoring for major extension additions only
   const compatibilityObserver = new MutationObserver((mutations) => {
-    if (checkCount >= maxChecks) return; // Stop monitoring after max checks
-    
-    let shouldCheck = false;
+    if (detectionCount >= maxDetections) {
+      compatibilityObserver.disconnect();
+      return;
+    }
     
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // Only check for major extension additions
-            if (node.classList && (
-              node.classList.contains('ffz-addon') ||
-              node.classList.contains('seventv-paint') ||
-              node.querySelector && (
-                node.querySelector('[data-ffz-component]') ||
-                node.querySelector('[data-seventv]') ||
-                node.querySelector('.ffz-addon') ||
-                node.querySelector('.seventv-paint')
-              )
+            // Only detect major chat extension changes (chat container modifications)
+            if (node.querySelector && (
+                node.querySelector('.seventv-message') ||
+                node.querySelector('.ffz-message-line') ||
+                node.classList.contains('seventv-paint') ||
+                node.classList.contains('ffz-addon')
             )) {
-              shouldCheck = true;
-              break;
+              if (detectionCount < maxDetections) {
+                detectionCount++;
+                detectChatMode();
+                return; // Exit early after detection
+              }
             }
           }
         }
       }
-      
-      if (shouldCheck) break;
-    }
-    
-    if (shouldCheck && checkCount < maxChecks) {
-      setTimeout(detectChatMode, 1000);
-      checkCount++;
     }
   });
   
@@ -239,10 +235,10 @@ function setupCompatibilityMonitor() {
     subtree: true
   });
   
-  // Clean up after 30 seconds - no need to monitor indefinitely
+  // Clean up after 15 seconds - extensions usually load quickly
   setTimeout(() => {
     compatibilityObserver.disconnect();
-  }, 30 * 1000);
+  }, 15 * 1000);
 }
 
 // Fallback initialization system
@@ -349,10 +345,10 @@ initializeStorage();
 // Always setup URL observer first, regardless of current page
 setupUrlChangeObserver();
 
-// Detect chat mode and set compatibility needs
+// Initial chat mode detection
 detectChatMode();
 
-// Setup compatibility monitoring
+// Setup limited compatibility monitoring (max 2 detections total)
 setupCompatibilityMonitor();
 
 // Setup fallback initialization
@@ -748,10 +744,7 @@ function initializeExtension() {
   
   console.log(`🚀 EloWard: Initializing extension for channel: ${currentChannel} (ID: ${initializationId})`);
   
-  // Re-detect chat mode if needed
-  if (!extensionState.compatibilityMode) {
-    detectChatMode();
-  }
+  // Chat mode already detected during initial setup
   
   // Add extension styles
   addExtensionStyles();
