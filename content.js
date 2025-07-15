@@ -73,7 +73,7 @@ const SELECTORS = {
 function createBadgeElement(rankData, size = 24) {
   const badge = document.createElement('span');
   badge.className = size === 28 ? 'eloward-rank-badge seventv-size' : 
-                   size === 30 ? 'eloward-rank-badge standard-size' : 
+                   size === 24 ? 'eloward-rank-badge standard-size' : 
                    'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
   
@@ -1209,7 +1209,7 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
-  const badge = createBadgeElement(rankData, 30); // Use same size as standard
+  const badge = createBadgeElement(rankData, 24); // Use same size as standard
   badge.classList.add('ffz-badge');
   
   // Insert badge with error handling (same as standard)
@@ -1237,7 +1237,7 @@ function addBadgeToStandardMessage(messageContainer, usernameElement, rankData) 
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
-  const badge = createBadgeElement(rankData, 30); // 30px for standard badges
+  const badge = createBadgeElement(rankData, 24); // 24px for standard badges
   
   // Insert badge with error handling
   try {
@@ -1421,7 +1421,6 @@ function addExtensionStyles() {
       align-items: center !important;
       justify-content: center !important;
       margin-right: 0.5rem !important;
-      vertical-align: middle !important;
       cursor: pointer !important;
       position: relative !important;
       z-index: 10 !important;
@@ -1434,20 +1433,19 @@ function addExtensionStyles() {
     .eloward-badge-img {
       display: block !important;
       object-fit: contain !important;
-      vertical-align: top !important;
     }
     
-    /* Standard Chat Badge Size (30px) */
+    /* Standard Chat Badge Size (24px) */
     .eloward-rank-badge.standard-size {
-      width: 28px !important;
-      height: 28px !important;
+      width: 24px !important;
+      height: 24px !important;
       margin-right: -0.05rem !important;
       margin-left: -0.35rem !important;
     }
     
     .eloward-rank-badge.standard-size .eloward-badge-img {
-      width: 30px !important;
-      height: 30px !important;
+      width: 24px !important;
+      height: 24px !important;
     }
     
     /* 7TV Integration Styles */
@@ -1456,9 +1454,7 @@ function addExtensionStyles() {
       align-items: center !important;
       margin-right: -4px !important;
       margin-left: -2px !important;
-      vertical-align: middle !important;
       position: relative !important;
-      top: 0px !important;
       width: 28px !important;
       height: 28px !important;
     }
@@ -1467,8 +1463,6 @@ function addExtensionStyles() {
       display: block !important;
       margin-right: 0 !important;
       margin-left: 0 !important;
-      vertical-align: top !important;
-      margin-top: 0 !important;
       border-radius: 3px !important;
     }
     
