@@ -86,13 +86,12 @@ export const TwitchAuth = {
         const storedState = await this._getStoredAuthState();
         if (authResult.state !== storedState) {
           throw new Error('Security verification failed: state mismatch in Twitch auth');
-        } else {
         }
       }
       
       // Exchange the authorization code for tokens
       try {
-        const tokenData = await this.exchangeCodeForTokens(authResult.code);
+        await this.exchangeCodeForTokens(authResult.code);
         
         // Even if getting user info fails, authentication is still considered successful
         // because we have valid tokens
@@ -181,9 +180,8 @@ export const TwitchAuth = {
       });
       
       
-      // Check if the response is ok (status in the range 200-299)
       if (!response.ok) {
-        const errorText = await response.text();
+        await response.text();
         throw new Error(`Failed to get Twitch auth URL: ${response.status} ${response.statusText}`);
       }
       

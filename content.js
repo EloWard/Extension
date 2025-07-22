@@ -122,14 +122,13 @@ function detectChatMode() {
   if (!extensionState.initializationComplete) {
     console.log(`EloWard: Chat mode detected - ${detectedMode}`);
   } else if (detectedMode !== previousMode) {
-    console.log(`EloWard: Chat mode changed from ${previousMode} to ${detectedMode}`);
-    switchChatMode(previousMode, detectedMode);
+    switchChatMode();
   }
   
   return { chatMode: detectedMode };
 }
 
-function switchChatMode(previousMode, newMode) {
+function switchChatMode() {
   if (!extensionState.isChannelActive || !extensionState.observerInitialized) {
     return;
   }
@@ -255,7 +254,7 @@ function fallbackInitialization() {
       document.querySelector('[data-seventv]') ||
       window.ffz ||
       window.FrankerFaceZ ||
-      window.SevenTV
+      window.SevenTV || window.seventv
     );
     
     if (hasThirdPartyExtensions) {
@@ -527,11 +526,9 @@ async function getCurrentGame() {
     
     if (game) {
       const gameName = game.name || game.displayName;
-      console.log(`EloWard: Game detected - ${gameName}`);
       return gameName;
     }
     
-    console.log(`EloWard: No game detected for ${channelName}`);
     return null;
   } catch (error) {
     return null;
@@ -614,7 +611,7 @@ function initializeExtension() {
   const currentChannel = getCurrentChannelName();
   if (!currentChannel) return;
   
-  const initializationId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  const initializationId = Date.now().toString() + Math.random().toString(36).substring(2, 11);
   extensionState.currentInitializationId = initializationId;
   extensionState.initializationInProgress = true;
   extensionState.channelName = currentChannel;
@@ -669,7 +666,7 @@ function initializeExtension() {
 function setupUrlChangeObserver() {
   if (window._eloward_url_observer) return;
   
-  const urlObserver = new MutationObserver(function(mutations) {
+  const urlObserver = new MutationObserver(function() {
     const currentChannel = getCurrentChannelName();
     
     if (window.location.pathname.includes('oauth2') || 
@@ -914,19 +911,16 @@ function handleCurrentUserMessages(messageData) {
         summonerName: riotData.gameName
       };
       
-      // Apply to all messages for current user using universal function
-      messageData.forEach(({ messageElement, usernameElement }) => {
+      messageData.forEach(({ usernameElement }) => {
         addBadgeToMessage(usernameElement, userRankData);
       });
       
-      // Store in cache for future use
       chrome.runtime.sendMessage({
         action: 'set_rank_data',
         username: extensionState.currentUser,
         rankData: userRankData
       });
       
-      // Increment metrics once
       if (extensionState.channelName) {
         chrome.runtime.sendMessage({
           action: 'increment_db_reads',
@@ -942,7 +936,7 @@ function handleCurrentUserMessages(messageData) {
 }
 
 function applyRankToAllUserMessages(username, messageData, rankData) {
-  messageData.forEach(({ messageElement, usernameElement }) => {
+  messageData.forEach(({ usernameElement }) => {
     addBadgeToMessage(usernameElement, rankData);
   });
 }
@@ -1043,13 +1037,13 @@ function processNewMessage(messageNode) {
       return;
     }
     
-    fetchRankFromBackground(username, usernameElement);
+    fetchRankFromBackground(username);
   } catch (error) {
     console.error('EloWard: Error processing message:', error);
   }
 }
 
-function fetchRankFromBackground(username, usernameElement, messageElement = null) {
+function fetchRankFromBackground(username) {
   if (extensionState.channelName) {
     chrome.runtime.sendMessage({
       action: 'increment_db_reads',
@@ -1136,7 +1130,7 @@ function addBadgeToMessage(usernameElement, rankData) {
   }
 }
 
-function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
+function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) {
   let badgeList = messageContainer.querySelector('.seventv-chat-user-badge-list');
   
   if (!badgeList) {
@@ -1146,9 +1140,9 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
     badgeList = document.createElement('span');
     badgeList.className = 'seventv-chat-user-badge-list';
     
-    const username = chatUser.querySelector('.seventv-chat-user-username');
-    if (username) {
-      chatUser.insertBefore(badgeList, username);
+    const usernameEl = chatUser.querySelector('.seventv-chat-user-username');
+    if (usernameEl) {
+      chatUser.insertBefore(badgeList, usernameEl);
     } else {
       chatUser.insertBefore(badgeList, chatUser.firstChild);
     }

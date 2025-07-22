@@ -181,7 +181,6 @@ async function initiateTokenExchange(authData, service = 'riot') {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
@@ -256,7 +255,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'auth_callback') {
     if (message.code) {
-      
+      // Handle auth callback with code
     } else {
       handleAuthCallback(message.params);
     }
@@ -280,7 +279,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           createdAt: Date.now()
         };
         
-
         sendResponse({ success: true, windowId });
       });
     } else {
@@ -323,7 +321,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'initiate_riot_auth') {
-    
     const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
@@ -391,15 +388,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     
     if (channelName) {
-      incrementDbReadCounter(channelName).catch(error => {
-      });
+      incrementDbReadCounter(channelName).catch(() => {});
     }
     
     const cachedRankData = userRankCache.get(username);
     if (cachedRankData) {
       if (channelName && cachedRankData?.tier) {
-        incrementSuccessfulLookupCounter(channelName).catch(error => {
-        });
+        incrementSuccessfulLookupCounter(channelName).catch(() => {});
       }
       
       sendResponse({
@@ -419,8 +414,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           userRankCache.set(username, rankData);
           
           if (channelName && rankData?.tier) {
-            incrementSuccessfulLookupCounter(channelName).catch(error => {
-            });
+            incrementSuccessfulLookupCounter(channelName).catch(() => {});
           }
         }
         
@@ -466,8 +460,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     checkChannelActive(streamer, skipCache)
       .then(active => {
-        if (skipCache) {
-        }
         sendResponse({ active: active });
       })
       .catch(error => {
@@ -561,7 +553,6 @@ chrome.runtime.onInstalled.addListener((details) => {
 function clearAllStoredData() {
   return new Promise((resolve) => {
     try {
-      
       const keysToRemove = [
         'eloward_riot_access_token',
         'eloward_riot_refresh_token',
@@ -742,7 +733,7 @@ async function handleAuthCallbackFromRedirect(code, state) {
         success: true
       });
     } catch (e) {
-      
+      // Ignore messaging errors
     }
     
     return { success: true, username: tokenData.data.user_info?.game_name };
@@ -841,8 +832,7 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
       lastUpdated: Date.now()
     };
     
-    chrome.storage.local.set({ linkedAccounts }, () => {
-    });
+    chrome.storage.local.set({ linkedAccounts });
   });
 }
 
@@ -881,13 +871,11 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
     getUserLinkedAccount(twitchUsername)
       .then(linkedAccount => {
         if (linkedAccount) {
-          
           getRankForLinkedAccount(linkedAccount, platform)
             .then(rankData => {
               resolve(rankData);
             })
-            .catch(error => {
-              
+            .catch(() => {
               fetchRankFromDatabase(twitchUsername)
                 .then(dbRankData => {
                   if (dbRankData) {
@@ -899,7 +887,6 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
                 .catch(() => resolve(null));
             });
         } else {
-          
           fetchRankFromDatabase(twitchUsername)
             .then(rankData => {
               if (rankData) {
@@ -926,7 +913,6 @@ function preloadLinkedAccounts() {
         
         if (!linkedAccounts[normalizedUsername] || 
             !linkedAccounts[normalizedUsername].puuid) {
-          
           linkedAccounts[normalizedUsername] = {
             ...userData.riotAccountInfo,
             twitchUsername: userData.twitchUsername,

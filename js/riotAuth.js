@@ -56,7 +56,7 @@ export const RiotAuth = {
    * @param {boolean} isSilentReauth - Whether this is a silent re-authentication
    * @returns {Promise<object>} - Resolves with user data on success
    */
-  async authenticate(region, isSilentReauth = false) {
+  async authenticate(region) {
     try {
       
       // Clear any previous auth states
@@ -109,7 +109,7 @@ export const RiotAuth = {
 
       
       // Exchange code for tokens
-      const tokenData = await this.exchangeCodeForTokens(authResult.code);
+      await this.exchangeCodeForTokens(authResult.code);
       
       // Get user data
       const userData = await this.getUserData();
@@ -505,7 +505,7 @@ export const RiotAuth = {
    * Get a valid token or throw an error if none is available
    * @returns {Promise<string>} - The access token
    */
-  async getValidToken(ignoreNoTokenError = false) {
+  async getValidToken() {
     try {
       // Get tokens from storage using centralized method
       const { accessToken, refreshToken, tokenExpiry } = await this._getTokensFromStorage();

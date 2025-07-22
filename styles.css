@@ -37,7 +37,7 @@
 .eloward-rank-badge[data-rank="iron"] {
   width: 28px !important;
   height: 28px !important;
-  margin: 0 -2px 7.5px -6px !important;
+  margin: 0 -10px 20px -10px !important;
 }
 
 .eloward-rank-badge[data-rank="bronze"] {
