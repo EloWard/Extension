@@ -67,13 +67,13 @@
 .eloward-rank-badge[data-rank="emerald"] {
   width: 24px !important;
   height: 24px !important;
-  margin: 0 1px 3px -3px !important;
+  margin: 0 1px 2.5px -3px !important;
 }
 
 .eloward-rank-badge[data-rank="diamond"] {
   width: 24px !important;
   height: 24px !important;
-  margin: 0 3px 4px -1px !important;
+  margin: 0 3px 3.5px -1px !important;
 }
 
 .eloward-rank-badge[data-rank="master"] {
