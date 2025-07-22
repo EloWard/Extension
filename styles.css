@@ -1,2 +1,162 @@
-/* EloWard Extension Styles - Now generated dynamically in content.js */
-/* All styles are now generated dynamically with rank-specific positioning */ 
+/* EloWard Extension Styles */
+.eloward-rank-badge {
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin-left: 0px !important;
+  margin-right: 6px !important;
+  margin-top: -2.5px !important;
+  vertical-align: middle !important;
+  cursor: pointer !important;
+  transform: none !important;
+  transition: none !important;
+  width: 24px !important;
+  height: 24px !important;
+  box-sizing: content-box !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+.eloward-rank-badge:hover {
+  transform: none !important;
+  scale: 1 !important;
+}
+
+.eloward-rank-badge img {
+  display: block !important;
+  width: 24px !important;
+  height: 24px !important;
+  object-fit: contain !important;
+}
+
+/* 7TV Integration */
+.seventv-chat-badge.eloward-rank-badge {
+  display: inline-block !important;
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 4px 0 0 !important;
+  vertical-align: middle !important;
+}
+
+.seventv-chat-user-badge-list {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-right: 8px !important;
+}
+
+/* Tooltips */
+.eloward-tooltip {
+  position: absolute !important;
+  z-index: 99999 !important;
+  pointer-events: none !important;
+  transform: translate(-50%, -100%) !important;
+  font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+  padding: 8px !important;
+  border-radius: 8px !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  text-align: center !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  margin-top: -8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background-color: #0e0e10 !important;
+  color: #efeff1 !important;
+}
+
+.eloward-tooltip.visible {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.eloward-tooltip-badge {
+  width: 90px !important;
+  height: 90px !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.eloward-tooltip-text {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+
+.eloward-tooltip::after {
+  content: "" !important;
+  position: absolute !important;
+  bottom: -4px !important;
+  left: 50% !important;
+  margin-left: -4px !important;
+  border-width: 4px 4px 0 4px !important;
+  border-style: solid !important;
+  border-color: #0e0e10 transparent transparent transparent !important;
+}
+
+/* 7TV Tooltips */
+.eloward-7tv-tooltip {
+  position: absolute !important;
+  z-index: 99999 !important;
+  pointer-events: none !important;
+  transform: translate(-50%, -100%) !important;
+  font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+  padding: 8px !important;
+  border-radius: 8px !important;
+  text-align: center !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  margin-top: -8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background-color: #0e0e10 !important;
+  color: #efeff1 !important;
+}
+
+.eloward-7tv-tooltip-badge {
+  width: 90px !important;
+  height: 90px !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.eloward-7tv-tooltip-text {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+
+.eloward-7tv-tooltip::after {
+  content: "" !important;
+  position: absolute !important;
+  bottom: -4px !important;
+  left: 50% !important;
+  margin-left: -4px !important;
+  border-width: 4px 4px 0 4px !important;
+  border-style: solid !important;
+  border-color: #0e0e10 transparent transparent transparent !important;
+}
+
+/* Dark theme tooltip adjustments */
+html.tw-root--theme-dark .eloward-tooltip,
+.tw-root--theme-dark .eloward-tooltip,
+html.tw-root--theme-dark .eloward-7tv-tooltip,
+.tw-root--theme-dark .eloward-7tv-tooltip {
+  background-color: white !important;
+  color: #0e0e10 !important;
+}
+
+html.tw-root--theme-dark .eloward-tooltip::after,
+.tw-root--theme-dark .eloward-tooltip::after,
+html.tw-root--theme-dark .eloward-7tv-tooltip::after,
+.tw-root--theme-dark .eloward-7tv-tooltip::after {
+  border-color: white transparent transparent transparent !important;
+} 

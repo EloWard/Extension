@@ -23,37 +23,6 @@ const channelState = {
   activeAbortController: null
 };
 
-const RANK_STYLES = {
-  standard: {
-    iron: { width: '28px', height: '28px', margin: '0 -2px 7.5px -6px' },
-    bronze: { width: '26px', height: '26px', margin: '0 -1.5px 6px -5px' },
-    silver: { width: '24px', height: '24px', margin: '0 0px 6px -4.5px' },
-    gold: { width: '24px', height: '24px', margin: '0 0px 4px -4px' },
-    platinum: { width: '24px', height: '24px', margin: '0 0.5px 3.5px -3.5px' },
-    emerald: { width: '24px', height: '24px', margin: '0 1px 3px -3px' },
-    diamond: { width: '24px', height: '24px', margin: '0 3px 4px -1px' },
-    master: { width: '24px', height: '24px', margin: '0 3px 3px -1px' },
-    grandmaster: { width: '24px', height: '24px', margin: '0 3px 2px -1px' },
-    challenger: { width: '24px', height: '24px', margin: '0 3px 1px -1px' },
-    unranked: { width: '24px', height: '24px', margin: '0 -0.2px 2.5px -3.5px' }
-  },
-  seventv: {
-    iron: { width: '28px', height: '28px', margin: '0px -7px 5px -3px' },
-    bronze: { width: '26px', height: '26px', margin: '0px -7px 3px -3px' },
-    silver: { width: '24px', height: '24px', margin: '0px -7px 2px -3px' },
-    gold: { width: '24px', height: '24px', margin: '0px -7px 0px -3px' },
-    platinum: { width: '24px', height: '24px', margin: '2px -5px 0px -1px' },
-    emerald: { width: '24px', height: '24px', margin: '2px -5px 0px -1px' },
-    diamond: { width: '24px', height: '24px', margin: '0px -3px 0px 1px' },
-    master: { width: '24px', height: '24px', margin: '2px -3px 0px 1px' },
-    grandmaster: { width: '22px', height: '22px', margin: '3px -3px 0px 1px' },
-    challenger: { width: '24px', height: '24px', margin: '2px -1px 0px 3px' },
-    unranked: { width: '24px', height: '24px', margin: '1px -7px 0px -3px' }
-  }
-};
-
-const RANK_TIERS = ['iron', 'bronze', 'silver', 'gold', 'platinum', 'emerald', 'diamond', 'master', 'grandmaster', 'challenger', 'unranked'];
-
 const SELECTORS = {
   standard: {
     username: [
@@ -100,7 +69,7 @@ const SUPPORTED_GAMES = { 'League of Legends': true };
 let processedMessages = new Set();
 let tooltipElement = null;
 
-function createBadgeElement(rankData, size = 24) {
+function createBadgeElement(rankData) {
   const badge = document.createElement('span');
   badge.className = 'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
@@ -113,8 +82,8 @@ function createBadgeElement(rankData, size = 24) {
   const img = document.createElement('img');
   img.alt = rankData.tier;
   img.className = 'eloward-badge-img';
-  img.width = size;
-  img.height = size;
+  img.width = 24;
+  img.height = 24;
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
@@ -150,29 +119,46 @@ function detectChatMode() {
   extensionState.compatibilityMode = detectedMode !== 'standard';
   extensionState.chatMode = detectedMode;
   
-  if (extensionState.initializationComplete && detectedMode !== previousMode) {
-    restartExtension();
+  if (!extensionState.initializationComplete) {
+    console.log(`EloWard: Chat mode detected - ${detectedMode}`);
+  } else if (detectedMode !== previousMode) {
+    console.log(`EloWard: Chat mode changed from ${previousMode} to ${detectedMode}`);
+    switchChatMode(previousMode, detectedMode);
   }
   
   return { chatMode: detectedMode };
 }
 
-function restartExtension() {
-  if (extensionState.channelName) {
-    cleanupChannel(extensionState.channelName);
+function switchChatMode(previousMode, newMode) {
+  if (!extensionState.isChannelActive || !extensionState.observerInitialized) {
+    return;
   }
-  
-  extensionState.observerInitialized = false;
-  extensionState.initializationInProgress = false;
-  extensionState.initializationComplete = false;
-  extensionState.currentInitializationId = null;
+
+  cleanupChatObserver();
   processedMessages.clear();
   
-  setTimeout(() => {
-    if (getCurrentChannelName()) {
-      initializeExtension();
-    }
-  }, 2000);
+  const chatContainer = findChatContainer();
+  if (chatContainer) {
+    setupChatObserver(chatContainer);
+  }
+}
+
+function cleanupChatObserver() {
+  if (tooltipElement && tooltipElement.parentNode) {
+    tooltipElement.parentNode.removeChild(tooltipElement);
+    tooltipElement = null;
+  }
+  
+  hideSevenTVTooltip();
+  
+  if (window._eloward_chat_observer) {
+    window._eloward_chat_observer.disconnect();
+    window._eloward_chat_observer = null;
+  }
+  
+  document.querySelectorAll('.eloward-rank-badge').forEach(badge => {
+    badge.remove();
+  });
 }
 
 function setupCompatibilityMonitor() {
@@ -186,7 +172,7 @@ function setupCompatibilityMonitor() {
           detectionCount++;
           detectChatMode();
         }
-      }, 5000);
+      }, 2500);
     }
   };
   
@@ -277,8 +263,6 @@ function fallbackInitialization() {
     }
   }
   
-  addExtensionStyles();
-  
   let attempts = 0;
   const maxAttempts = 10;
   
@@ -310,23 +294,7 @@ function clearRankCache() {
 }
 
 function cleanupChannel(channelName) {
-  if (tooltipElement && tooltipElement.parentNode) {
-    tooltipElement.parentNode.removeChild(tooltipElement);
-    tooltipElement = null;
-  }
-  
-  hideSevenTVTooltip();
-  
-  if (extensionState.chatMode === 'seventv') {
-    document.querySelectorAll('.eloward-rank-badge.seventv-integration').forEach(badge => {
-      badge.remove();
-    });
-  }
-  
-  if (window._eloward_chat_observer) {
-    window._eloward_chat_observer.disconnect();
-    window._eloward_chat_observer = null;
-  }
+  cleanupChatObserver();
   
   if (window._eloward_game_observer) {
     window._eloward_game_observer.disconnect();
@@ -463,6 +431,7 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
           }
           
           const isActive = response && response.active === true;
+          console.log(`EloWard: Channel ${channelName} is ${isActive ? 'active' : 'not active'}`);
           
           if (!signal?.aborted) {
             extensionState.lastChannelActiveCheck = now;
@@ -530,9 +499,12 @@ async function getCurrentGame() {
     const game = data?.data?.user?.stream?.game;
     
     if (game) {
-      return game.name || game.displayName;
+      const gameName = game.name || game.displayName;
+      console.log(`EloWard: Game detected - ${gameName}`);
+      return gameName;
     }
     
+    console.log(`EloWard: No game detected for ${channelName}`);
     return null;
   } catch (error) {
     return null;
@@ -620,8 +592,6 @@ function initializeExtension() {
   extensionState.initializationInProgress = true;
   extensionState.channelName = currentChannel;
   
-  addExtensionStyles();
-  
   chrome.runtime.sendMessage({
     action: 'channel_switched',
     oldChannel: channelState.currentChannel,
@@ -637,6 +607,7 @@ function initializeExtension() {
     setupGameChangeObserver();
     
     if (!isGameSupported(extensionState.currentGame)) {
+      console.log(`EloWard: Extension not active - unsupported game: ${extensionState.currentGame || 'none'}`);
       extensionState.initializationInProgress = false;
       extensionState.initializationComplete = true;
       return;
@@ -647,9 +618,12 @@ function initializeExtension() {
         if (extensionState.currentInitializationId !== initializationId) return;
         
         if (channelActive) {
+          console.log(`EloWard: Extension active for ${extensionState.channelName}`);
           if (!extensionState.observerInitialized) {
             initializeObserver();
           }
+        } else {
+          console.log(`EloWard: Extension not active - channel ${extensionState.channelName} not subscribed`);
         }
         
         extensionState.initializationInProgress = false;
@@ -1088,7 +1062,7 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   if (badgeList.querySelector('.eloward-rank-badge')) return;
   
   const badge = document.createElement('div');
-  badge.className = 'seventv-chat-badge eloward-rank-badge seventv-integration';
+  badge.className = 'seventv-chat-badge eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
   badge.dataset.rank = rankData.tier.toLowerCase();
   badge.dataset.division = rankData.division || '';
@@ -1098,7 +1072,9 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
-  img.className = 'eloward-badge-img seventv-badge-img';
+  img.className = 'eloward-badge-img';
+  img.width = 24;
+  img.height = 24;
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
@@ -1124,7 +1100,7 @@ function showSevenTVTooltip(event, rankData) {
   
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-7tv-tooltip-text';
-  tooltipText.textContent = formatRankText(rankData);
+  tooltipText.textContent = formatRankTextForTooltip(rankData);
   
   tooltip.appendChild(tooltipBadge);
   tooltip.appendChild(tooltipText);
@@ -1138,6 +1114,26 @@ function showSevenTVTooltip(event, rankData) {
   document.body.appendChild(tooltip);
 }
 
+function formatRankTextForTooltip(rankData) {
+  if (!rankData || !rankData.tier || rankData.tier.toUpperCase() === 'UNRANKED') {
+    return 'UNRANKED';
+  }
+  
+  let rankText = rankData.tier;
+  
+  if (rankData.division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankData.tier.toUpperCase())) {
+    rankText += ' ' + rankData.division;
+  }
+  
+  if (rankData.tier.toUpperCase() !== 'UNRANKED' && 
+      rankData.leaguePoints !== undefined && 
+      rankData.leaguePoints !== null) {
+    rankText += ' - ' + rankData.leaguePoints + ' LP';
+  }
+  
+  return rankText;
+}
+
 function hideSevenTVTooltip() {
   const existingTooltip = document.getElementById('eloward-7tv-tooltip-active');
   if (existingTooltip && existingTooltip.parentNode) {
@@ -1149,7 +1145,7 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
-  const badge = createBadgeElement(rankData, 24);
+  const badge = createBadgeElement(rankData);
   badge.classList.add('ffz-badge');
   
   try {
@@ -1171,7 +1167,7 @@ function addBadgeToStandardMessage(messageContainer, usernameElement, rankData) 
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
-  const badge = createBadgeElement(rankData, 24);
+  const badge = createBadgeElement(rankData);
   
   try {
     if (insertionPoint.before && insertionPoint.container.contains(insertionPoint.before)) {
@@ -1299,263 +1295,6 @@ function hideTooltip() {
   if (tooltipElement && tooltipElement.classList.contains('visible')) {
     tooltipElement.classList.remove('visible');
   }
-}
-
-function addExtensionStyles() {
-  if (document.querySelector('#eloward-extension-styles')) return;
-  
-  const styleElement = document.createElement('style');
-  styleElement.id = 'eloward-extension-styles';
-  styleElement.textContent = generateRankSpecificCSS();
-  document.head.appendChild(styleElement);
-}
-
-function generateRankSpecificCSS() {
-  let css = `
-    .eloward-rank-badge {
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      cursor: pointer !important;
-      position: relative !important;
-      z-index: 10 !important;
-      box-sizing: content-box !important;
-      -webkit-user-select: none !important;
-      user-select: none !important;
-      -webkit-touch-callout: none !important;
-      vertical-align: middle !important;
-    }
-    
-    .eloward-badge-img {
-      display: block !important;
-      object-fit: contain !important;
-    }
-  `;
-
-  for (const tier of RANK_TIERS) {
-    const styles = RANK_STYLES.standard[tier];
-    if (styles) {
-      css += `
-        .eloward-rank-badge[data-rank="${tier}"] {
-          width: ${styles.width} !important;
-          height: ${styles.height} !important;
-          margin: ${styles.margin} !important;
-        }
-        
-        .eloward-rank-badge[data-rank="${tier}"] .eloward-badge-img {
-          width: ${styles.width} !important;
-          height: ${styles.height} !important;
-        }
-      `;
-    }
-  }
-
-  css += `
-    .seventv-chat-badge.eloward-rank-badge.seventv-integration {
-      display: inline-block !important;
-      vertical-align: middle !important;
-      position: relative !important;
-      border-radius: 4px !important;
-      overflow: hidden !important;
-    }
-
-    .seventv-badge-img, .eloward-badge-img {
-      width: 100% !important;
-      height: 100% !important;
-      object-fit: contain !important;
-      display: block !important;
-    }
-
-    .seventv-chat-user-badge-list {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 4px !important;
-      margin-right: 8px !important;
-    }
-
-    @media (max-width: 400px) {
-      .seventv-chat-badge.eloward-rank-badge.seventv-integration {
-        width: 20px !important;
-        height: 20px !important;
-        margin: 0 2px 0 0 !important;
-      }
-    }
-
-    .tw-root--theme-dark .seventv-chat-badge.eloward-rank-badge.seventv-integration {
-      filter: brightness(0.95) !important;
-    }
-
-    .tw-root--theme-light .seventv-chat-badge.eloward-rank-badge.seventv-integration {
-      filter: brightness(1.05) contrast(1.1) !important;
-    }
-  `;
-
-  for (const tier of RANK_TIERS) {
-    const styles = RANK_STYLES.seventv[tier];
-    if (styles) {
-      css += `
-        .seventv-chat-badge.eloward-rank-badge.seventv-integration[data-rank="${tier}"] {
-          width: ${styles.width} !important;
-          height: ${styles.height} !important;
-          margin: ${styles.margin} !important;
-        }
-      `;
-    }
-  }
-
-  css += `
-    .seventv-chat-user .seventv-chat-user-badge-list + .seventv-chat-user-username {
-      margin-left: 4px !important;
-    }
-
-    .ffz-chat .eloward-rank-badge {
-      display: inline-flex !important;
-      position: relative !important;
-      z-index: 100 !important;
-    }
-    
-    .eloward-tooltip {
-      position: absolute !important;
-      z-index: 99999 !important;
-      pointer-events: none !important;
-      transform: translate(-50%, -100%) !important;
-      font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-      padding: 8px !important;
-      border-radius: 8px !important;
-      opacity: 0 !important;
-      visibility: hidden !important;
-      text-align: center !important;
-      border: none !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
-      margin-top: -8px !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-      gap: 6px !important;
-    }
-    
-    .eloward-tooltip.visible {
-      opacity: 1 !important;
-      visibility: visible !important;
-      transform: translate(-50%, -100%) !important;
-    }
-    
-    .eloward-tooltip-badge {
-      width: 90px !important;
-      height: 90px !important;
-      object-fit: contain !important;
-      display: block !important;
-    }
-    
-    .eloward-tooltip-text {
-      font-size: 13px !important;
-      font-weight: 600 !important;
-      line-height: 1.2 !important;
-      white-space: nowrap !important;
-    }
-    
-    .eloward-tooltip::after {
-      content: "" !important;
-      position: absolute !important;
-      bottom: -4px !important;
-      left: 50% !important;
-      margin-left: -4px !important;
-      border-width: 4px 4px 0 4px !important;
-      border-style: solid !important;
-    }
-    
-    .eloward-7tv-tooltip {
-      position: absolute !important;
-      z-index: 99999 !important;
-      pointer-events: none !important;
-      transform: translate(-50%, -100%) !important;
-      font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-      padding: 8px !important;
-      border-radius: 8px !important;
-      text-align: center !important;
-      border: none !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
-      margin-top: -8px !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-      gap: 6px !important;
-    }
-    
-    .eloward-7tv-tooltip-badge {
-      width: 90px !important;
-      height: 90px !important;
-      object-fit: contain !important;
-      display: block !important;
-    }
-    
-    .eloward-7tv-tooltip-text {
-      font-size: 13px !important;
-      font-weight: 600 !important;
-      line-height: 1.2 !important;
-      white-space: nowrap !important;
-    }
-    
-    .eloward-7tv-tooltip::after {
-      content: "" !important;
-      position: absolute !important;
-      bottom: -4px !important;
-      left: 50% !important;
-      margin-left: -4px !important;
-      border-width: 4px 4px 0 4px !important;
-      border-style: solid !important;
-    }
-    
-    html.tw-root--theme-dark .eloward-tooltip,
-    .tw-root--theme-dark .eloward-tooltip,
-    body[data-a-theme="dark"] .eloward-tooltip,
-    body.dark-theme .eloward-tooltip,
-    html.tw-root--theme-dark .eloward-7tv-tooltip,
-    .tw-root--theme-dark .eloward-7tv-tooltip,
-    body[data-a-theme="dark"] .eloward-7tv-tooltip,
-    body.dark-theme .eloward-7tv-tooltip {
-      color: #0e0e10 !important;
-      background-color: white !important;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
-    }
-    
-    html.tw-root--theme-dark .eloward-tooltip::after,
-    .tw-root--theme-dark .eloward-tooltip::after,
-    body[data-a-theme="dark"] .eloward-tooltip::after,
-    body.dark-theme .eloward-tooltip::after,
-    html.tw-root--theme-dark .eloward-7tv-tooltip::after,
-    .tw-root--theme-dark .eloward-7tv-tooltip::after,
-    body[data-a-theme="dark"] .eloward-7tv-tooltip::after,
-    body.dark-theme .eloward-7tv-tooltip::after {
-      border-color: white transparent transparent transparent !important;
-    }
-    
-    html.tw-root--theme-light .eloward-tooltip,
-    .tw-root--theme-light .eloward-tooltip,
-    body[data-a-theme="light"] .eloward-tooltip,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip,
-    html.tw-root--theme-light .eloward-7tv-tooltip,
-    .tw-root--theme-light .eloward-7tv-tooltip,
-    body[data-a-theme="light"] .eloward-7tv-tooltip,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip {
-      color: #efeff1 !important;
-      background-color: #0e0e10 !important;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
-    }
-    
-    html.tw-root--theme-light .eloward-tooltip::after,
-    .tw-root--theme-light .eloward-tooltip::after,
-    body[data-a-theme="light"] .eloward-tooltip::after,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after,
-    html.tw-root--theme-light .eloward-7tv-tooltip::after,
-    .tw-root--theme-light .eloward-7tv-tooltip::after,
-    body[data-a-theme="light"] .eloward-7tv-tooltip::after,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip::after {
-      border-color: #0e0e10 transparent transparent transparent !important;
-    }
-  `;
-  
-  return css;
 }
 
 initializeStorage();
