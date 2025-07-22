@@ -73,7 +73,7 @@ function createBadgeElement(rankData) {
   const badge = document.createElement('span');
   badge.className = 'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
-  badge.dataset.rank = rankData.tier;
+  badge.dataset.rank = rankData.tier.toLowerCase();
   badge.dataset.division = rankData.division || '';
   badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
                      rankData.leaguePoints.toString() : '';
