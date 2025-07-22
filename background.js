@@ -544,6 +544,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  // GET ALL CACHED RANKS (for retroactive badge addition)
+  if (message.action === 'get_all_cached_ranks') {
+    const allRanks = {};
+    for (const [username, entry] of userRankCache.cache.entries()) {
+      allRanks[username] = entry.rankData;
+    }
+    sendResponse({ ranks: allRanks });
+    return true;
+  }
+
   // SET RANK DATA
   if (message.action === 'set_rank_data') {
     if (message.username && message.rankData) {

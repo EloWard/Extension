@@ -27,6 +27,38 @@ const channelState = {
   activeAbortController: null
 };
 
+// Rank-specific styling (matching FFZ addon)
+const RANK_STYLES = {
+  standard: {
+    iron: { width: '28px', height: '28px', margin: '0 -2px 7.5px -6px' },
+    bronze: { width: '26px', height: '26px', margin: '0 -1.5px 6px -5px' },
+    silver: { width: '24px', height: '24px', margin: '0 0px 6px -4.5px' },
+    gold: { width: '24px', height: '24px', margin: '0 0px 4px -4px' },
+    platinum: { width: '24px', height: '24px', margin: '0 0.5px 3.5px -3.5px' },
+    emerald: { width: '24px', height: '24px', margin: '0 1px 3px -3px' },
+    diamond: { width: '24px', height: '24px', margin: '0 3px 4px -1px' },
+    master: { width: '24px', height: '24px', margin: '0 3px 3px -1px' },
+    grandmaster: { width: '24px', height: '24px', margin: '0 3px 2px -1px' },
+    challenger: { width: '24px', height: '24px', margin: '0 3px 1px -1px' },
+    unranked: { width: '24px', height: '24px', margin: '0 -0.2px 2.5px -3.5px' }
+  },
+  seventv: {
+    iron: { width: '28px', height: '28px', margin: '0px -7px 5px -3px' },
+    bronze: { width: '26px', height: '26px', margin: '0px -7px 3px -3px' },
+    silver: { width: '24px', height: '24px', margin: '0px -7px 2px -3px' },
+    gold: { width: '24px', height: '24px', margin: '0px -7px 0px -3px' },
+    platinum: { width: '24px', height: '24px', margin: '2px -5px 0px -1px' },
+    emerald: { width: '24px', height: '24px', margin: '2px -5px 0px -1px' },
+    diamond: { width: '24px', height: '24px', margin: '0px -3px 0px 1px' },
+    master: { width: '24px', height: '24px', margin: '2px -3px 0px 1px' },
+    grandmaster: { width: '22px', height: '22px', margin: '3px -3px 0px 1px' },
+    challenger: { width: '24px', height: '24px', margin: '2px -1px 0px 3px' },
+    unranked: { width: '24px', height: '24px', margin: '1px -7px 0px -3px' }
+  }
+};
+
+const RANK_TIERS = ['iron', 'bronze', 'silver', 'gold', 'platinum', 'emerald', 'diamond', 'master', 'grandmaster', 'challenger', 'unranked'];
+
 // Mode-specific selectors
 const SELECTORS = {
   standard: {
@@ -384,18 +416,25 @@ function clearRankCache() {
  * Clean up state when leaving a channel
  */
 function cleanupChannel(channelName) {
-  if (!channelName) return;
+  console.log(`🧹 EloWard: Cleaning up channel: ${channelName}`);
   
-  const normalizedChannel = channelName.toLowerCase();
-  
-  if (channelState.activeAbortController) {
-    channelState.activeAbortController.abort();
-    channelState.activeAbortController = null;
+  // Hide tooltips
+  if (tooltipElement && tooltipElement.parentNode) {
+    tooltipElement.parentNode.removeChild(tooltipElement);
+    tooltipElement = null;
   }
   
-  channelState.activeChannels.delete(normalizedChannel);
-  processedMessages.clear();
+  // Hide 7TV tooltips
+  hideSevenTVTooltip();
   
+  // Remove 7TV badges if detected
+  if (extensionState.chatMode === 'seventv') {
+    document.querySelectorAll('.eloward-rank-badge.seventv-integration').forEach(badge => {
+      badge.remove();
+    });
+  }
+  
+  // Disconnect observers
   if (window._eloward_chat_observer) {
     window._eloward_chat_observer.disconnect();
     window._eloward_chat_observer = null;
@@ -406,14 +445,22 @@ function cleanupChannel(channelName) {
     window._eloward_game_observer = null;
   }
   
-  // Reset state for fresh detection
+  // Clear processed messages
+  processedMessages.clear();
+  
+  // Reset state
   extensionState.observerInitialized = false;
   extensionState.isChannelActive = false;
-  extensionState.lastChannelActiveCheck = null;
-  extensionState.initializationInProgress = false;
-  extensionState.currentInitializationId = null;
   extensionState.currentGame = null;
-  extensionState.fallbackInitialized = false;
+  extensionState.currentUser = null;
+  
+  // Cancel any active operations for this channel
+  if (channelState.activeAbortController) {
+    channelState.activeAbortController.abort();
+    channelState.activeAbortController = null;
+  }
+  
+  channelState.activeChannels.delete(channelName);
 }
 
 /**
@@ -942,16 +989,11 @@ function setupChatObserver(chatContainer) {
   
   console.log(`📝 EloWard: Setting up chat observer in ${extensionState.chatMode} mode`);
   
-  // Process existing messages
-  try {
-    const existingMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
-    console.log(`📝 EloWard: Processing ${existingMessages.length} existing messages in ${extensionState.chatMode} mode`);
-    
-    for (const message of existingMessages) {
-      processNewMessage(message);
-    }
-  } catch (error) {
-    console.log(`❌ EloWard: Error processing existing messages:`, error);
+  // Process existing messages with mode-specific handling
+  if (extensionState.chatMode === 'seventv') {
+    processExistingSevenTVMessages(chatContainer);
+  } else {
+    processExistingStandardMessages(chatContainer, messageSelectors);
   }
   
   // Set up mutation observer for new messages
@@ -996,18 +1038,10 @@ function setupChatObserver(chatContainer) {
   // Set up delayed retry for messages that might load after extensions
   setTimeout(() => {
     try {
-      const newMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
-      let foundNew = 0;
-      
-      for (const message of newMessages) {
-        if (!processedMessages.has(message)) {
-          processNewMessage(message);
-          foundNew++;
-        }
-      }
-      
-      if (foundNew > 0) {
-        console.log(`🔄 EloWard: Found ${foundNew} additional messages after extension load`);
+      if (extensionState.chatMode === 'seventv') {
+        processExistingSevenTVMessages(chatContainer);
+      } else {
+        processExistingStandardMessages(chatContainer, messageSelectors);
       }
     } catch (error) {
       console.log(`❌ EloWard: Error in delayed message detection:`, error);
@@ -1016,10 +1050,176 @@ function setupChatObserver(chatContainer) {
 }
 
 /**
+ * Process existing standard messages (non-7TV)
+ */
+function processExistingStandardMessages(chatContainer, messageSelectors) {
+  try {
+    const existingMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
+    console.log(`📝 EloWard: Processing ${existingMessages.length} existing standard messages`);
+    
+    for (const message of existingMessages) {
+      if (!processedMessages.has(message)) {
+        processNewMessage(message);
+      }
+    }
+  } catch (error) {
+    console.log(`❌ EloWard: Error processing existing standard messages:`, error);
+  }
+}
+
+/**
+ * Process existing 7TV messages with specialized handling
+ */
+function processExistingSevenTVMessages(chatContainer) {
+  try {
+    const seventvSelectors = ['.seventv-message', '.chat-line__message', '.chat-line'];
+    const existingMessages = chatContainer.querySelectorAll(seventvSelectors.join(', '));
+    console.log(`📝 EloWard: Processing ${existingMessages.length} existing 7TV messages`);
+    
+    for (const message of existingMessages) {
+      if (!processedMessages.has(message)) {
+        processSevenTVMessage(message);
+      }
+    }
+
+    // Also process any cached rank data and retroactively add badges
+    if (existingMessages.length > 0) {
+      retroactivelyAddSevenTVBadges();
+    }
+  } catch (error) {
+    console.log(`❌ EloWard: Error processing existing 7TV messages:`, error);
+  }
+}
+
+/**
+ * Process a single 7TV message
+ */
+function processSevenTVMessage(messageElement) {
+  if (!messageElement || processedMessages.has(messageElement)) return;
+  processedMessages.add(messageElement);
+
+  // Memory management
+  if (processedMessages.size > 500) {
+    const toDelete = Array.from(processedMessages).slice(0, 100);
+    toDelete.forEach(msg => processedMessages.delete(msg));
+  }
+
+  if (!extensionState.isChannelActive) return;
+
+  try {
+    // Find username element using 7TV-specific selectors
+    const usernameElement = messageElement.querySelector('.seventv-chat-user-username');
+    if (!usernameElement) {
+      return;
+    }
+
+    const username = usernameElement.textContent?.trim().toLowerCase();
+    if (!username) {
+      return;
+    }
+
+    // Check if badge already exists
+    if (messageElement.querySelector('.eloward-rank-badge')) {
+      return;
+    }
+
+    // Handle current user with stored Riot data (even if tokens expired)
+    if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
+      chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+        const riotData = data.eloward_persistent_riot_user_data;
+        
+        if (riotData?.rankInfo) {
+          const userRankData = {
+            tier: riotData.rankInfo.tier,
+            division: riotData.rankInfo.rank,
+            leaguePoints: riotData.rankInfo.leaguePoints,
+            summonerName: riotData.gameName
+          };
+          
+          chrome.runtime.sendMessage({
+            action: 'set_rank_data',
+            username: username,
+            rankData: userRankData
+          });
+          
+          if (extensionState.channelName) {
+            chrome.runtime.sendMessage({
+              action: 'increment_db_reads',
+              channel: extensionState.channelName
+            });
+            
+            chrome.runtime.sendMessage({
+              action: 'increment_successful_lookups',
+              channel: extensionState.channelName
+            });
+          }
+          
+          addBadgeToSevenTVMessage(messageElement, usernameElement, userRankData);
+        }
+      });
+      return;
+    }
+    
+    // Fetch rank for other users
+    fetchRankFromBackground(username, usernameElement, messageElement);
+  } catch (error) {
+    console.log(`❌ EloWard: Error processing 7TV message:`, error);
+  }
+}
+
+/**
+ * Retroactively add badges to existing 7TV messages for users we have cached data for
+ */
+function retroactivelyAddSevenTVBadges() {
+  try {
+    // Get rank cache from background script
+    chrome.runtime.sendMessage({ action: 'get_all_cached_ranks' }, (response) => {
+      if (response?.ranks) {
+        const cachedRanks = response.ranks;
+        
+        // Find all 7TV user messages
+        const userMessages = document.querySelectorAll('.seventv-chat-user');
+        
+        userMessages.forEach(messageElement => {
+          if (messageElement.querySelector('.eloward-rank-badge')) {
+            return; // Already has badge
+          }
+          
+          const usernameElement = messageElement.querySelector('.seventv-chat-user-username');
+          if (!usernameElement) {
+            return;
+          }
+          
+          const username = usernameElement.textContent?.trim().toLowerCase();
+          if (!username || !cachedRanks[username]) {
+            return;
+          }
+          
+          const rankData = cachedRanks[username];
+          addBadgeToSevenTVMessage(messageElement, usernameElement, rankData);
+        });
+      }
+    });
+  } catch (error) {
+    console.log(`❌ EloWard: Error in retroactive 7TV badge addition:`, error);
+  }
+}
+
+/**
  * Process new chat message for rank badges with enhanced compatibility
  */
 function processNewMessage(messageNode) {
   if (!messageNode || processedMessages.has(messageNode)) return;
+
+  if (!extensionState.isChannelActive) return;
+  
+  // Route to appropriate processor based on chat mode
+  if (extensionState.chatMode === 'seventv') {
+    processSevenTVMessage(messageNode);
+    return;
+  }
+
+  // Standard/FFZ message processing
   processedMessages.add(messageNode);
   
   // Memory management
@@ -1027,9 +1227,7 @@ function processNewMessage(messageNode) {
     const toDelete = Array.from(processedMessages).slice(0, 100);
     toDelete.forEach(msg => processedMessages.delete(msg));
   }
-  
-  if (!extensionState.isChannelActive) return;
-  
+
   try {
     // Get selectors for current chat mode
     const currentSelectors = SELECTORS[extensionState.chatMode];
@@ -1094,31 +1292,40 @@ function processNewMessage(messageNode) {
 /**
  * Fetch rank data from background script
  */
-function fetchRankFromBackground(username, usernameElement) {
-  try {
-    chrome.runtime.sendMessage(
-      { 
-        action: 'fetch_rank_for_username',
-        username: username,
-        channel: extensionState.channelName
-      },
-      response => {
-        if (chrome.runtime.lastError) {
-          console.log(`❌ EloWard: Runtime error fetching rank:`, chrome.runtime.lastError);
-          return;
-        }
-        
-        if (response?.success && response.rankData) {
-          console.log(`✅ EloWard: Got rank data for ${username}:`, response.rankData);
-          addBadgeToMessage(usernameElement, response.rankData);
-        } else {
-          console.log(`❌ EloWard: No rank data for ${username}`);
-        }
-      }
-    );
-  } catch (error) {
-    console.log(`❌ EloWard: Error fetching rank data:`, error);
+function fetchRankFromBackground(username, usernameElement, messageElement = null) {
+  if (extensionState.channelName) {
+    chrome.runtime.sendMessage({
+      action: 'increment_db_reads',
+      channel: extensionState.channelName
+    });
   }
+
+  chrome.runtime.sendMessage({
+    action: 'fetch_rank_for_username',
+    username: username,
+    channel: extensionState.channelName
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.log(`❌ EloWard: Runtime error fetching rank:`, chrome.runtime.lastError);
+      return;
+    }
+    
+    if (response?.success && response.rankData) {
+      if (extensionState.channelName) {
+        chrome.runtime.sendMessage({
+          action: 'increment_successful_lookups',
+          channel: extensionState.channelName
+        });
+      }
+
+      // Handle badge addition based on chat mode and available elements
+      if (extensionState.chatMode === 'seventv' && messageElement) {
+        addBadgeToSevenTVMessage(messageElement, usernameElement, response.rankData);
+      } else {
+        addBadgeToMessage(usernameElement, response.rankData);
+      }
+    }
+  });
 }
 
 /**
@@ -1177,6 +1384,11 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
       chatUser.insertBefore(badgeList, chatUser.firstChild);
     }
   }
+
+  // Check if badge already exists
+  if (badgeList.querySelector('.eloward-rank-badge')) {
+    return;
+  }
   
   // Create 7TV-style badge
   const badge = document.createElement('div');
@@ -1190,19 +1402,63 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   
   badge.appendChild(img);
   
-  // Setup tooltip
-  badge.addEventListener('mouseenter', showTooltip);
-  badge.addEventListener('mouseleave', hideTooltip);
-  
-  badge.dataset.rank = rankData.tier;
+  // Set data attributes for CSS styling and tooltip
+  badge.dataset.rank = rankData.tier.toLowerCase();
   badge.dataset.division = rankData.division || '';
   badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
   
+  // Setup 7TV-specific tooltip
+  badge.addEventListener('mouseenter', (e) => showSevenTVTooltip(e, rankData));
+  badge.addEventListener('mouseleave', () => hideSevenTVTooltip());
+  
   badgeList.appendChild(badge);
   
   console.log(`✅ EloWard: 7TV badge added for ${usernameElement.textContent} (${rankData.tier})`);
+}
+
+/**
+ * Show 7TV-style tooltip 
+ */
+function showSevenTVTooltip(event, rankData) {
+  hideSevenTVTooltip();
+  
+  if (!rankData?.tier) return;
+  
+  const tooltip = document.createElement('div');
+  tooltip.className = 'eloward-7tv-tooltip';
+  tooltip.id = 'eloward-7tv-tooltip-active';
+  
+  const tooltipBadge = document.createElement('img');
+  tooltipBadge.className = 'eloward-7tv-tooltip-badge';
+  tooltipBadge.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
+  tooltipBadge.alt = 'Rank Badge';
+  
+  const tooltipText = document.createElement('div');
+  tooltipText.className = 'eloward-7tv-tooltip-text';
+  tooltipText.textContent = formatRankText(rankData);
+  
+  tooltip.appendChild(tooltipBadge);
+  tooltip.appendChild(tooltipText);
+  
+  const rect = event.target.getBoundingClientRect();
+  const badgeCenter = rect.left + (rect.width / 2);
+  
+  tooltip.style.left = `${badgeCenter}px`;
+  tooltip.style.top = `${rect.top - 5}px`;
+  
+  document.body.appendChild(tooltip);
+}
+
+/**
+ * Hide 7TV-style tooltip
+ */
+function hideSevenTVTooltip() {
+  const existingTooltip = document.getElementById('eloward-7tv-tooltip-active');
+  if (existingTooltip && existingTooltip.parentNode) {
+    existingTooltip.remove();
+  }
 }
 
 function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
@@ -1407,20 +1663,30 @@ function hideTooltip() {
 }
 
 /**
- * Add CSS styles for rank badges and tooltips - centralized styling
+ * Add CSS styles for rank badges and tooltips - with rank-specific positioning
  */
 function addExtensionStyles() {
   if (document.querySelector('#eloward-extension-styles')) return;
   
   const styleElement = document.createElement('style');
   styleElement.id = 'eloward-extension-styles';
-  styleElement.textContent = `
+  
+  // Generate dynamic CSS based on current chat mode and rank data
+  styleElement.textContent = generateRankSpecificCSS();
+  
+  document.head.appendChild(styleElement);
+}
+
+/**
+ * Generate rank-specific CSS for both standard and 7TV modes
+ */
+function generateRankSpecificCSS() {
+  let css = `
     /* Base Badge Styles */
     .eloward-rank-badge {
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
-      margin-right: 0.5rem !important;
       cursor: pointer !important;
       position: relative !important;
       z-index: 10 !important;
@@ -1428,55 +1694,99 @@ function addExtensionStyles() {
       -webkit-user-select: none !important;
       user-select: none !important;
       -webkit-touch-callout: none !important;
+      vertical-align: middle !important;
     }
     
     .eloward-badge-img {
       display: block !important;
       object-fit: contain !important;
     }
-    
-    /* Standard Chat Badge Size (24px) */
-    .eloward-rank-badge.standard-size {
-      width: 24px !important;
-      height: 24px !important;
-      margin-right: -0.05rem !important;
-      margin-left: -0.35rem !important;
+  `;
+
+  // Generate standard mode rank-specific styles
+  for (const tier of RANK_TIERS) {
+    const styles = RANK_STYLES.standard[tier];
+    if (styles) {
+      css += `
+        .eloward-rank-badge[data-rank="${tier}"] {
+          width: ${styles.width} !important;
+          height: ${styles.height} !important;
+          margin: ${styles.margin} !important;
+        }
+        
+        .eloward-rank-badge[data-rank="${tier}"] .eloward-badge-img {
+          width: ${styles.width} !important;
+          height: ${styles.height} !important;
+        }
+      `;
     }
-    
-    .eloward-rank-badge.standard-size .eloward-badge-img {
-      width: 24px !important;
-      height: 24px !important;
-    }
-    
-    /* 7TV Integration Styles */
+  }
+
+  // Generate 7TV mode rank-specific styles
+  css += `
+    /* 7TV Integration Base Styles */
     .seventv-chat-badge.eloward-rank-badge.seventv-integration {
-      display: inline-flex !important;
-      align-items: center !important;
-      margin-right: -4px !important;
-      margin-left: -2px !important;
+      display: inline-block !important;
+      vertical-align: middle !important;
       position: relative !important;
-      width: 28px !important;
-      height: 28px !important;
+      border-radius: 4px !important;
+      overflow: hidden !important;
     }
-    
-    .seventv-badge-img {
+
+    .seventv-badge-img, .eloward-badge-img {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
       display: block !important;
-      margin-right: 0 !important;
-      margin-left: 0 !important;
-      border-radius: 3px !important;
     }
-    
+
     .seventv-chat-user-badge-list {
       display: inline-flex !important;
       align-items: center !important;
-      margin-right: 2px !important;
+      gap: 4px !important;
+      margin-right: 8px !important;
     }
-    
-    .seventv-chat-user-badge-list .eloward-rank-badge {
-      margin: 0 2px 0 0 !important;
-      padding: 0 !important;
+
+    /* Responsive 7TV styling */
+    @media (max-width: 400px) {
+      .seventv-chat-badge.eloward-rank-badge.seventv-integration {
+        width: 20px !important;
+        height: 20px !important;
+        margin: 0 2px 0 0 !important;
+      }
     }
-    
+
+    /* Theme-specific 7TV styling */
+    .tw-root--theme-dark .seventv-chat-badge.eloward-rank-badge.seventv-integration {
+      filter: brightness(0.95) !important;
+    }
+
+    .tw-root--theme-light .seventv-chat-badge.eloward-rank-badge.seventv-integration {
+      filter: brightness(1.05) contrast(1.1) !important;
+    }
+  `;
+
+  // Generate 7TV rank-specific styles
+  for (const tier of RANK_TIERS) {
+    const styles = RANK_STYLES.seventv[tier];
+    if (styles) {
+      css += `
+        .seventv-chat-badge.eloward-rank-badge.seventv-integration[data-rank="${tier}"] {
+          width: ${styles.width} !important;
+          height: ${styles.height} !important;
+          margin: ${styles.margin} !important;
+        }
+      `;
+    }
+  }
+
+  // Add 7TV username spacing and tooltip styles
+  css += `
+    /* 7TV username spacing adjustment */
+    .seventv-chat-user .seventv-chat-user-badge-list + .seventv-chat-user-username {
+      margin-left: 4px !important;
+    }
+
     /* FFZ Compatibility */
     .ffz-chat .eloward-rank-badge {
       display: inline-flex !important;
@@ -1535,11 +1845,58 @@ function addExtensionStyles() {
       border-style: solid !important;
     }
     
+    /* 7TV Tooltip Styles */
+    .eloward-7tv-tooltip {
+      position: absolute !important;
+      z-index: 99999 !important;
+      pointer-events: none !important;
+      transform: translate(-50%, -100%) !important;
+      font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+      padding: 8px !important;
+      border-radius: 8px !important;
+      text-align: center !important;
+      border: none !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+      margin-top: -8px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+    
+    .eloward-7tv-tooltip-badge {
+      width: 90px !important;
+      height: 90px !important;
+      object-fit: contain !important;
+      display: block !important;
+    }
+    
+    .eloward-7tv-tooltip-text {
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
+    }
+    
+    .eloward-7tv-tooltip::after {
+      content: "" !important;
+      position: absolute !important;
+      bottom: -4px !important;
+      left: 50% !important;
+      margin-left: -4px !important;
+      border-width: 4px 4px 0 4px !important;
+      border-style: solid !important;
+    }
+    
     /* Theme-specific tooltip colors */
     html.tw-root--theme-dark .eloward-tooltip,
     .tw-root--theme-dark .eloward-tooltip,
     body[data-a-theme="dark"] .eloward-tooltip,
-    body.dark-theme .eloward-tooltip {
+    body.dark-theme .eloward-tooltip,
+    html.tw-root--theme-dark .eloward-7tv-tooltip,
+    .tw-root--theme-dark .eloward-7tv-tooltip,
+    body[data-a-theme="dark"] .eloward-7tv-tooltip,
+    body.dark-theme .eloward-7tv-tooltip {
       color: #0e0e10 !important;
       background-color: white !important;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
@@ -1548,14 +1905,22 @@ function addExtensionStyles() {
     html.tw-root--theme-dark .eloward-tooltip::after,
     .tw-root--theme-dark .eloward-tooltip::after,
     body[data-a-theme="dark"] .eloward-tooltip::after,
-    body.dark-theme .eloward-tooltip::after {
+    body.dark-theme .eloward-tooltip::after,
+    html.tw-root--theme-dark .eloward-7tv-tooltip::after,
+    .tw-root--theme-dark .eloward-7tv-tooltip::after,
+    body[data-a-theme="dark"] .eloward-7tv-tooltip::after,
+    body.dark-theme .eloward-7tv-tooltip::after {
       border-color: white transparent transparent transparent !important;
     }
     
     html.tw-root--theme-light .eloward-tooltip,
     .tw-root--theme-light .eloward-tooltip,
     body[data-a-theme="light"] .eloward-tooltip,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip {
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip,
+    html.tw-root--theme-light .eloward-7tv-tooltip,
+    .tw-root--theme-light .eloward-7tv-tooltip,
+    body[data-a-theme="light"] .eloward-7tv-tooltip,
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip {
       color: #efeff1 !important;
       background-color: #0e0e10 !important;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
@@ -1564,12 +1929,16 @@ function addExtensionStyles() {
     html.tw-root--theme-light .eloward-tooltip::after,
     .tw-root--theme-light .eloward-tooltip::after,
     body[data-a-theme="light"] .eloward-tooltip::after,
-    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after {
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after,
+    html.tw-root--theme-light .eloward-7tv-tooltip::after,
+    .tw-root--theme-light .eloward-7tv-tooltip::after,
+    body[data-a-theme="light"] .eloward-7tv-tooltip::after,
+    body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip::after {
       border-color: #0e0e10 transparent transparent transparent !important;
     }
   `;
   
-  document.head.appendChild(styleElement);
+  return css;
 }
 
  
