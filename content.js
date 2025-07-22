@@ -450,12 +450,39 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
 }
 
 function getCurrentChannelName() {
-  const pathSegments = window.location.pathname.split('/');
+  const pathname = window.location.pathname;
   
+  // Handle popout chat: /popout/[channel]/chat
+  const popoutMatch = pathname.match(/^\/popout\/([^/]+)\/chat/);
+  if (popoutMatch) {
+    return popoutMatch[1].toLowerCase();
+  }
+  
+  // Handle dashboard popout: /popout/u/[channel]/stream-manager/chat
+  const dashPopoutMatch = pathname.match(/^\/popout\/u\/([^/]+)\/stream-manager\/chat/);
+  if (dashPopoutMatch) {
+    return dashPopoutMatch[1].toLowerCase();
+  }
+  
+  // Handle embed chat: /embed/[channel]/chat
+  const embedMatch = pathname.match(/^\/embed\/([^/]+)\/chat/);
+  if (embedMatch) {
+    return embedMatch[1].toLowerCase();
+  }
+  
+  // Handle moderator popout: /popout/moderator/[channel]/chat
+  const modPopoutMatch = pathname.match(/^\/popout\/moderator\/([^/]+)\/chat/);
+  if (modPopoutMatch) {
+    return modPopoutMatch[1].toLowerCase();
+  }
+  
+  // Handle moderator view: /moderator/[channel]
+  const pathSegments = pathname.split('/');
   if (pathSegments[1] === 'moderator' && pathSegments.length > 2) {
     return pathSegments[2].toLowerCase();
   }
   
+  // Handle normal channel view: /[channel]
   if (pathSegments[1] && 
       pathSegments[1] !== 'oauth2' && 
       !pathSegments[1].includes('auth')) {
