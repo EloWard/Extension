@@ -43,7 +43,7 @@
 .eloward-rank-badge[data-rank="bronze"] {
   width: 26px !important;
   height: 26px !important;
-  margin: 0 -1.5px 6px -5px !important;
+  margin: 0 -1.5px 5px -5px !important;
 }
 
 .eloward-rank-badge[data-rank="silver"] {
