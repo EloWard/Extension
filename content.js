@@ -760,11 +760,8 @@ function setupChatObserver(chatContainer) {
   const currentSelectors = SELECTORS[extensionState.chatMode];
   const messageSelectors = currentSelectors.message;
   
-  if (extensionState.chatMode === 'seventv') {
-    processExistingSevenTVMessages(chatContainer);
-  } else {
-    processExistingStandardMessages(chatContainer, messageSelectors);
-  }
+  // Use the same logic for all chat modes, just with different selectors
+  processExistingMessages(chatContainer, messageSelectors);
   
   const chatObserver = new MutationObserver((mutations) => {
     if (!extensionState.isChannelActive) return;
@@ -804,136 +801,183 @@ function setupChatObserver(chatContainer) {
   
   setTimeout(() => {
     try {
-      if (extensionState.chatMode === 'seventv') {
-        processExistingSevenTVMessages(chatContainer);
-      } else {
-        processExistingStandardMessages(chatContainer, messageSelectors);
-      }
+      processExistingMessages(chatContainer, messageSelectors);
     } catch (error) {
       console.error('EloWard: Delayed message processing error:', error);
     }
   }, 3000);
 }
 
-function processExistingStandardMessages(chatContainer, messageSelectors) {
+function processExistingMessages(chatContainer, messageSelectors) {
   try {
     const existingMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
+    const currentSelectors = SELECTORS[extensionState.chatMode];
+    const usernameSelectors = currentSelectors.username;
+    
+    // Collect unique usernames and their message elements (batch processing)
+    const userMessageMap = new Map();
     
     for (const message of existingMessages) {
-      if (!processedMessages.has(message)) {
-        processNewMessage(message);
+      if (processedMessages.has(message)) continue;
+      
+      // Find username element using current chat mode selectors
+      let usernameElement = null;
+      for (const selector of usernameSelectors) {
+        usernameElement = message.querySelector(selector);
+        if (usernameElement) break;
       }
+      
+      if (!usernameElement) continue;
+      
+      const username = usernameElement.textContent?.trim().toLowerCase();
+      if (!username) continue;
+      
+      // Skip if already has badge
+      if (message.querySelector('.eloward-rank-badge')) continue;
+      
+      processedMessages.add(message);
+      
+      if (!userMessageMap.has(username)) {
+        userMessageMap.set(username, []);
+      }
+      userMessageMap.get(username).push({
+        messageElement: message,
+        usernameElement: usernameElement
+      });
+    }
+    
+    // Process each unique username (batch processing)
+    if (userMessageMap.size > 0) {
+      processUsernamesBatch(userMessageMap);
     }
   } catch (error) {
-    console.error('EloWard: Error processing existing standard messages:', error);
+    console.error('EloWard: Error processing existing messages:', error);
   }
 }
 
-function processExistingSevenTVMessages(chatContainer) {
+
+
+function processUsernamesBatch(userMessageMap) {
   try {
-    const seventvSelectors = ['.seventv-message', '.chat-line__message', '.chat-line'];
-    const existingMessages = chatContainer.querySelectorAll(seventvSelectors.join(', '));
-    
-    for (const message of existingMessages) {
-      if (!processedMessages.has(message)) {
-        processSevenTVMessage(message);
-      }
-    }
-
-    if (existingMessages.length > 0) {
-      retroactivelyAddSevenTVBadges();
-    }
-  } catch (error) {
-    console.error('EloWard: Error processing existing 7TV messages:', error);
-  }
-}
-
-function processSevenTVMessage(messageElement) {
-  if (!messageElement || processedMessages.has(messageElement)) return;
-  processedMessages.add(messageElement);
-
-  if (processedMessages.size > 500) {
-    const toDelete = Array.from(processedMessages).slice(0, 100);
-    toDelete.forEach(msg => processedMessages.delete(msg));
-  }
-
-  if (!extensionState.isChannelActive) return;
-
-  try {
-    const usernameElement = messageElement.querySelector('.seventv-chat-user-username');
-    if (!usernameElement) return;
-
-    const username = usernameElement.textContent?.trim().toLowerCase();
-    if (!username) return;
-
-    if (messageElement.querySelector('.eloward-rank-badge')) return;
-
-    if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
-      chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
-        const riotData = data.eloward_persistent_riot_user_data;
+    // First, get all cached ranks
+    chrome.runtime.sendMessage({ action: 'get_all_cached_ranks' }, (response) => {
+      const cachedRanks = response?.ranks || {};
+      const usersNeedingFetch = new Set();
+      
+      // Apply cached ranks immediately and collect users needing fetch
+      for (const [username, messageData] of userMessageMap.entries()) {
+        // Handle current user separately
+        if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
+          handleCurrentUserMessages(messageData);
+          continue;
+        }
         
-        if (riotData?.rankInfo) {
-          const userRankData = {
-            tier: riotData.rankInfo.tier,
-            division: riotData.rankInfo.rank,
-            leaguePoints: riotData.rankInfo.leaguePoints,
-            summonerName: riotData.gameName
-          };
+        if (cachedRanks[username]) {
+          // Apply rank to all messages for this user immediately
+          applyRankToAllUserMessages(username, messageData, cachedRanks[username]);
           
-          chrome.runtime.sendMessage({
-            action: 'set_rank_data',
-            username: username,
-            rankData: userRankData
-          });
-          
+          // Increment metrics once per user (not per message)
           if (extensionState.channelName) {
             chrome.runtime.sendMessage({
               action: 'increment_db_reads',
               channel: extensionState.channelName
             });
-            
             chrome.runtime.sendMessage({
               action: 'increment_successful_lookups',
               channel: extensionState.channelName
             });
           }
-          
-          addBadgeToSevenTVMessage(messageElement, usernameElement, userRankData);
+        } else {
+          usersNeedingFetch.add(username);
         }
-      });
-      return;
-    }
-    
-    fetchRankFromBackground(username, usernameElement, messageElement);
-  } catch (error) {
-    console.error('EloWard: Error processing 7TV message:', error);
-  }
-}
-
-function retroactivelyAddSevenTVBadges() {
-  try {
-    chrome.runtime.sendMessage({ action: 'get_all_cached_ranks' }, (response) => {
-      if (response?.ranks) {
-        const cachedRanks = response.ranks;
-        
-        const userMessages = document.querySelectorAll('.seventv-chat-user');
-        
-        userMessages.forEach(messageElement => {
-          if (messageElement.querySelector('.eloward-rank-badge')) return;
-          
-          const usernameElement = messageElement.querySelector('.seventv-chat-user-username');
-          if (!usernameElement) return;
-          
-          const username = usernameElement.textContent?.trim().toLowerCase();
-          if (!username || !cachedRanks[username]) return;
-          
-          const rankData = cachedRanks[username];
-          addBadgeToSevenTVMessage(messageElement, usernameElement, rankData);
-        });
+      }
+      
+      // Fetch ranks for users not in cache
+      if (usersNeedingFetch.size > 0) {
+        fetchRanksForUsers(usersNeedingFetch, userMessageMap);
       }
     });
   } catch (error) {
-    console.error('EloWard: Error in retroactive 7TV badge addition:', error);
+    console.error('EloWard: Error in batch username processing:', error);
+  }
+}
+
+function handleCurrentUserMessages(messageData) {
+  chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+    const riotData = data.eloward_persistent_riot_user_data;
+    
+    if (riotData?.rankInfo) {
+      const userRankData = {
+        tier: riotData.rankInfo.tier,
+        division: riotData.rankInfo.rank,
+        leaguePoints: riotData.rankInfo.leaguePoints,
+        summonerName: riotData.gameName
+      };
+      
+      // Apply to all messages for current user using universal function
+      messageData.forEach(({ messageElement, usernameElement }) => {
+        addBadgeToMessage(usernameElement, userRankData);
+      });
+      
+      // Store in cache for future use
+      chrome.runtime.sendMessage({
+        action: 'set_rank_data',
+        username: extensionState.currentUser,
+        rankData: userRankData
+      });
+      
+      // Increment metrics once
+      if (extensionState.channelName) {
+        chrome.runtime.sendMessage({
+          action: 'increment_db_reads',
+          channel: extensionState.channelName
+        });
+        chrome.runtime.sendMessage({
+          action: 'increment_successful_lookups',
+          channel: extensionState.channelName
+        });
+      }
+    }
+  });
+}
+
+function applyRankToAllUserMessages(username, messageData, rankData) {
+  messageData.forEach(({ messageElement, usernameElement }) => {
+    addBadgeToMessage(usernameElement, rankData);
+  });
+}
+
+function fetchRanksForUsers(usersNeedingFetch, userMessageMap) {
+  // Fetch ranks for each user (could be optimized further with a batch API endpoint)
+  for (const username of usersNeedingFetch) {
+    const messageData = userMessageMap.get(username);
+    
+    if (extensionState.channelName) {
+      chrome.runtime.sendMessage({
+        action: 'increment_db_reads',
+        channel: extensionState.channelName
+      });
+    }
+
+    chrome.runtime.sendMessage({
+      action: 'fetch_rank_for_username',
+      username: username,
+      channel: extensionState.channelName
+    }, (response) => {
+      if (chrome.runtime.lastError) return;
+      
+      if (response?.success && response.rankData) {
+        // Apply rank to ALL messages for this user at once
+        applyRankToAllUserMessages(username, messageData, response.rankData);
+        
+        if (extensionState.channelName) {
+          chrome.runtime.sendMessage({
+            action: 'increment_successful_lookups',
+            channel: extensionState.channelName
+          });
+        }
+      }
+    });
   }
 }
 
@@ -941,11 +985,6 @@ function processNewMessage(messageNode) {
   if (!messageNode || processedMessages.has(messageNode)) return;
   if (!extensionState.isChannelActive) return;
   
-  if (extensionState.chatMode === 'seventv') {
-    processSevenTVMessage(messageNode);
-    return;
-  }
-
   processedMessages.add(messageNode);
   
   if (processedMessages.size > 500) {
@@ -1033,13 +1072,42 @@ function fetchRankFromBackground(username, usernameElement, messageElement = nul
         });
       }
 
-      if (extensionState.chatMode === 'seventv' && messageElement) {
-        addBadgeToSevenTVMessage(messageElement, usernameElement, response.rankData);
-      } else {
-        addBadgeToMessage(usernameElement, response.rankData);
-      }
+      // Apply the rank to ALL messages from this user in the chat
+      applyRankToAllUserMessagesInChat(username, response.rankData);
     }
   });
+}
+
+function applyRankToAllUserMessagesInChat(username, rankData) {
+  try {
+    const currentSelectors = SELECTORS[extensionState.chatMode];
+    const messageSelectors = currentSelectors.message;
+    const usernameSelectors = currentSelectors.username;
+    
+    // Find all messages in the current chat
+    const allMessages = document.querySelectorAll(messageSelectors.join(', '));
+    
+    allMessages.forEach(messageElement => {
+      // Skip if already has badge
+      if (messageElement.querySelector('.eloward-rank-badge')) return;
+      
+      // Find username element
+      let usernameElement = null;
+      for (const selector of usernameSelectors) {
+        usernameElement = messageElement.querySelector(selector);
+        if (usernameElement) break;
+      }
+      
+      if (!usernameElement) return;
+      
+      const messageUsername = usernameElement.textContent?.trim().toLowerCase();
+      if (messageUsername === username) {
+        addBadgeToMessage(usernameElement, rankData);
+      }
+    });
+  } catch (error) {
+    console.error('EloWard: Error applying rank to all user messages:', error);
+  }
 }
 
 function addBadgeToMessage(usernameElement, rankData) {

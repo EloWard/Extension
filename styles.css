@@ -1,4 +1,6 @@
 /* EloWard Extension Styles */
+
+/* Base badge styling */
 .eloward-rank-badge {
   display: inline-flex !important;
   justify-content: center !important;
@@ -16,6 +18,7 @@
   -webkit-user-select: none !important;
   user-select: none !important;
   -webkit-touch-callout: none !important;
+  position: relative !important;
 }
 
 .eloward-rank-badge:hover {
@@ -25,18 +28,85 @@
 
 .eloward-rank-badge img {
   display: block !important;
-  width: 24px !important;
-  height: 24px !important;
+  width: 100% !important;
+  height: 100% !important;
   object-fit: contain !important;
 }
 
-/* 7TV Integration */
-.seventv-chat-badge.eloward-rank-badge {
-  display: inline-block !important;
+/* Rank-specific styles for standard mode */
+.eloward-rank-badge[data-rank="iron"] {
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0 -2px 7.5px -6px !important;
+}
+
+.eloward-rank-badge[data-rank="bronze"] {
+  width: 26px !important;
+  height: 26px !important;
+  margin: 0 -1.5px 6px -5px !important;
+}
+
+.eloward-rank-badge[data-rank="silver"] {
   width: 24px !important;
   height: 24px !important;
-  margin: 0 4px 0 0 !important;
+  margin: 0 0px 6px -4.5px !important;
+}
+
+.eloward-rank-badge[data-rank="gold"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 0px 4px -4px !important;
+}
+
+.eloward-rank-badge[data-rank="platinum"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 0.5px 3.5px -3.5px !important;
+}
+
+.eloward-rank-badge[data-rank="emerald"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 1px 3px -3px !important;
+}
+
+.eloward-rank-badge[data-rank="diamond"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 3px 4px -1px !important;
+}
+
+.eloward-rank-badge[data-rank="master"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 3px 3px -1px !important;
+}
+
+.eloward-rank-badge[data-rank="grandmaster"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 3px 2px -1px !important;
+}
+
+.eloward-rank-badge[data-rank="challenger"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 3px 1px -1px !important;
+}
+
+.eloward-rank-badge[data-rank="unranked"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 -0.2px 2.5px -3.5px !important;
+}
+
+/* 7TV Integration Base */
+.seventv-chat-badge.eloward-rank-badge {
+  display: inline-block !important;
   vertical-align: middle !important;
+  position: relative !important;
+  border-radius: 4px !important;
+  overflow: hidden !important;
 }
 
 .seventv-chat-user-badge-list {
@@ -44,6 +114,118 @@
   align-items: center !important;
   gap: 4px !important;
   margin-right: 8px !important;
+}
+
+/* 7TV rank-specific styles */
+.seventv-chat-badge.eloward-rank-badge[data-rank="iron"] {
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0px -7px 5px -3px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="bronze"] {
+  width: 26px !important;
+  height: 26px !important;
+  margin: 0px -7px 3px -3px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="silver"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0px -7px 2px -3px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="gold"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0px -7px 0px -3px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="platinum"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 2px -5px 0px -1px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="emerald"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 2px -5px 0px -1px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="diamond"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0px -3px 0px 1px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="master"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 2px -3px 0px 1px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="grandmaster"] {
+  width: 22px !important;
+  height: 22px !important;
+  margin: 3px -3px 0px 1px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="challenger"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 2px -1px 0px 3px !important;
+}
+
+.seventv-chat-badge.eloward-rank-badge[data-rank="unranked"] {
+  width: 24px !important;
+  height: 24px !important;
+  margin: 1px -7px 0px -3px !important;
+}
+
+/* 7TV badge image styling */
+.seventv-badge-img, .eloward-badge-img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+/* Username spacing for 7TV */
+.seventv-chat-user .seventv-chat-user-badge-list + .seventv-chat-user-username {
+  margin-left: 4px !important;
+}
+
+/* Responsive design for small screens */
+@media (max-width: 400px) {
+  .seventv-chat-badge.eloward-rank-badge {
+    width: 20px !important;
+    height: 20px !important;
+    margin: 0 2px 0 0 !important;
+  }
+  
+  .eloward-rank-badge {
+    width: 20px !important;
+    height: 20px !important;
+    margin: 0 2px 0 0 !important;
+  }
+}
+
+/* Theme-based filters */
+.tw-root--theme-dark .seventv-chat-badge.eloward-rank-badge {
+  filter: brightness(0.95) !important;
+}
+
+.tw-root--theme-light .seventv-chat-badge.eloward-rank-badge {
+  filter: brightness(1.05) contrast(1.1) !important;
+}
+
+.tw-root--theme-dark .eloward-rank-badge {
+  filter: brightness(0.95) !important;
+}
+
+.tw-root--theme-light .eloward-rank-badge {
+  filter: brightness(1.05) contrast(1.1) !important;
 }
 
 /* Tooltips */
@@ -148,15 +330,82 @@
 /* Dark theme tooltip adjustments */
 html.tw-root--theme-dark .eloward-tooltip,
 .tw-root--theme-dark .eloward-tooltip,
-html.tw-root--theme-dark .eloward-7tv-tooltip,
-.tw-root--theme-dark .eloward-7tv-tooltip {
+body[data-a-theme="dark"] .eloward-tooltip,
+body.dark-theme .eloward-tooltip {
   background-color: white !important;
   color: #0e0e10 !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
 }
 
 html.tw-root--theme-dark .eloward-tooltip::after,
 .tw-root--theme-dark .eloward-tooltip::after,
-html.tw-root--theme-dark .eloward-7tv-tooltip::after,
-.tw-root--theme-dark .eloward-7tv-tooltip::after {
+body[data-a-theme="dark"] .eloward-tooltip::after,
+body.dark-theme .eloward-tooltip::after {
   border-color: white transparent transparent transparent !important;
+}
+
+html.tw-root--theme-dark .eloward-7tv-tooltip,
+.tw-root--theme-dark .eloward-7tv-tooltip,
+body[data-a-theme="dark"] .eloward-7tv-tooltip,
+body.dark-theme .eloward-7tv-tooltip {
+  background-color: white !important;
+  color: #0e0e10 !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
+}
+
+html.tw-root--theme-dark .eloward-7tv-tooltip::after,
+.tw-root--theme-dark .eloward-7tv-tooltip::after,
+body[data-a-theme="dark"] .eloward-7tv-tooltip::after,
+body.dark-theme .eloward-7tv-tooltip::after {
+  border-color: white transparent transparent transparent !important;
+}
+
+/* Light theme tooltip adjustments */
+html.tw-root--theme-light .eloward-tooltip,
+.tw-root--theme-light .eloward-tooltip,
+body[data-a-theme="light"] .eloward-tooltip,
+body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip {
+  background-color: #0e0e10 !important;
+  color: #efeff1 !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.tw-root--theme-light .eloward-tooltip::after,
+.tw-root--theme-light .eloward-tooltip::after,
+body[data-a-theme="light"] .eloward-tooltip::after,
+body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip::after {
+  border-color: #0e0e10 transparent transparent transparent !important;
+}
+
+html.tw-root--theme-light .eloward-7tv-tooltip,
+.tw-root--theme-light .eloward-7tv-tooltip,
+body[data-a-theme="light"] .eloward-7tv-tooltip,
+body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip {
+  background-color: #0e0e10 !important;
+  color: #efeff1 !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.tw-root--theme-light .eloward-7tv-tooltip::after,
+.tw-root--theme-light .eloward-7tv-tooltip::after,
+body[data-a-theme="light"] .eloward-7tv-tooltip::after,
+body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip::after {
+  border-color: #0e0e10 transparent transparent transparent !important;
+}
+
+/* FFZ mode styling (if needed) */
+.ffz-badge.eloward-rank-badge {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  position: relative !important;
+  margin-right: 4px !important;
+}
+
+/* Additional polish for badge positioning */
+.chat-line .eloward-rank-badge {
+  vertical-align: text-bottom !important;
+}
+
+.chat-author .eloward-rank-badge {
+  vertical-align: middle !important;
 } 
