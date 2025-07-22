@@ -1,9 +1,6 @@
-// IMMEDIATE Chrome Extension Detection - Must be FIRST
-// This marks the Chrome extension as active so FFZ addon can detect it and disable itself
 document.body.setAttribute('data-eloward-chrome-ext', 'active');
 document.documentElement.setAttribute('data-eloward-chrome-ext', 'active');
 
-// Extension state management
 const extensionState = {
   isChannelActive: false,
   channelName: '',
@@ -17,17 +14,15 @@ const extensionState = {
   initializationComplete: false,
   lastInitAttempt: 0,
   fallbackInitialized: false,
-  chatMode: 'standard' // 'standard', 'seventv', 'ffz'
+  chatMode: 'standard'
 };
 
-// Channel state tracking
 const channelState = {
   activeChannels: new Set(),
   currentChannel: null,
   activeAbortController: null
 };
 
-// Rank-specific styling (matching FFZ addon)
 const RANK_STYLES = {
   standard: {
     iron: { width: '28px', height: '28px', margin: '0 -2px 7.5px -6px' },
@@ -59,7 +54,6 @@ const RANK_STYLES = {
 
 const RANK_TIERS = ['iron', 'bronze', 'silver', 'gold', 'platinum', 'emerald', 'diamond', 'master', 'grandmaster', 'challenger', 'unranked'];
 
-// Mode-specific selectors
 const SELECTORS = {
   standard: {
     username: [
@@ -101,13 +95,20 @@ const SELECTORS = {
   }
 };
 
-// Helper function to create badge element (reduces code duplication)
+const SUPPORTED_GAMES = { 'League of Legends': true };
+
+let processedMessages = new Set();
+let tooltipElement = null;
+
 function createBadgeElement(rankData, size = 24) {
   const badge = document.createElement('span');
-  badge.className = size === 28 ? 'eloward-rank-badge seventv-size' : 
-                   size === 24 ? 'eloward-rank-badge standard-size' : 
-                   'eloward-rank-badge';
+  badge.className = 'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
+  badge.dataset.rank = rankData.tier;
+  badge.dataset.division = rankData.division || '';
+  badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
+                     rankData.leaguePoints.toString() : '';
+  badge.dataset.username = rankData.summonerName || '';
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -117,35 +118,13 @@ function createBadgeElement(rankData, size = 24) {
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
-  
-  // Setup tooltip
   badge.addEventListener('mouseenter', showTooltip);
   badge.addEventListener('mouseleave', hideTooltip);
-  
-  badge.dataset.rank = rankData.tier;
-  badge.dataset.division = rankData.division || '';
-  badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
-                     rankData.leaguePoints.toString() : '';
-  badge.dataset.username = rankData.summonerName || '';
   
   return badge;
 }
 
-// Processing state
-let processedMessages = new Set();
-let tooltipElement = null;
-
-// Supported games
-const SUPPORTED_GAMES = {
-  'League of Legends': true
-};
-
-// Tooltip delay
-let tooltipShowTimeout = null;
-
-// Robust chat mode detection using DOM-based detection (most reliable)
 function detectChatMode() {
-  // Use DOM-based detection as primary method (most reliable)
   const has7TVElements = !!(
     document.querySelector('.seventv-message') ||
     document.querySelector('.seventv-chat-user') ||
@@ -160,7 +139,6 @@ function detectChatMode() {
     document.querySelector('.ffz-addon')
   );
   
-  // Determine mode based on DOM elements (most reliable)
   let detectedMode = 'standard';
   if (has7TVElements) {
     detectedMode = 'seventv';
@@ -169,42 +147,27 @@ function detectChatMode() {
   }
   
   const previousMode = extensionState.chatMode;
-  
   extensionState.compatibilityMode = detectedMode !== 'standard';
   extensionState.chatMode = detectedMode;
   
-  console.log(`🔧 EloWard: Chat mode detected - ${detectedMode.toUpperCase()}`);
-  
-  // Only restart if mode actually changed after initialization
   if (extensionState.initializationComplete && detectedMode !== previousMode) {
-    console.log(`🔧 EloWard: Chat mode changed from ${previousMode} to ${detectedMode} - Restarting`);
     restartExtension();
   }
   
   return { chatMode: detectedMode };
 }
 
-
-
-// Restart extension for compatibility
 function restartExtension() {
-  console.log(`🔄 EloWard: Restarting extension for compatibility`);
-  
-  // Clean up current state
   if (extensionState.channelName) {
     cleanupChannel(extensionState.channelName);
   }
   
-  // Reset state
   extensionState.observerInitialized = false;
   extensionState.initializationInProgress = false;
   extensionState.initializationComplete = false;
   extensionState.currentInitializationId = null;
-  
-  // Clear processed messages
   processedMessages.clear();
   
-  // Wait a bit for DOM to settle, then reinitialize
   setTimeout(() => {
     if (getCurrentChannelName()) {
       initializeExtension();
@@ -212,12 +175,10 @@ function restartExtension() {
   }, 2000);
 }
 
-// Setup compatibility monitoring
 function setupCompatibilityMonitor() {
   let detectionCount = 0;
-  const maxDetections = 2; // Maximum 2 detections total
+  const maxDetections = 2;
   
-  // Single follow-up detection after 5 seconds (only if needed)
   const scheduleFollowUpDetection = () => {
     if (detectionCount < maxDetections && extensionState.chatMode === 'standard') {
       setTimeout(() => {
@@ -225,14 +186,12 @@ function setupCompatibilityMonitor() {
           detectionCount++;
           detectChatMode();
         }
-      }, 5000); // Single check at 5 seconds
+      }, 5000);
     }
   };
   
-  // Schedule follow-up detection
   scheduleFollowUpDetection();
   
-  // Lightweight monitoring for major extension additions only
   const compatibilityObserver = new MutationObserver((mutations) => {
     if (detectionCount >= maxDetections) {
       compatibilityObserver.disconnect();
@@ -243,7 +202,6 @@ function setupCompatibilityMonitor() {
       if (mutation.type === 'childList') {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // Only detect major chat extension changes (chat container modifications)
             if (node.querySelector && (
                 node.querySelector('.seventv-message') ||
                 node.querySelector('.ffz-message-line') ||
@@ -253,7 +211,7 @@ function setupCompatibilityMonitor() {
               if (detectionCount < maxDetections) {
                 detectionCount++;
                 detectChatMode();
-                return; // Exit early after detection
+                return;
               }
             }
           }
@@ -267,24 +225,19 @@ function setupCompatibilityMonitor() {
     subtree: true
   });
   
-  // Clean up after 15 seconds - extensions usually load quickly
   setTimeout(() => {
     compatibilityObserver.disconnect();
-  }, 15 * 1000);
+  }, 15000);
 }
 
-// Fallback initialization system
 function setupFallbackInitialization() {
-  // If we haven't initialized after 10 seconds, try a fallback approach
   setTimeout(() => {
     if (!extensionState.initializationComplete && !extensionState.fallbackInitialized) {
-      console.log(`⚠️ EloWard: Main initialization not complete after 10s, trying fallback`);
       extensionState.fallbackInitialized = true;
       fallbackInitialization();
     }
   }, 10000);
   
-  // Also try fallback if we detect we're on a channel but haven't initialized
   const fallbackCheckInterval = setInterval(() => {
     const currentChannel = getCurrentChannelName();
     if (currentChannel && 
@@ -293,30 +246,21 @@ function setupFallbackInitialization() {
         !extensionState.fallbackInitialized &&
         (Date.now() - extensionState.lastInitAttempt) > 15000) {
       
-      console.log(`⚠️ EloWard: Detected channel ${currentChannel} but not initialized, trying fallback`);
       extensionState.fallbackInitialized = true;
       fallbackInitialization();
       clearInterval(fallbackCheckInterval);
     }
   }, 5000);
   
-  // Clean up interval after 2 minutes
   setTimeout(() => {
     clearInterval(fallbackCheckInterval);
-  }, 2 * 60 * 1000);
+  }, 120000);
 }
 
-// Fallback initialization for when normal init fails
 function fallbackInitialization() {
-  console.log(`🔧 EloWard: Starting fallback initialization`);
-  
   const currentChannel = getCurrentChannelName();
-  if (!currentChannel) {
-    console.log(`❌ EloWard: No channel detected in fallback`);
-    return;
-  }
+  if (!currentChannel) return;
   
-  // Force compatibility mode if we detect any third-party extensions
   if (!extensionState.compatibilityMode) {
     const hasThirdPartyExtensions = !!(
       document.querySelector('.ffz-addon') ||
@@ -329,15 +273,12 @@ function fallbackInitialization() {
     );
     
     if (hasThirdPartyExtensions) {
-      console.log(`🔧 EloWard: Fallback detected third-party extensions, enabling compatibility mode`);
       extensionState.compatibilityMode = true;
     }
   }
   
-  // Add styles
   addExtensionStyles();
   
-  // Try to find chat and set up observer directly
   let attempts = 0;
   const maxAttempts = 10;
   
@@ -345,25 +286,17 @@ function fallbackInitialization() {
     const chatContainer = findChatContainer();
     
     if (chatContainer) {
-      console.log(`✅ EloWard: Fallback found chat container, setting up observer`);
-      
-      // Set basic state
       extensionState.channelName = currentChannel;
-      extensionState.currentGame = 'League of Legends'; // Assume supported game for fallback
-      extensionState.isChannelActive = true; // Assume active for fallback
+      extensionState.currentGame = 'League of Legends';
+      extensionState.isChannelActive = true;
       
       setupChatObserver(chatContainer);
       extensionState.observerInitialized = true;
       extensionState.initializationComplete = true;
-      
-      console.log(`🚀 EloWard: Fallback initialization complete for ${currentChannel}`);
     } else {
       attempts++;
       if (attempts < maxAttempts) {
-        console.log(`⏳ EloWard: Fallback attempt ${attempts}/${maxAttempts} - retrying in ${attempts * 1000}ms`);
         setTimeout(tryFallbackSetup, attempts * 1000);
-      } else {
-        console.log(`❌ EloWard: Fallback failed after ${maxAttempts} attempts`);
       }
     }
   }
@@ -371,70 +304,25 @@ function fallbackInitialization() {
   tryFallbackSetup();
 }
 
-// Initialize extension
-initializeStorage();
-
-// Always setup URL observer first, regardless of current page
-setupUrlChangeObserver();
-
-// Initial chat mode detection
-detectChatMode();
-
-// Setup limited compatibility monitoring (max 2 detections total)
-setupCompatibilityMonitor();
-
-// Setup fallback initialization
-setupFallbackInitialization();
-
-// Then initialize if on a channel page
-initializeExtension();
-
-// Handle SPA navigation
-window.addEventListener('popstate', function() {
-  if (!extensionState.initializationInProgress) {
-    initializeExtension();
-  }
-});
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', function() {
-  if (extensionState.channelName) {
-    cleanupChannel(extensionState.channelName);
-  }
-  clearRankCache();
-});
-
-/**
- * Clear rank cache and processed messages
- */
 function clearRankCache() {
   chrome.runtime.sendMessage({ action: 'clear_rank_cache' });
   processedMessages.clear();
 }
 
-/**
- * Clean up state when leaving a channel
- */
 function cleanupChannel(channelName) {
-  console.log(`🧹 EloWard: Cleaning up channel: ${channelName}`);
-  
-  // Hide tooltips
   if (tooltipElement && tooltipElement.parentNode) {
     tooltipElement.parentNode.removeChild(tooltipElement);
     tooltipElement = null;
   }
   
-  // Hide 7TV tooltips
   hideSevenTVTooltip();
   
-  // Remove 7TV badges if detected
   if (extensionState.chatMode === 'seventv') {
     document.querySelectorAll('.eloward-rank-badge.seventv-integration').forEach(badge => {
       badge.remove();
     });
   }
   
-  // Disconnect observers
   if (window._eloward_chat_observer) {
     window._eloward_chat_observer.disconnect();
     window._eloward_chat_observer = null;
@@ -445,16 +333,13 @@ function cleanupChannel(channelName) {
     window._eloward_game_observer = null;
   }
   
-  // Clear processed messages
   processedMessages.clear();
   
-  // Reset state
   extensionState.observerInitialized = false;
   extensionState.isChannelActive = false;
   extensionState.currentGame = null;
   extensionState.currentUser = null;
   
-  // Cancel any active operations for this channel
   if (channelState.activeAbortController) {
     channelState.activeAbortController.abort();
     channelState.activeAbortController = null;
@@ -463,9 +348,6 @@ function cleanupChannel(channelName) {
   channelState.activeChannels.delete(channelName);
 }
 
-/**
- * Initialize channel and check channel_active status
- */
 async function initializeChannel(channelName, initializationId) {
   if (!channelName) return false;
   
@@ -490,17 +372,15 @@ async function initializeChannel(channelName, initializationId) {
     if (isActive) {
       channelState.activeChannels.add(normalizedChannel);
       extensionState.isChannelActive = true;
-      console.log(`✅ EloWard: Channel ${channelName} is active`);
     } else {
       channelState.activeChannels.delete(normalizedChannel);
       extensionState.isChannelActive = false;
-      console.log(`❌ EloWard: Channel ${channelName} is not active`);
     }
     
     return isActive;
   } catch (error) {
     if (error.name !== 'AbortError') {
-      console.log(`❌ EloWard: Error checking channel active status:`, error);
+      console.error('EloWard: Channel initialization error:', error);
     }
     return false;
   }
@@ -531,9 +411,6 @@ function findCurrentUser(allData) {
   return null;
 }
 
-/**
- * Check if channel is active with caching
- */
 async function checkChannelActive(channelName, forceCheck = false, signal = null) {
   if (!channelName) return false;
   
@@ -541,7 +418,6 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
     throw new DOMException('Operation aborted', 'AbortError');
   }
   
-  // Use cache unless forced to check
   const now = Date.now();
   if (!forceCheck && 
       extensionState.lastChannelActiveCheck && 
@@ -582,13 +458,11 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
           }
           
           if (chrome.runtime.lastError) {
-            console.log(`❌ EloWard: Runtime error checking channel:`, chrome.runtime.lastError);
             resolve(false);
             return;
           }
           
           const isActive = response && response.active === true;
-          console.log(`🔍 EloWard: Channel ${channelName} active check - ${isActive ? '✅ Active' : '❌ Inactive'}`);
           
           if (!signal?.aborted) {
             extensionState.lastChannelActiveCheck = now;
@@ -602,23 +476,17 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
     if (error.name === 'AbortError') {
       throw error;
     }
-    console.log(`❌ EloWard: Error in checkChannelActive:`, error);
     return false;
   }
 }
 
-/**
- * Get current channel name from URL
- */
 function getCurrentChannelName() {
   const pathSegments = window.location.pathname.split('/');
   
-  // Handle moderator view
   if (pathSegments[1] === 'moderator' && pathSegments.length > 2) {
     return pathSegments[2].toLowerCase();
   }
   
-  // Regular channel URL
   if (pathSegments[1] && 
       pathSegments[1] !== 'oauth2' && 
       !pathSegments[1].includes('auth')) {
@@ -628,15 +496,9 @@ function getCurrentChannelName() {
   return null;
 }
 
-/**
- * Get current game being streamed using Twitch GraphQL API (same method as FFZ addon)
- * This is the most reliable method and matches what the FFZ addon uses
- */
 async function getCurrentGame() {
   const channelName = getCurrentChannelName();
-  if (!channelName) {
-    return null;
-  }
+  if (!channelName) return null;
   
   try {
     const response = await fetch('https://gql.twitch.tv/gql', {
@@ -662,39 +524,28 @@ async function getCurrentGame() {
       })
     });
 
-    if (!response.ok) {
-      return null;
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
     const game = data?.data?.user?.stream?.game;
     
     if (game) {
-      const gameName = game.name || game.displayName;
-      console.log(`🎮 EloWard: Game detected - ${gameName}`);
-      return gameName;
+      return game.name || game.displayName;
     }
     
-    console.log(`🎮 EloWard: No game detected for ${channelName}`);
     return null;
   } catch (error) {
-    console.log(`❌ EloWard: Error detecting game:`, error);
     return null;
   }
 }
 
-/**
- * Check if game is supported
- */
 function isGameSupported(game) {
   if (!game) return false;
   
-  // Direct match
   if (SUPPORTED_GAMES[game] === true) {
     return true;
   }
   
-  // Case-insensitive match
   const gameLower = game.toLowerCase();
   for (const supportedGame of Object.keys(SUPPORTED_GAMES)) {
     if (supportedGame.toLowerCase() === gameLower) {
@@ -705,9 +556,6 @@ function isGameSupported(game) {
   return false;
 }
 
-/**
- * Setup game change observer to detect mid-stream game switches
- */
 function setupGameChangeObserver() {
   if (window._eloward_game_observer) {
     window._eloward_game_observer.disconnect();
@@ -728,10 +576,7 @@ function setupGameChangeObserver() {
         const oldGame = extensionState.currentGame;
         extensionState.currentGame = newGame;
         
-        console.log(`🎮 EloWard: Game changed from "${oldGame}" to "${newGame}"`);
-        
         if (!isGameSupported(extensionState.currentGame)) {
-          // Clean up for unsupported game
           if (window._eloward_chat_observer) {
             window._eloward_chat_observer.disconnect();
             window._eloward_chat_observer = null;
@@ -739,7 +584,6 @@ function setupGameChangeObserver() {
           extensionState.observerInitialized = false;
           extensionState.isChannelActive = false;
         } else if (isGameSupported(extensionState.currentGame) && !isGameSupported(oldGame)) {
-          // Reinitialize for supported game
           if (extensionState.channelName && !extensionState.initializationInProgress) {
             initializeExtension();
           }
@@ -763,86 +607,49 @@ function setupGameChangeObserver() {
   }
 }
 
-/**
- * Main initialization function
- */
 function initializeExtension() {
-  // Prevent concurrent initializations
-  if (extensionState.initializationInProgress) {
-    console.log(`⏸️ EloWard: Initialization already in progress, skipping`);
-    return;
-  }
+  if (extensionState.initializationInProgress) return;
   
-  // Track initialization attempts
   extensionState.lastInitAttempt = Date.now();
   
-  // Get current channel
   const currentChannel = getCurrentChannelName();
-  if (!currentChannel) {
-    console.log(`❌ EloWard: No current channel detected`);
-    return;
-  }
+  if (!currentChannel) return;
   
-  // Generate unique initialization ID
   const initializationId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
   extensionState.currentInitializationId = initializationId;
   extensionState.initializationInProgress = true;
   extensionState.channelName = currentChannel;
   
-  console.log(`🚀 EloWard: Initializing extension for channel: ${currentChannel} (ID: ${initializationId})`);
-  
-  // Chat mode already detected during initial setup
-  
-  // Add extension styles
   addExtensionStyles();
   
-  // Notify background script of channel change
   chrome.runtime.sendMessage({
     action: 'channel_switched',
     oldChannel: channelState.currentChannel,
     newChannel: currentChannel
   });
   
-  // Get current game and initialize
   setTimeout(async () => {
-    if (extensionState.currentInitializationId !== initializationId) {
-      console.log(`⏸️ EloWard: Initialization ID mismatch, aborting`);
-      return;
-    }
+    if (extensionState.currentInitializationId !== initializationId) return;
     
     const detectedGame = await getCurrentGame();
     extensionState.currentGame = detectedGame;
     
-    console.log(`🎮 EloWard: Current game: ${extensionState.currentGame || 'None'}`);
-    
-    // Always setup game observer to monitor for changes
     setupGameChangeObserver();
     
-    // Only proceed if game is supported
     if (!isGameSupported(extensionState.currentGame)) {
-      console.log(`❌ EloWard: Game "${extensionState.currentGame}" is not supported`);
       extensionState.initializationInProgress = false;
       extensionState.initializationComplete = true;
       return;
     }
     
-    console.log(`✅ EloWard: Game "${extensionState.currentGame}" is supported`);
-    
-    // Initialize channel
     initializeChannel(extensionState.channelName, initializationId)
       .then(channelActive => {
-        if (extensionState.currentInitializationId !== initializationId) {
-          console.log(`⏸️ EloWard: Initialization ID mismatch during channel init, aborting`);
-          return;
-        }
+        if (extensionState.currentInitializationId !== initializationId) return;
         
         if (channelActive) {
-          console.log(`✅ EloWard: Channel is active, setting up observers`);
           if (!extensionState.observerInitialized) {
             initializeObserver();
           }
-        } else {
-          console.log(`❌ EloWard: Channel is not active, skipping observer setup`);
         }
         
         extensionState.initializationInProgress = false;
@@ -850,7 +657,7 @@ function initializeExtension() {
       })
       .catch(error => {
         if (error.name !== 'AbortError') {
-          console.log(`❌ EloWard: Error during channel initialization:`, error);
+          console.error('EloWard: Initialization error:', error);
         }
         extensionState.initializationInProgress = false;
         extensionState.initializationComplete = true;
@@ -858,16 +665,12 @@ function initializeExtension() {
   }, 1500);
 }
 
-/**
- * Setup URL change observer for SPA navigation
- */
 function setupUrlChangeObserver() {
   if (window._eloward_url_observer) return;
   
   const urlObserver = new MutationObserver(function(mutations) {
     const currentChannel = getCurrentChannelName();
     
-    // Skip if on auth pages
     if (window.location.pathname.includes('oauth2') || 
         window.location.pathname.includes('auth/') ||
         window.location.href.includes('auth/callback') ||
@@ -875,10 +678,7 @@ function setupUrlChangeObserver() {
       return;
     }
     
-    // Handle channel changes (including from homepage to channel)
     if (currentChannel && currentChannel !== extensionState.channelName) {
-      console.log(`🔄 EloWard: Channel changed from "${extensionState.channelName}" to "${currentChannel}"`);
-      
       if (extensionState.channelName) {
         cleanupChannel(extensionState.channelName);
       }
@@ -894,9 +694,7 @@ function setupUrlChangeObserver() {
         }
       }, 500);
     }
-    // Handle navigation away from channels (e.g., to homepage)
     else if (!currentChannel && extensionState.channelName) {
-      console.log(`🔄 EloWard: Navigated away from channel "${extensionState.channelName}"`);
       cleanupChannel(extensionState.channelName);
       extensionState.channelName = null;
       extensionState.initializationComplete = false;
@@ -907,53 +705,35 @@ function setupUrlChangeObserver() {
   window._eloward_url_observer = urlObserver;
 }
 
-/**
- * Find Twitch chat container with FFZ/7TV compatibility
- */
 function findChatContainer() {
-  // Enhanced selectors for compatibility with FFZ/7TV
   const selectors = [
     '.chat-scrollable-area__message-container',
     '[data-a-target="chat-scroller"]',
     '.chat-list--default',
     '.chat-list',
-    '.simplebar-content', // FFZ scrollbar
+    '.simplebar-content',
     '[data-test-selector="chat-scrollable-area__message-container"]',
-    '.chat-room__content .simplebar-content', // FFZ specific
-    '.ffz-chat-container', // FFZ container
-    '.seventv-chat-container' // 7TV container (if exists)
+    '.chat-room__content .simplebar-content',
+    '.ffz-chat-container',
+    '.seventv-chat-container'
   ];
   
   for (const selector of selectors) {
     const container = document.querySelector(selector);
-    if (container) {
-      console.log(`📦 EloWard: Found chat container using selector: ${selector}`);
-      return container;
-    }
+    if (container) return container;
   }
   
-  // Fallback: look for any message and find its container
   const anyMessage = document.querySelector('.chat-line__message, .chat-line, [data-a-target="chat-line-message"]');
   if (anyMessage) {
     const container = anyMessage.closest('[role="log"]') || anyMessage.parentElement;
-    if (container) {
-      console.log(`📦 EloWard: Found chat container via message fallback`);
-      return container;
-    }
+    if (container) return container;
   }
   
-  console.log(`❌ EloWard: Could not find chat container`);
   return null;
 }
 
-/**
- * Initialize chat observer with retry mechanism
- */
 function initializeObserver() {
-  if (extensionState.observerInitialized) {
-    console.log(`⏸️ EloWard: Observer already initialized`);
-    return;
-  }
+  if (extensionState.observerInitialized) return;
   
   let attempts = 0;
   const maxAttempts = 5;
@@ -964,14 +744,10 @@ function initializeObserver() {
     if (chatContainer) {
       setupChatObserver(chatContainer);
       extensionState.observerInitialized = true;
-      console.log(`🚀 EloWard: Extension activated for ${extensionState.channelName} (attempt ${attempts + 1})`);
     } else {
       attempts++;
       if (attempts < maxAttempts) {
-        console.log(`⏳ EloWard: Chat container not found, retrying in ${attempts * 1000}ms (attempt ${attempts}/${maxAttempts})`);
         setTimeout(tryInitialize, attempts * 1000);
-      } else {
-        console.log(`❌ EloWard: Failed to find chat container after ${maxAttempts} attempts`);
       }
     }
   }
@@ -979,24 +755,16 @@ function initializeObserver() {
   tryInitialize();
 }
 
-/**
- * Setup chat observer to watch for new messages with FFZ/7TV compatibility
- */
 function setupChatObserver(chatContainer) {
-  // Get selectors for current chat mode
   const currentSelectors = SELECTORS[extensionState.chatMode];
   const messageSelectors = currentSelectors.message;
   
-  console.log(`📝 EloWard: Setting up chat observer in ${extensionState.chatMode} mode`);
-  
-  // Process existing messages with mode-specific handling
   if (extensionState.chatMode === 'seventv') {
     processExistingSevenTVMessages(chatContainer);
   } else {
     processExistingStandardMessages(chatContainer, messageSelectors);
   }
   
-  // Set up mutation observer for new messages
   const chatObserver = new MutationObserver((mutations) => {
     if (!extensionState.isChannelActive) return;
     
@@ -1005,7 +773,6 @@ function setupChatObserver(chatContainer) {
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              // Check if it's a message or contains messages using current mode selectors
               const isMessage = messageSelectors.some(selector => 
                 node.matches && node.matches(selector)
               );
@@ -1013,7 +780,6 @@ function setupChatObserver(chatContainer) {
               if (isMessage) {
                 processNewMessage(node);
               } else {
-                // Check for messages within the added node
                 const messages = node.querySelectorAll(messageSelectors.join(', '));
                 for (const message of messages) {
                   processNewMessage(message);
@@ -1024,7 +790,7 @@ function setupChatObserver(chatContainer) {
         }
       }
     } catch (error) {
-      console.log(`❌ EloWard: Error in mutation observer:`, error);
+      console.error('EloWard: Mutation observer error:', error);
     }
   });
   
@@ -1035,7 +801,6 @@ function setupChatObserver(chatContainer) {
   
   window._eloward_chat_observer = chatObserver;
   
-  // Set up delayed retry for messages that might load after extensions
   setTimeout(() => {
     try {
       if (extensionState.chatMode === 'seventv') {
@@ -1044,18 +809,14 @@ function setupChatObserver(chatContainer) {
         processExistingStandardMessages(chatContainer, messageSelectors);
       }
     } catch (error) {
-      console.log(`❌ EloWard: Error in delayed message detection:`, error);
+      console.error('EloWard: Delayed message processing error:', error);
     }
   }, 3000);
 }
 
-/**
- * Process existing standard messages (non-7TV)
- */
 function processExistingStandardMessages(chatContainer, messageSelectors) {
   try {
     const existingMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
-    console.log(`📝 EloWard: Processing ${existingMessages.length} existing standard messages`);
     
     for (const message of existingMessages) {
       if (!processedMessages.has(message)) {
@@ -1063,18 +824,14 @@ function processExistingStandardMessages(chatContainer, messageSelectors) {
       }
     }
   } catch (error) {
-    console.log(`❌ EloWard: Error processing existing standard messages:`, error);
+    console.error('EloWard: Error processing existing standard messages:', error);
   }
 }
 
-/**
- * Process existing 7TV messages with specialized handling
- */
 function processExistingSevenTVMessages(chatContainer) {
   try {
     const seventvSelectors = ['.seventv-message', '.chat-line__message', '.chat-line'];
     const existingMessages = chatContainer.querySelectorAll(seventvSelectors.join(', '));
-    console.log(`📝 EloWard: Processing ${existingMessages.length} existing 7TV messages`);
     
     for (const message of existingMessages) {
       if (!processedMessages.has(message)) {
@@ -1082,23 +839,18 @@ function processExistingSevenTVMessages(chatContainer) {
       }
     }
 
-    // Also process any cached rank data and retroactively add badges
     if (existingMessages.length > 0) {
       retroactivelyAddSevenTVBadges();
     }
   } catch (error) {
-    console.log(`❌ EloWard: Error processing existing 7TV messages:`, error);
+    console.error('EloWard: Error processing existing 7TV messages:', error);
   }
 }
 
-/**
- * Process a single 7TV message
- */
 function processSevenTVMessage(messageElement) {
   if (!messageElement || processedMessages.has(messageElement)) return;
   processedMessages.add(messageElement);
 
-  // Memory management
   if (processedMessages.size > 500) {
     const toDelete = Array.from(processedMessages).slice(0, 100);
     toDelete.forEach(msg => processedMessages.delete(msg));
@@ -1107,23 +859,14 @@ function processSevenTVMessage(messageElement) {
   if (!extensionState.isChannelActive) return;
 
   try {
-    // Find username element using 7TV-specific selectors
     const usernameElement = messageElement.querySelector('.seventv-chat-user-username');
-    if (!usernameElement) {
-      return;
-    }
+    if (!usernameElement) return;
 
     const username = usernameElement.textContent?.trim().toLowerCase();
-    if (!username) {
-      return;
-    }
+    if (!username) return;
 
-    // Check if badge already exists
-    if (messageElement.querySelector('.eloward-rank-badge')) {
-      return;
-    }
+    if (messageElement.querySelector('.eloward-rank-badge')) return;
 
-    // Handle current user with stored Riot data (even if tokens expired)
     if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
       chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
         const riotData = data.eloward_persistent_riot_user_data;
@@ -1160,40 +903,28 @@ function processSevenTVMessage(messageElement) {
       return;
     }
     
-    // Fetch rank for other users
     fetchRankFromBackground(username, usernameElement, messageElement);
   } catch (error) {
-    console.log(`❌ EloWard: Error processing 7TV message:`, error);
+    console.error('EloWard: Error processing 7TV message:', error);
   }
 }
 
-/**
- * Retroactively add badges to existing 7TV messages for users we have cached data for
- */
 function retroactivelyAddSevenTVBadges() {
   try {
-    // Get rank cache from background script
     chrome.runtime.sendMessage({ action: 'get_all_cached_ranks' }, (response) => {
       if (response?.ranks) {
         const cachedRanks = response.ranks;
         
-        // Find all 7TV user messages
         const userMessages = document.querySelectorAll('.seventv-chat-user');
         
         userMessages.forEach(messageElement => {
-          if (messageElement.querySelector('.eloward-rank-badge')) {
-            return; // Already has badge
-          }
+          if (messageElement.querySelector('.eloward-rank-badge')) return;
           
           const usernameElement = messageElement.querySelector('.seventv-chat-user-username');
-          if (!usernameElement) {
-            return;
-          }
+          if (!usernameElement) return;
           
           const username = usernameElement.textContent?.trim().toLowerCase();
-          if (!username || !cachedRanks[username]) {
-            return;
-          }
+          if (!username || !cachedRanks[username]) return;
           
           const rankData = cachedRanks[username];
           addBadgeToSevenTVMessage(messageElement, usernameElement, rankData);
@@ -1201,39 +932,30 @@ function retroactivelyAddSevenTVBadges() {
       }
     });
   } catch (error) {
-    console.log(`❌ EloWard: Error in retroactive 7TV badge addition:`, error);
+    console.error('EloWard: Error in retroactive 7TV badge addition:', error);
   }
 }
 
-/**
- * Process new chat message for rank badges with enhanced compatibility
- */
 function processNewMessage(messageNode) {
   if (!messageNode || processedMessages.has(messageNode)) return;
-
   if (!extensionState.isChannelActive) return;
   
-  // Route to appropriate processor based on chat mode
   if (extensionState.chatMode === 'seventv') {
     processSevenTVMessage(messageNode);
     return;
   }
 
-  // Standard/FFZ message processing
   processedMessages.add(messageNode);
   
-  // Memory management
   if (processedMessages.size > 500) {
     const toDelete = Array.from(processedMessages).slice(0, 100);
     toDelete.forEach(msg => processedMessages.delete(msg));
   }
 
   try {
-    // Get selectors for current chat mode
     const currentSelectors = SELECTORS[extensionState.chatMode];
     const usernameSelectors = currentSelectors.username;
     
-    // Find username element using mode-specific selectors
     let usernameElement = null;
     for (const selector of usernameSelectors) {
       usernameElement = messageNode.querySelector(selector);
@@ -1245,53 +967,48 @@ function processNewMessage(messageNode) {
     const username = usernameElement.textContent?.trim().toLowerCase();
     if (!username) return;
     
-         // Handle current user with stored Riot data (even if tokens expired)
-     if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
-       chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
-         const riotData = data.eloward_persistent_riot_user_data;
-         
-         if (riotData?.rankInfo) {
-           const userRankData = {
-             tier: riotData.rankInfo.tier,
-             division: riotData.rankInfo.rank,
-             leaguePoints: riotData.rankInfo.leaguePoints,
-             summonerName: riotData.gameName
-           };
-           
-           chrome.runtime.sendMessage({
-             action: 'set_rank_data',
-             username: username,
-             rankData: userRankData
-           });
-           
-           if (extensionState.channelName) {
-             chrome.runtime.sendMessage({
-               action: 'increment_db_reads',
-               channel: extensionState.channelName
-             });
-             
-             chrome.runtime.sendMessage({
-               action: 'increment_successful_lookups',
-               channel: extensionState.channelName
-             });
-           }
-           
-           addBadgeToMessage(usernameElement, userRankData);
-         }
-       });
-       return;
-     }
-     
-     // Fetch rank for other users
-     fetchRankFromBackground(username, usernameElement);
-   } catch (error) {
-     console.log(`❌ EloWard: Error processing message:`, error);
-   }
+    if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
+      chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+        const riotData = data.eloward_persistent_riot_user_data;
+        
+        if (riotData?.rankInfo) {
+          const userRankData = {
+            tier: riotData.rankInfo.tier,
+            division: riotData.rankInfo.rank,
+            leaguePoints: riotData.rankInfo.leaguePoints,
+            summonerName: riotData.gameName
+          };
+          
+          chrome.runtime.sendMessage({
+            action: 'set_rank_data',
+            username: username,
+            rankData: userRankData
+          });
+          
+          if (extensionState.channelName) {
+            chrome.runtime.sendMessage({
+              action: 'increment_db_reads',
+              channel: extensionState.channelName
+            });
+            
+            chrome.runtime.sendMessage({
+              action: 'increment_successful_lookups',
+              channel: extensionState.channelName
+            });
+          }
+          
+          addBadgeToMessage(usernameElement, userRankData);
+        }
+      });
+      return;
+    }
+    
+    fetchRankFromBackground(username, usernameElement);
+  } catch (error) {
+    console.error('EloWard: Error processing message:', error);
+  }
 }
 
-/**
- * Fetch rank data from background script
- */
 function fetchRankFromBackground(username, usernameElement, messageElement = null) {
   if (extensionState.channelName) {
     chrome.runtime.sendMessage({
@@ -1305,10 +1022,7 @@ function fetchRankFromBackground(username, usernameElement, messageElement = nul
     username: username,
     channel: extensionState.channelName
   }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.log(`❌ EloWard: Runtime error fetching rank:`, chrome.runtime.lastError);
-      return;
-    }
+    if (chrome.runtime.lastError) return;
     
     if (response?.success && response.rankData) {
       if (extensionState.channelName) {
@@ -1318,7 +1032,6 @@ function fetchRankFromBackground(username, usernameElement, messageElement = nul
         });
       }
 
-      // Handle badge addition based on chat mode and available elements
       if (extensionState.chatMode === 'seventv' && messageElement) {
         addBadgeToSevenTVMessage(messageElement, usernameElement, response.rankData);
       } else {
@@ -1328,26 +1041,16 @@ function fetchRankFromBackground(username, usernameElement, messageElement = nul
   });
 }
 
-/**
- * Add rank badge to chat message with enhanced compatibility
- */
 function addBadgeToMessage(usernameElement, rankData) {
   if (!rankData?.tier) return;
   
   try {
-    // Get message container using mode-specific selectors
     const currentSelectors = SELECTORS[extensionState.chatMode];
     const messageContainer = usernameElement.closest(currentSelectors.message.join(', '));
     
-    if (!messageContainer) {
-      console.log(`❌ EloWard: Could not find message container in ${extensionState.chatMode} mode`);
-      return;
-    }
-    
-    // Check if badge already exists
+    if (!messageContainer) return;
     if (messageContainer.querySelector('.eloward-rank-badge')) return;
     
-    // Handle based on chat mode
     switch (extensionState.chatMode) {
       case 'seventv':
         addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData);
@@ -1360,23 +1063,20 @@ function addBadgeToMessage(usernameElement, rankData) {
         break;
     }
   } catch (error) {
-    console.log(`❌ EloWard: Error adding badge:`, error);
+    console.error('EloWard: Error adding badge:', error);
   }
 }
 
 function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
-  // Find or create 7TV badge list container
   let badgeList = messageContainer.querySelector('.seventv-chat-user-badge-list');
   
   if (!badgeList) {
     const chatUser = messageContainer.querySelector('.seventv-chat-user');
     if (!chatUser) return;
     
-    // Create badge list container
     badgeList = document.createElement('span');
     badgeList.className = 'seventv-chat-user-badge-list';
     
-    // Insert before username
     const username = chatUser.querySelector('.seventv-chat-user-username');
     if (username) {
       chatUser.insertBefore(badgeList, username);
@@ -1385,15 +1085,16 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
     }
   }
 
-  // Check if badge already exists
-  if (badgeList.querySelector('.eloward-rank-badge')) {
-    return;
-  }
+  if (badgeList.querySelector('.eloward-rank-badge')) return;
   
-  // Create 7TV-style badge
   const badge = document.createElement('div');
   badge.className = 'seventv-chat-badge eloward-rank-badge seventv-integration';
   badge.dataset.rankText = formatRankText(rankData);
+  badge.dataset.rank = rankData.tier.toLowerCase();
+  badge.dataset.division = rankData.division || '';
+  badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
+                     rankData.leaguePoints.toString() : '';
+  badge.dataset.username = rankData.summonerName || '';
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -1401,26 +1102,12 @@ function addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData) {
   img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
   
   badge.appendChild(img);
-  
-  // Set data attributes for CSS styling and tooltip
-  badge.dataset.rank = rankData.tier.toLowerCase();
-  badge.dataset.division = rankData.division || '';
-  badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
-                     rankData.leaguePoints.toString() : '';
-  badge.dataset.username = rankData.summonerName || '';
-  
-  // Setup 7TV-specific tooltip
   badge.addEventListener('mouseenter', (e) => showSevenTVTooltip(e, rankData));
   badge.addEventListener('mouseleave', () => hideSevenTVTooltip());
   
   badgeList.appendChild(badge);
-  
-  console.log(`✅ EloWard: 7TV badge added for ${usernameElement.textContent} (${rankData.tier})`);
 }
 
-/**
- * Show 7TV-style tooltip 
- */
 function showSevenTVTooltip(event, rankData) {
   hideSevenTVTooltip();
   
@@ -1451,9 +1138,6 @@ function showSevenTVTooltip(event, rankData) {
   document.body.appendChild(tooltip);
 }
 
-/**
- * Hide 7TV-style tooltip
- */
 function hideSevenTVTooltip() {
   const existingTooltip = document.getElementById('eloward-7tv-tooltip-active');
   if (existingTooltip && existingTooltip.parentNode) {
@@ -1465,26 +1149,20 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
-  const badge = createBadgeElement(rankData, 24); // Use same size as standard
+  const badge = createBadgeElement(rankData, 24);
   badge.classList.add('ffz-badge');
   
-  // Insert badge with error handling (same as standard)
   try {
     if (insertionPoint.before && insertionPoint.container.contains(insertionPoint.before)) {
       insertionPoint.container.insertBefore(badge, insertionPoint.before);
     } else {
       insertionPoint.container.appendChild(badge);
     }
-    console.log(`✅ EloWard: FFZ badge added for ${usernameElement.textContent} (${rankData.tier})`);
   } catch (error) {
-    console.log(`❌ EloWard: Failed to insert FFZ badge, trying fallback for ${usernameElement.textContent}:`, error.message);
-    
-    // Fallback: try to insert at the beginning of the message container
     try {
       messageContainer.insertAdjacentElement('afterbegin', badge);
-      console.log(`✅ EloWard: FFZ badge added (fallback) for ${usernameElement.textContent} (${rankData.tier})`);
     } catch (fallbackError) {
-      console.log(`❌ EloWard: FFZ fallback insertion also failed for ${usernameElement.textContent}:`, fallbackError.message);
+      console.error('EloWard: FFZ badge insertion failed:', fallbackError);
     }
   }
 }
@@ -1493,53 +1171,38 @@ function addBadgeToStandardMessage(messageContainer, usernameElement, rankData) 
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
-  const badge = createBadgeElement(rankData, 24); // 24px for standard badges
+  const badge = createBadgeElement(rankData, 24);
   
-  // Insert badge with error handling
   try {
     if (insertionPoint.before && insertionPoint.container.contains(insertionPoint.before)) {
       insertionPoint.container.insertBefore(badge, insertionPoint.before);
     } else {
       insertionPoint.container.appendChild(badge);
     }
-    console.log(`✅ EloWard: Standard badge added for ${usernameElement.textContent} (${rankData.tier})`);
   } catch (error) {
-    console.log(`❌ EloWard: Failed to insert badge, trying fallback for ${usernameElement.textContent}:`, error.message);
-    
-    // Fallback: try to insert at the beginning of the message container
     try {
       messageContainer.insertAdjacentElement('afterbegin', badge);
-      console.log(`✅ EloWard: Standard badge added (fallback) for ${usernameElement.textContent} (${rankData.tier})`);
     } catch (fallbackError) {
-      console.log(`❌ EloWard: Fallback insertion also failed for ${usernameElement.textContent}:`, fallbackError.message);
+      console.error('EloWard: Standard badge insertion failed:', fallbackError);
     }
   }
 }
 
-/**
- * Find the best insertion point for the badge considering FFZ/7TV modifications
- */
 function findBadgeInsertionPoint(messageContainer, usernameElement) {
-  // Try to find the best place to insert the badge
-  // Fix: Make sure the insertion point is valid for DOM manipulation
-  
   if (!usernameElement) {
     return { container: null, before: null };
   }
   
-  // Option 1: Try to find the direct parent that can hold badges
   const authorContainer = usernameElement.closest('.chat-author');
   if (authorContainer && messageContainer.contains(authorContainer)) {
     return { container: authorContainer, before: usernameElement };
   }
   
-  // Option 2: Use the username element's direct parent
   const parent = usernameElement.parentElement;
   if (parent && messageContainer.contains(parent)) {
     return { container: parent, before: usernameElement };
   }
   
-  // Option 3: Fallback - insert at the beginning of message container
   if (messageContainer) {
     return { container: messageContainer, before: messageContainer.firstElementChild };
   }
@@ -1547,9 +1210,6 @@ function findBadgeInsertionPoint(messageContainer, usernameElement) {
   return { container: null, before: null };
 }
 
-/**
- * Format rank text for display
- */
 function formatRankText(rankData) {
   if (!rankData || !rankData.tier || rankData.tier.toUpperCase() === 'UNRANKED') {
     return 'UNRANKED';
@@ -1574,14 +1234,7 @@ function formatRankText(rankData) {
   return rankText;
 }
 
-/**
- * Show tooltip on badge hover
- */
 function showTooltip(event) {
-  if (tooltipShowTimeout) {
-    clearTimeout(tooltipShowTimeout);
-  }
-
   if (!tooltipElement) {
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'eloward-tooltip';
@@ -1597,14 +1250,11 @@ function showTooltip(event) {
     lp = Number(lp).toString();
   }
   
-  // Clear existing content
   tooltipElement.innerHTML = '';
   
-  // Create and add larger rank badge image
   const tooltipBadge = document.createElement('img');
   tooltipBadge.className = 'eloward-tooltip-badge';
   
-  // Get the rank badge image source from the original badge
   const originalImg = badge.querySelector('img');
   if (originalImg && originalImg.src) {
     tooltipBadge.src = originalImg.src;
@@ -1613,11 +1263,9 @@ function showTooltip(event) {
   
   tooltipElement.appendChild(tooltipBadge);
   
-  // Create and add rank text
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-tooltip-text';
   
-  // Format tooltip text
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
     tooltipText.textContent = 'Unranked';
   } else {
@@ -1639,7 +1287,6 @@ function showTooltip(event) {
   
   tooltipElement.appendChild(tooltipText);
   
-  // Position and show tooltip immediately
   const rect = badge.getBoundingClientRect();
   const badgeCenter = rect.left + (rect.width / 2);
   
@@ -1648,41 +1295,23 @@ function showTooltip(event) {
   tooltipElement.classList.add('visible');
 }
 
-/**
- * Hide tooltip
- */
 function hideTooltip() {
-  if (tooltipShowTimeout) {
-    clearTimeout(tooltipShowTimeout);
-    tooltipShowTimeout = null;
-  }
-  
   if (tooltipElement && tooltipElement.classList.contains('visible')) {
     tooltipElement.classList.remove('visible');
   }
 }
 
-/**
- * Add CSS styles for rank badges and tooltips - with rank-specific positioning
- */
 function addExtensionStyles() {
   if (document.querySelector('#eloward-extension-styles')) return;
   
   const styleElement = document.createElement('style');
   styleElement.id = 'eloward-extension-styles';
-  
-  // Generate dynamic CSS based on current chat mode and rank data
   styleElement.textContent = generateRankSpecificCSS();
-  
   document.head.appendChild(styleElement);
 }
 
-/**
- * Generate rank-specific CSS for both standard and 7TV modes
- */
 function generateRankSpecificCSS() {
   let css = `
-    /* Base Badge Styles */
     .eloward-rank-badge {
       display: inline-flex !important;
       align-items: center !important;
@@ -1703,7 +1332,6 @@ function generateRankSpecificCSS() {
     }
   `;
 
-  // Generate standard mode rank-specific styles
   for (const tier of RANK_TIERS) {
     const styles = RANK_STYLES.standard[tier];
     if (styles) {
@@ -1722,9 +1350,7 @@ function generateRankSpecificCSS() {
     }
   }
 
-  // Generate 7TV mode rank-specific styles
   css += `
-    /* 7TV Integration Base Styles */
     .seventv-chat-badge.eloward-rank-badge.seventv-integration {
       display: inline-block !important;
       vertical-align: middle !important;
@@ -1747,7 +1373,6 @@ function generateRankSpecificCSS() {
       margin-right: 8px !important;
     }
 
-    /* Responsive 7TV styling */
     @media (max-width: 400px) {
       .seventv-chat-badge.eloward-rank-badge.seventv-integration {
         width: 20px !important;
@@ -1756,7 +1381,6 @@ function generateRankSpecificCSS() {
       }
     }
 
-    /* Theme-specific 7TV styling */
     .tw-root--theme-dark .seventv-chat-badge.eloward-rank-badge.seventv-integration {
       filter: brightness(0.95) !important;
     }
@@ -1766,7 +1390,6 @@ function generateRankSpecificCSS() {
     }
   `;
 
-  // Generate 7TV rank-specific styles
   for (const tier of RANK_TIERS) {
     const styles = RANK_STYLES.seventv[tier];
     if (styles) {
@@ -1780,21 +1403,17 @@ function generateRankSpecificCSS() {
     }
   }
 
-  // Add 7TV username spacing and tooltip styles
   css += `
-    /* 7TV username spacing adjustment */
     .seventv-chat-user .seventv-chat-user-badge-list + .seventv-chat-user-username {
       margin-left: 4px !important;
     }
 
-    /* FFZ Compatibility */
     .ffz-chat .eloward-rank-badge {
       display: inline-flex !important;
       position: relative !important;
       z-index: 100 !important;
     }
     
-    /* Tooltip Styles */
     .eloward-tooltip {
       position: absolute !important;
       z-index: 99999 !important;
@@ -1845,7 +1464,6 @@ function generateRankSpecificCSS() {
       border-style: solid !important;
     }
     
-    /* 7TV Tooltip Styles */
     .eloward-7tv-tooltip {
       position: absolute !important;
       z-index: 99999 !important;
@@ -1888,7 +1506,6 @@ function generateRankSpecificCSS() {
       border-style: solid !important;
     }
     
-    /* Theme-specific tooltip colors */
     html.tw-root--theme-dark .eloward-tooltip,
     .tw-root--theme-dark .eloward-tooltip,
     body[data-a-theme="dark"] .eloward-tooltip,
@@ -1940,5 +1557,25 @@ function generateRankSpecificCSS() {
   
   return css;
 }
+
+initializeStorage();
+setupUrlChangeObserver();
+detectChatMode();
+setupCompatibilityMonitor();
+setupFallbackInitialization();
+initializeExtension();
+
+window.addEventListener('popstate', function() {
+  if (!extensionState.initializationInProgress) {
+    initializeExtension();
+  }
+});
+
+window.addEventListener('beforeunload', function() {
+  if (extensionState.channelName) {
+    cleanupChannel(extensionState.channelName);
+  }
+  clearRankCache();
+});
 
  

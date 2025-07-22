@@ -1,16 +1,13 @@
-// EloWard Background Service Worker
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
 
-// Constants
 const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev';
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
 const MAX_RANK_CACHE_SIZE = 500;
-const RANK_CACHE_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
+const RANK_CACHE_EXPIRY = 60 * 60 * 1000;
 
-// LFU Cache for user ranks with time-based expiration
 class UserRankCache {
   constructor(maxSize = MAX_RANK_CACHE_SIZE) {
     this.cache = new Map();
@@ -18,27 +15,23 @@ class UserRankCache {
     this.currentUser = null;
   }
 
-  // Set current user to protect from eviction
   setCurrentUser(username) {
     if (username) {
       this.currentUser = username.toLowerCase();
     }
   }
 
-  // Get entry from cache
   get(username) {
     if (!username) return null;
     const normalizedUsername = username.toLowerCase();
     const entry = this.cache.get(normalizedUsername);
 
     if (entry) {
-      // Check if entry has expired
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(normalizedUsername);
         return null;
       }
 
-      // Increment frequency on access
       entry.frequency = (entry.frequency || 0) + 1;
       return entry.rankData;
     }
@@ -46,7 +39,6 @@ class UserRankCache {
     return null;
   }
 
-  // Add or update entry in cache
   set(username, rankData) {
     if (!username || !rankData) return;
 
@@ -71,7 +63,6 @@ class UserRankCache {
     }
   }
 
-  // Clear cache but preserve current user's data
   clear() {
     const currentUserEntry = this.currentUser ? this.cache.get(this.currentUser) : null;
     this.cache.clear();
@@ -81,24 +72,20 @@ class UserRankCache {
     }
   }
 
-  // Evict the least frequently used entry (excluding current user)
   evictLFU() {
     let lowestFrequency = Infinity;
     let userToEvict = null;
 
     for (const [key, entry] of this.cache.entries()) {
-      // Skip current user
       if (key === this.currentUser) {
         continue;
       }
 
-      // Prioritize expired entries for eviction
       if (entry.timestamp && (Date.now() - entry.timestamp > RANK_CACHE_EXPIRY)) {
         this.cache.delete(key);
         return;
       }
 
-      // Use frequency-based eviction for non-expired entries
       if (entry.frequency < lowestFrequency) {
         lowestFrequency = entry.frequency;
         userToEvict = key;
@@ -110,7 +97,6 @@ class UserRankCache {
     }
   }
 
-  // Check if cache has a username
   has(username) {
     if (!username) return false;
     const normalizedUsername = username.toLowerCase();
@@ -130,17 +116,13 @@ class UserRankCache {
 }
 
 const userRankCache = new UserRankCache();
-
-// Track open auth windows
 let authWindows = {};
 
-// Handle auth callbacks from various sources
 function handleAuthCallback(params) {
   if (!params || !params.code) {
     return;
   }
 
-  // Store the auth callback data
   const promiseStorage = new Promise(resolve => {
     chrome.storage.local.set({
       'auth_callback': params,
@@ -148,7 +130,6 @@ function handleAuthCallback(params) {
     }, resolve);
   });
 
-  // Route to appropriate service handler
   const isTwitchCallback = params.service === 'twitch';
 
   if (isTwitchCallback) {
@@ -165,18 +146,12 @@ function handleAuthCallback(params) {
     });
   }
 
-  // Notify any open popups
   chrome.runtime.sendMessage({
     type: 'auth_callback',
     params: params
   });
 }
 
-/**
- * Exchange authorization code for tokens
- * @param {Object} authData - The authorization data with code
- * @param {string} service - The service ('riot' or 'twitch')
- */
 async function initiateTokenExchange(authData, service = 'riot') {
   try {
     if (!authData || !authData.code) {
@@ -205,10 +180,8 @@ async function initiateTokenExchange(authData, service = 'riot') {
   }
 }
 
-// Handle messages from content scripts, popup, and other extension components
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
-  // Metrics tracking
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
@@ -223,7 +196,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Twitch auth callback handling
   if (message.type === 'twitch_auth_callback' || (message.type === 'auth_callback' && message.service === 'twitch')) {
     try {
       const params = message.params || {
@@ -256,7 +228,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         message: 'Twitch auth callback received and processing',
       });
       
-      // Notify listeners of successful processing
       setTimeout(() => {
         chrome.runtime.sendMessage({
           type: 'twitch_auth_processed',
@@ -275,7 +246,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
   
-  // Auth message handling
   if (message.type === 'get_auth_callback') {
     chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
       const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
@@ -286,7 +256,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'auth_callback') {
     if (message.code) {
-      // Auth windows are cleaned up automatically by the periodic cleanup
+      
     } else {
       handleAuthCallback(message.params);
     }
@@ -294,20 +264,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // WINDOW MANAGEMENT
   if (message.type === 'open_auth_window') {
     if (message.url) {
-      // Generate a unique ID for this auth window
       const windowId = Date.now().toString();
       
-      // Open the auth window
       chrome.windows.create({
         url: message.url,
         type: 'popup',
         width: 500,
         height: 700
       }, (window) => {
-        // Track this window
         authWindows[windowId] = {
           window,
           state: message.state,
@@ -320,10 +286,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else {
       sendResponse({ success: false, error: 'No URL provided' });
     }
-    return true; // Required for async sendResponse
+    return true;
   }
   
-  // TOKEN MANAGEMENT
   if (message.type === 'check_auth_tokens') {
     chrome.storage.local.get([
       'eloward_riot_access_token',
@@ -334,7 +299,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     ], (data) => {
       sendResponse({ data });
     });
-    return true; // Required for async sendResponse
+    return true;
   }
   
   if (message.type === 'store_tokens') {
@@ -354,25 +319,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else {
       sendResponse({ success: false, error: 'No tokens provided' });
     }
-    return true; // Required for async sendResponse
+    return true;
   }
   
-  // RIOT AUTH HANDLING
   if (message.action === 'initiate_riot_auth') {
     
-    // Use the provided state or generate a new one for CSRF protection
     const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     
-    // Store state for verification after callback
     chrome.storage.local.set({
       'eloward_auth_state': state,
-      [RiotAuth.config.storageKeys.authState]: state, // Also store using the standard key
+      [RiotAuth.config.storageKeys.authState]: state,
       'selectedRegion': message.region || 'na1'
     });
     
-    // Request auth URL from our backend
     const region = message.region || 'na1';
     const url = `${RIOT_AUTH_URL}/auth/init?state=${state}&region=${region}`;
     
@@ -388,7 +349,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error('No authorization URL returned');
         }
         
-        // Return the auth URL to the caller
         sendResponse({
           success: true,
           authUrl: data.authorizationUrl
@@ -401,11 +361,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       });
     
-    return true; // Indicate async response
+    return true;
   }
   
   if (message.action === 'handle_auth_callback') {
-    // This message comes from the callback.html page
     handleAuthCallbackFromRedirect(message.code, message.state)
       .then(result => {
         sendResponse(result);
@@ -413,17 +372,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => {
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Indicate async response
+    return true;
   }
   
-  // RANK DATA HANDLING
   if (message.action === 'get_rank_icon_url') {
     const iconUrl = getRankIconUrl(message.tier);
     sendResponse({ iconUrl: iconUrl });
     return true;
   }
   
-  // Handle rank fetch requests from content script
   if (message.action === 'fetch_rank_for_username') {
     const username = message.username;
     const channelName = message.channel;
@@ -433,16 +390,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    // Increment db_read counter regardless of cache hit/miss
     if (channelName) {
       incrementDbReadCounter(channelName).catch(error => {
       });
     }
     
-    // Check if the rank is in our cache
     const cachedRankData = userRankCache.get(username);
     if (cachedRankData) {
-      // If we got a successful result from cache, increment successful_lookups
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(error => {
         });
@@ -457,23 +411,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    // Query the database API for the rank
-    const platform = "na1"; // Default platform
+    const platform = "na1";
     
     fetchRankByTwitchUsername(username, platform)
       .then(rankData => {
-        // Store in cache 
         if (rankData) {
           userRankCache.set(username, rankData);
           
-          // If we got a successful result from API, increment successful_lookups
           if (channelName && rankData?.tier) {
             incrementSuccessfulLookupCounter(channelName).catch(error => {
             });
           }
         }
         
-        // Send response
         sendResponse({
           success: true,
           rankData: rankData,
@@ -487,16 +437,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       });
     
-    return true; // Keep the message channel open for the async response
+    return true;
   }
   
   if (message.action === 'get_user_rank_by_puuid') {
     const { puuid, region } = message;
     
-    // Check if we have a valid token
     RiotAuth.getValidToken()
       .then(token => {
-        // Get rank data using the League V4 API via backend with PUUID
         getRankByPuuid(token, puuid, region)
           .then(rankData => {
             sendResponse({ rank: rankData });
@@ -509,17 +457,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ error: error.message });
       });
     
-    return true; // Keep the message channel open for async response
+    return true;
   }
   
-  // CHANNEL ACTIVE CHECKING
   if (message.action === 'check_channel_active') {
     const streamer = message.streamer;
-    const skipCache = !!message.skipCache; // Default to using cache
+    const skipCache = !!message.skipCache;
     
     checkChannelActive(streamer, skipCache)
       .then(active => {
-        // Only log the response for direct checks
         if (skipCache) {
         }
         sendResponse({ active: active });
@@ -530,21 +476,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // SET CURRENT USER
   if (message.action === 'set_current_user') {
     userRankCache.setCurrentUser(message.username);
     sendResponse({ success: true });
     return true;
   }
   
-  // CLEAR RANK CACHE
   if (message.action === 'clear_rank_cache') {
     userRankCache.clear();
     sendResponse({ success: true });
     return true;
   }
   
-  // GET ALL CACHED RANKS (for retroactive badge addition)
   if (message.action === 'get_all_cached_ranks') {
     const allRanks = {};
     for (const [username, entry] of userRankCache.cache.entries()) {
@@ -554,7 +497,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // SET RANK DATA
   if (message.action === 'set_rank_data') {
     if (message.username && message.rankData) {
       userRankCache.set(message.username, message.rankData);
@@ -565,22 +507,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // CHANNEL SWITCHED
   if (message.action === 'channel_switched') {
     handleChannelSwitch(message.oldChannel, message.newChannel);
     sendResponse({ success: true });
     return true;
   }
   
-  // If no handlers matched, send an error response
   sendResponse({ error: 'Unknown action', action: message.action });
   return true;
 });
 
-// Clean up old auth windows periodically
 setInterval(() => {
   const now = Date.now();
-  const maxAge = 30 * 60 * 1000; // 30 minutes
+  const maxAge = 30 * 60 * 1000;
   
   Object.keys(authWindows).forEach(id => {
     const windowData = authWindows[id];
@@ -588,17 +527,14 @@ setInterval(() => {
       delete authWindows[id];
     }
   });
-}, 5 * 60 * 1000); // Every 5 minutes
+}, 5 * 60 * 1000);
 
-// Listen for window messages (for callback.html communication)
 self.addEventListener('message', (event) => {
-  // Check if it's an auth callback message
   if (event.data && event.data.type === 'auth_callback') {
     handleAuthCallback(event.data.params);
   }
 });
 
-// Extension initialization
 chrome.runtime.onInstalled.addListener((details) => {
   clearAllStoredData();
   
@@ -606,7 +542,6 @@ chrome.runtime.onInstalled.addListener((details) => {
     selectedRegion: 'na1'
   });
   
-  // Show active badge temporarily
   chrome.action.setBadgeText({ text: 'ON' });
   chrome.action.setBadgeBackgroundColor({ color: '#DC2123' });
   
@@ -614,7 +549,6 @@ chrome.runtime.onInstalled.addListener((details) => {
     chrome.action.setBadgeText({ text: '' });
   }, 5000);
   
-  // Initialize linked accounts storage
   chrome.storage.local.get('linkedAccounts', (data) => {
     if (!data.linkedAccounts) {
       chrome.storage.local.set({ linkedAccounts: {} });
@@ -624,35 +558,25 @@ chrome.runtime.onInstalled.addListener((details) => {
   loadConfiguration();
 });
 
-/**
- * Clear all stored authentication and user data
- */
 function clearAllStoredData() {
   return new Promise((resolve) => {
     try {
       
-      // Define the keys to remove from chrome.storage
       const keysToRemove = [
-        // Riot auth keys
         'eloward_riot_access_token',
         'eloward_riot_refresh_token',
         'eloward_riot_token_expiry',
         'eloward_riot_tokens',
         'eloward_riot_account_info',
-
         'eloward_riot_rank_info',
         'eloward_auth_state',
         'eloward_riot_id_token',
-        
-        // Twitch auth keys
         'eloward_twitch_access_token',
         'eloward_twitch_refresh_token',
         'eloward_twitch_token_expiry',
         'eloward_twitch_tokens',
         'eloward_twitch_user_info',
         'eloward_twitch_auth_state',
-        
-        // Callback data
         'auth_callback',
         'eloward_auth_callback',
         'twitch_auth_callback',
@@ -660,34 +584,22 @@ function clearAllStoredData() {
         'authCallbackProcessed'
       ];
       
-      // Clear from chrome.storage
       chrome.storage.local.remove(keysToRemove, () => {
-        // Clear persistent storage
         PersistentStorage.clearAllData()
           .then(() => {
-            // Initialize persistent storage to reset persistence flag
             PersistentStorage.init();
-            
             resolve();
           })
           .catch(error => {
-            resolve(); // Still resolve to continue cleanup
+            resolve();
           });
       });
     } catch (error) {
-      resolve(); // Still resolve to continue cleanup
+      resolve();
     }
   });
 }
 
-// Helper functions
-
-/**
- * Check if a channel is active in the database
- * @param {string} channelName - Twitch channel name to check
- * @param {boolean} skipCache - Kept for backward compatibility
- * @returns {Promise<boolean>} - Whether the channel is active
- */
 function checkChannelActive(channelName, skipCache = false) {
   if (!channelName) {
     return Promise.resolve(false);
@@ -718,13 +630,6 @@ function checkChannelActive(channelName, skipCache = false) {
   });
 }
 
-/**
- * Gets rank data for a player using the League V4 API via backend with PUUID
- * @param {string} token - The access token
- * @param {string} puuid - The player's PUUID
- * @param {string} platform - The platform code (e.g., 'na1')
- * @returns {Promise} - Resolves with the rank data
- */
 function getRankByPuuid(token, puuid, platform) {
   return new Promise((resolve, reject) => {
     fetch(`${RIOT_AUTH_URL}/riot/league/entries?platform=${platform}&puuid=${puuid}`, {
@@ -739,11 +644,9 @@ function getRankByPuuid(token, puuid, platform) {
       return response.json();
     })
     .then(leagueEntries => {
-      // Find the Solo/Duo queue entry
       const soloQueueEntry = leagueEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
       
       if (soloQueueEntry) {
-        // Format the rank data
         const rankData = {
           tier: soloQueueEntry.tier,
           division: soloQueueEntry.rank,
@@ -754,7 +657,6 @@ function getRankByPuuid(token, puuid, platform) {
         
         resolve(rankData);
       } else {
-        // No ranked data found
         resolve(null);
       }
     })
@@ -764,14 +666,11 @@ function getRankByPuuid(token, puuid, platform) {
   });
 }
 
-// Helper function to get rank icon URL
 function getRankIconUrl(tier) {
   if (!tier) return 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
   
-  // Convert tier to lowercase for case-insensitive match
   const tierLower = tier.toLowerCase();
   
-  // Map of tier to icon filenames
   const tierIcons = {
     'iron': 'iron.png',
     'bronze': 'bronze.png',
@@ -786,24 +685,16 @@ function getRankIconUrl(tier) {
     'unranked': 'unranked.png'
   };
   
-  // Get the correct icon or use unranked as fallback
   const iconFile = tierIcons[tierLower] || 'unranked.png';
   
   return `https://eloward-cdn.unleashai.workers.dev/lol/${iconFile.replace('.png', '')}.png`;
 }
 
-
-
-
-
-// Handle the authorization callback (called from callback.html)
 async function handleAuthCallbackFromRedirect(code, state) {
   try {
-    // Get stored auth state for verification
     const storedData = await chrome.storage.local.get(['authState']);
     const expectedState = storedData.authState;
     
-    // Verify state parameter to prevent CSRF attacks
     let stateValid = expectedState && expectedState === state;
     
     
@@ -812,7 +703,6 @@ async function handleAuthCallbackFromRedirect(code, state) {
     }
     
     
-    // Exchange code for tokens via our backend proxy
     const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/token`, {
       method: 'POST',
       headers: {
@@ -830,40 +720,34 @@ async function handleAuthCallbackFromRedirect(code, state) {
     
     const tokenData = await response.json();
     
-    // Store the auth data in chrome.storage.local with issued timestamp
     const tokenExpiry = Date.now() + (tokenData.data.expires_in * 1000);
     
     await chrome.storage.local.set({
-      // Use the standardized storage keys from the technical documentation
       eloward_riot_access_token: tokenData.data.access_token,
       eloward_riot_refresh_token: tokenData.data.refresh_token,
       eloward_riot_token_expiry: tokenExpiry,
       
-      // Keep the original structure for backward compatibility
       riotAuth: {
         ...tokenData.data,
         issued_at: Date.now()
       },
-      authInProgress: false // Auth flow is complete
+      authInProgress: false
     });
     
-    // Clear the auth state since we don't need it anymore
     await chrome.storage.local.remove(['authState']);
     
-    // Notify popup if it's open
     try {
       chrome.runtime.sendMessage({
         action: 'auth_completed',
         success: true
       });
     } catch (e) {
-      // Popup might not be open, that's okay
+      
     }
     
     return { success: true, username: tokenData.data.user_info?.game_name };
   } catch (error) {
     
-    // Clear the auth in progress flag
     await chrome.storage.local.set({
       authInProgress: false
     });
@@ -872,22 +756,12 @@ async function handleAuthCallbackFromRedirect(code, state) {
   }
 }
 
-
-
-
-
-// Expose functions to be called from callback.html
 self.eloward = {
   handleAuthCallback,
   handleAuthCallbackFromRedirect,
   getRankIconUrl
 };
 
-/**
- * Get a user's linked account by Twitch username - simplified approach
- * @param {string} twitchUsername - The Twitch username to look up
- * @returns {Promise} - Resolves with the linked account or null
- */
 function getUserLinkedAccount(twitchUsername) {
   return new Promise((resolve) => {
     if (!twitchUsername) {
@@ -897,22 +771,18 @@ function getUserLinkedAccount(twitchUsername) {
     
     const normalizedTwitchUsername = twitchUsername.toLowerCase();
     
-    // Direct lookup by normalized username (most efficient)
     chrome.storage.local.get('linkedAccounts', data => {
       const linkedAccounts = data.linkedAccounts || {};
       
-      // Direct lookup first
       if (linkedAccounts[normalizedTwitchUsername]) {
         resolve(linkedAccounts[normalizedTwitchUsername]);
         return;
       }
       
-      // Check persistent storage for user data (even if tokens expired)
       chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'eloward_persistent_riot_user_data'], currentUserData => {
         const currentTwitchData = currentUserData.eloward_persistent_twitch_user_data;
         const currentRiotData = currentUserData.eloward_persistent_riot_user_data;
         
-        // Check if this username matches our stored user data
         if (currentTwitchData?.login?.toLowerCase() === normalizedTwitchUsername && currentRiotData) {
           resolve(currentRiotData);
           return;
@@ -924,15 +794,8 @@ function getUserLinkedAccount(twitchUsername) {
   });
 }
 
-/**
- * Get rank data for a linked account
- * @param {Object} linkedAccount - The linked account info
- * @param {string} platform - The platform code
- * @returns {Promise} - Resolves with the rank data
- */
 function getRankForLinkedAccount(linkedAccount, platform) {
   return new Promise((resolve, reject) => {
-    // Always fetch fresh rank data
     chrome.storage.local.get('riotAuthToken', data => {
       if (!data.riotAuthToken) {
         reject(new Error('No Riot auth token available'));
@@ -948,28 +811,18 @@ function getRankForLinkedAccount(linkedAccount, platform) {
   });
 }
 
-/**
- * Load the extension configuration from storage
- */
 function loadConfiguration() {
   chrome.storage.local.get(['selectedRegion', 'riotAccountInfo', 'twitchUsername'], (data) => {
-    // Set defaults if not set
     if (!data.selectedRegion) {
       chrome.storage.local.set({ selectedRegion: 'na1' });
     }
     
-    // If the user has already linked their Riot account, add it to linkedAccounts
     if (data.riotAccountInfo && data.twitchUsername) {
       addLinkedAccount(data.twitchUsername, data.riotAccountInfo);
     }
   });
 }
 
-/**
- * Add or update a linked account in storage
- * @param {string} twitchUsername - The Twitch username
- * @param {Object} riotAccountInfo - The Riot account info
- */
 function addLinkedAccount(twitchUsername, riotAccountInfo) {
   if (!twitchUsername || !riotAccountInfo) {
     return;
@@ -980,11 +833,10 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
   chrome.storage.local.get('linkedAccounts', data => {
     const linkedAccounts = data.linkedAccounts || {};
     
-    // Always store using the normalized (lowercase) username as the key
     linkedAccounts[normalizedTwitchUsername] = {
       ...riotAccountInfo,
-      twitchUsername, // Store the original username for display purposes
-      normalizedTwitchUsername, // Store the normalized version for lookups
+      twitchUsername,
+      normalizedTwitchUsername,
       linkedAt: Date.now(),
       lastUpdated: Date.now()
     };
@@ -994,18 +846,12 @@ function addLinkedAccount(twitchUsername, riotAccountInfo) {
   });
 }
 
-/**
- * Fetches rank data directly from the database using the Rank Worker API
- * @param {string} twitchUsername - The Twitch username to look up
- * @returns {Promise<object|null>} - Resolves with rank data or null if not found
- */
 async function fetchRankFromDatabase(twitchUsername) {
   if (!twitchUsername) return null;
   
   try {
     const normalizedUsername = twitchUsername.toLowerCase();
     
-    // Use the Rank Worker API to fetch the rank directly from database
     const response = await fetch(`${RANK_WORKER_API_URL}/api/ranks/lol/${normalizedUsername}`);
     
     if (!response.ok) {
@@ -1017,42 +863,31 @@ async function fetchRankFromDatabase(twitchUsername) {
     
     const rankData = await response.json();
     
-    // Convert API response format to the format expected by the content script
-    // Note: rankData now includes riot_puuid from the updated schema
     return {
       tier: rankData.rank_tier,
       division: rankData.rank_division,
       leaguePoints: rankData.lp,
       summonerName: rankData.riot_id,
-      puuid: rankData.riot_puuid // Include PUUID for completeness
+      puuid: rankData.riot_puuid
     };
   } catch (error) {
     return null;
   }
 }
 
-/**
- * Fetches rank data for a Twitch username
- * @param {string} twitchUsername - The Twitch username
- * @param {string} platform - The platform code (e.g., 'na1')
- * @returns {Promise} - Resolves with the rank data or null if not found
- */
 function fetchRankByTwitchUsername(twitchUsername, platform) {
   return new Promise((resolve, reject) => {
     
-    // Look up the linked account by Twitch username
     getUserLinkedAccount(twitchUsername)
       .then(linkedAccount => {
         if (linkedAccount) {
           
-          // We have a linked account, get real rank data
           getRankForLinkedAccount(linkedAccount, platform)
             .then(rankData => {
               resolve(rankData);
             })
             .catch(error => {
               
-              // Try fetching from database as fallback
               fetchRankFromDatabase(twitchUsername)
                 .then(dbRankData => {
                   if (dbRankData) {
@@ -1064,7 +899,6 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
                 .catch(() => resolve(null));
             });
         } else {
-          // No linked account found, try to fetch directly from database
           
           fetchRankFromDatabase(twitchUsername)
             .then(rankData => {
@@ -1080,9 +914,6 @@ function fetchRankByTwitchUsername(twitchUsername, platform) {
   });
 }
 
-
-
-// Preload and sync linked accounts
 function preloadLinkedAccounts() {
   chrome.storage.local.get('linkedAccounts', (data) => {
     const linkedAccounts = data.linkedAccounts || {};
@@ -1115,10 +946,8 @@ function preloadLinkedAccounts() {
   });
 }
 
-// Call preload on extension startup
 preloadLinkedAccounts();
 
-// Listen for storage changes to update linked accounts
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local') {
     if (changes.riotAccountInfo || changes.twitchUsername) {
@@ -1127,19 +956,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-
-
-// Handle channel switching
 function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();
   chrome.storage.local.remove('connected_region');
 }
 
-/**
- * Increments the db_read counter for a channel via the subscription API
- * @param {string} channelName - The channel name to increment the counter for
- * @returns {Promise<boolean>} - Whether the operation was successful
- */
 async function incrementDbReadCounter(channelName) {
   if (!channelName) {
     return false;
@@ -1148,7 +969,6 @@ async function incrementDbReadCounter(channelName) {
   try {
     const normalizedName = channelName.toLowerCase();
     
-    // Call the status API metrics endpoint
     const response = await fetch(`${STATUS_API_URL}/metrics/db_read`, {
       method: 'POST',
       headers: {
@@ -1168,11 +988,6 @@ async function incrementDbReadCounter(channelName) {
   }
 }
 
-/**
- * Increments the successful_lookups counter for a channel via the subscription API
- * @param {string} channelName - The channel name to increment the counter for
- * @returns {Promise<boolean>} - Whether the operation was successful
- */
 async function incrementSuccessfulLookupCounter(channelName) {
   if (!channelName) {
     return false;
@@ -1181,7 +996,6 @@ async function incrementSuccessfulLookupCounter(channelName) {
   try {
     const normalizedName = channelName.toLowerCase();
     
-    // Call the status API metrics endpoint
     const response = await fetch(`${STATUS_API_URL}/metrics/successful_lookup`, {
       method: 'POST',
       headers: {
