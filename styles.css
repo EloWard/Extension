@@ -54,7 +54,7 @@
 /* Rank-specific image positioning - unified for all modes */
 .eloward-rank-badge[data-rank="iron"] img,
 .seventv-chat-badge.eloward-rank-badge[data-rank="iron"] img {
-  transform: translate(-50%, -50%) scale(1.4) translate(-2px, 4px) !important;
+  transform: translate(-50%, -50%) scale(1.3) translate(-1.5px, 1px) !important;
 }
 
 .eloward-rank-badge[data-rank="bronze"] img,
