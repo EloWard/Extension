@@ -79,7 +79,7 @@
 
 .eloward-rank-badge[data-rank="emerald"] img,
 .seventv-chat-badge.eloward-rank-badge[data-rank="emerald"] img {
-  transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 1px) !important;
+  transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3.5px) !important;
 }
 
 .eloward-rank-badge[data-rank="diamond"] img,
