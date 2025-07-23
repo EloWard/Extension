@@ -51,59 +51,59 @@
   left: 50% !important;
 }
 
-/* Rank-specific image positioning - unified for all modes */
-.eloward-rank-badge[data-rank="iron"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="iron"] img {
+/* Rank-specific image positioning - optimized selectors */
+.eloward-rank-badge img[alt="IRON"],
+.seventv-chat-badge.eloward-rank-badge img[alt="IRON"] {
   transform: translate(-50%, -50%) scale(1.3) translate(-1.5px, 1px) !important;
 }
 
-.eloward-rank-badge[data-rank="bronze"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="bronze"] img {
+.eloward-rank-badge img[alt="BRONZE"],
+.seventv-chat-badge.eloward-rank-badge img[alt="BRONZE"] {
   transform: translate(-50%, -50%) scale(1.3) translate(-1.5px, 2px) !important;
 }
 
-.eloward-rank-badge[data-rank="silver"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="silver"] img {
+.eloward-rank-badge img[alt="SILVER"],
+.seventv-chat-badge.eloward-rank-badge img[alt="SILVER"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 2px) !important;
 }
 
-.eloward-rank-badge[data-rank="gold"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="gold"] img {
+.eloward-rank-badge img[alt="GOLD"],
+.seventv-chat-badge.eloward-rank-badge img[alt="GOLD"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3px) !important;
 }
 
-.eloward-rank-badge[data-rank="platinum"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="platinum"] img {
+.eloward-rank-badge img[alt="PLATINUM"],
+.seventv-chat-badge.eloward-rank-badge img[alt="PLATINUM"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3.5px) !important;
 }
 
-.eloward-rank-badge[data-rank="emerald"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="emerald"] img {
+.eloward-rank-badge img[alt="EMERALD"],
+.seventv-chat-badge.eloward-rank-badge img[alt="EMERALD"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3.5px) !important;
 }
 
-.eloward-rank-badge[data-rank="diamond"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="diamond"] img {
-  transform: translate(-50%, -50%) scale(1.1) translate(1.5px, 1px) !important;
+.eloward-rank-badge img[alt="DIAMOND"],
+.seventv-chat-badge.eloward-rank-badge img[alt="DIAMOND"] {
+  transform: translate(-50%, -50%) scale(1.1) translate(-1.5px, 1px) !important;
 }
 
-.eloward-rank-badge[data-rank="master"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="master"] img {
-  transform: translate(-50%, -50%) scale(1.1) translate(1.5px, 1px) !important;
+.eloward-rank-badge img[alt="MASTER"],
+.seventv-chat-badge.eloward-rank-badge img[alt="MASTER"] {
+  transform: translate(-50%, -50%) scale(1.1) translate(-1.5px, 1px) !important;
 }
 
-.eloward-rank-badge[data-rank="grandmaster"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="grandmaster"] img {
-  transform: translate(-50%, -50%) scale(1.1) translate(1.5px, 1px) !important;
+.eloward-rank-badge img[alt="GRANDMASTER"],
+.seventv-chat-badge.eloward-rank-badge img[alt="GRANDMASTER"] {
+  transform: translate(-50%, -50%) scale(1.1) translate(-1.5px, 1px) !important;
 }
 
-.eloward-rank-badge[data-rank="challenger"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="challenger"] img {
+.eloward-rank-badge img[alt="CHALLENGER"],
+.seventv-chat-badge.eloward-rank-badge img[alt="CHALLENGER"] {
   transform: translate(-50%, -50%) scale(1.2) translate(1.5px, 0px) !important;
 }
 
-.eloward-rank-badge[data-rank="unranked"] img,
-.seventv-chat-badge.eloward-rank-badge[data-rank="unranked"] img {
+.eloward-rank-badge img[alt="UNRANKED"],
+.seventv-chat-badge.eloward-rank-badge img[alt="UNRANKED"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 1px) !important;
 }
 
