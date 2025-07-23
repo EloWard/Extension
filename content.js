@@ -120,7 +120,7 @@ function detectChatMode() {
   extensionState.chatMode = detectedMode;
   
   if (!extensionState.initializationComplete) {
-    console.log(`EloWard: Chat mode detected - ${detectedMode}`);
+    console.log(`💬 EloWard: Chat mode detected - ${detectedMode}`);
   } else if (detectedMode !== previousMode) {
     switchChatMode();
   }
@@ -430,7 +430,7 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
           }
           
           const isActive = response && response.active === true;
-          console.log(`EloWard: Channel ${channelName} is ${isActive ? 'active' : 'not active'}`);
+          console.log(`${isActive ? '✅' : '❌'} EloWard: Channel ${channelName} is ${isActive ? 'active' : 'not active'}`);
           
           if (!signal?.aborted) {
             extensionState.lastChannelActiveCheck = now;
@@ -526,9 +526,11 @@ async function getCurrentGame() {
     
     if (game) {
       const gameName = game.name || game.displayName;
+      console.log(`🎮 EloWard: Game category detected - ${gameName}`);
       return gameName;
     }
     
+    console.log(`🎮 EloWard: Game category detected - Not streaming`);
     return null;
   } catch (error) {
     return null;
@@ -631,7 +633,7 @@ function initializeExtension() {
     setupGameChangeObserver();
     
     if (!isGameSupported(extensionState.currentGame)) {
-      console.log(`EloWard: Extension not active - unsupported game: ${extensionState.currentGame || 'none'}`);
+      console.log(`🚀 EloWard: Extension not active - unsupported game: ${extensionState.currentGame || 'none'}`);
       extensionState.initializationInProgress = false;
       extensionState.initializationComplete = true;
       return;
@@ -642,12 +644,12 @@ function initializeExtension() {
         if (extensionState.currentInitializationId !== initializationId) return;
         
         if (channelActive) {
-          console.log(`EloWard: Extension active for ${extensionState.channelName}`);
+          console.log(`🚀 EloWard: Extension active for ${extensionState.channelName}`);
           if (!extensionState.observerInitialized) {
             initializeObserver();
           }
         } else {
-          console.log(`EloWard: Extension not active - channel ${extensionState.channelName} not subscribed`);
+          console.log(`🚀 EloWard: Extension not active - channel ${extensionState.channelName} not subscribed`);
         }
         
         extensionState.initializationInProgress = false;
