@@ -94,17 +94,17 @@
 
 .eloward-rank-badge img[alt="GRANDMASTER"],
 .seventv-chat-badge.eloward-rank-badge img[alt="GRANDMASTER"] {
-  transform: translate(-50%, -50%) scale(1.1) translate(-1.5px, 1px) !important;
+  transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
 }
 
 .eloward-rank-badge img[alt="CHALLENGER"],
 .seventv-chat-badge.eloward-rank-badge img[alt="CHALLENGER"] {
-  transform: translate(-50%, -50%) scale(1.2) translate(1.5px, 0px) !important;
+  transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
 }
 
 .eloward-rank-badge img[alt="UNRANKED"],
 .seventv-chat-badge.eloward-rank-badge img[alt="UNRANKED"] {
-  transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 1px) !important;
+  transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
 }
 
 /* 7TV Integration Base */
