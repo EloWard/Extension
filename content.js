@@ -1253,6 +1253,37 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
 }
 
 function addBadgeToStandardMessage(messageContainer, usernameElement, rankData) {
+  // Try to find proper badge container first
+  const badgeContainer = findBadgeContainer(messageContainer);
+  
+  if (badgeContainer) {
+    const badge = createBadgeElement(rankData);
+    
+    // Handle different wrapper structures based on chat mode
+    if (extensionState.chatMode === 'seventv') {
+      // 7TV mode - add directly to badge list
+      try {
+        badgeContainer.appendChild(badge);
+        return;
+      } catch (error) {
+        // Fall back to old method
+      }
+    } else {
+      // Standard mode - create wrapper div to match other badges
+      const badgeWrapper = document.createElement('div');
+      badgeWrapper.className = 'InjectLayout-sc-1i43xsx-0 dvtAVE';
+      badgeWrapper.appendChild(badge);
+      
+      try {
+        badgeContainer.appendChild(badgeWrapper);
+        return;
+      } catch (error) {
+        // Fall back to old method
+      }
+    }
+  }
+  
+  // Fallback to original username insertion
   const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
   if (!insertionPoint.container) return;
   
@@ -1271,6 +1302,49 @@ function addBadgeToStandardMessage(messageContainer, usernameElement, rankData) 
       console.error('EloWard: Standard badge insertion failed:', fallbackError);
     }
   }
+}
+
+function findBadgeContainer(messageContainer) {
+  // Handle 7TV mode first
+  if (extensionState.chatMode === 'seventv') {
+    const seventvBadgeList = messageContainer.querySelector('.seventv-chat-user-badge-list');
+    if (seventvBadgeList) {
+      return seventvBadgeList;
+    }
+  }
+  
+  // Handle standard Twitch chat - look for the badge container structure
+  // Pattern: .chat-line__username-container > span (contains badge wrappers)
+  const usernameContainer = messageContainer.querySelector('.chat-line__username-container');
+  if (usernameContainer) {
+    // Look for the span that contains badge wrappers
+    const badgeSpan = usernameContainer.querySelector('span');
+    if (badgeSpan && badgeSpan.querySelector('[data-a-target="chat-badge"]')) {
+      return badgeSpan;
+    }
+    
+    // If no badges exist yet, create the structure if we find the username container
+    if (badgeSpan && !badgeSpan.querySelector('[data-a-target="chat-badge"]')) {
+      // This span might be for badges but empty, let's use it
+      return badgeSpan;
+    }
+  }
+  
+  // Fallback: look for any existing badge and get its parent container
+  const existingBadge = messageContainer.querySelector('[data-a-target="chat-badge"]');
+  if (existingBadge) {
+    // Go up to find the container that holds all badges
+    let parent = existingBadge.parentElement;
+    while (parent && !parent.querySelector('[data-a-target="chat-badge"]')) {
+      parent = parent.parentElement;
+      if (parent === messageContainer) break;
+    }
+    if (parent && parent !== messageContainer) {
+      return parent.parentElement; // The span that contains badge wrappers
+    }
+  }
+  
+  return null;
 }
 
 function findBadgeInsertionPoint(messageContainer, usernameElement) {
