@@ -122,7 +122,7 @@
 /* 7TV mode GOLD margins */
 .seventv-chat-badge.eloward-rank-badge:has(img[alt="GOLD"]) {
   margin-right: -1.5px !important;
-  margin-left: 2.5px !important;
+  margin-left: 4px !important;
 }
 
 .eloward-rank-badge img[alt="PLATINUM"],
