@@ -58,15 +58,15 @@
 }
 
 /* Standard mode IRON margins */
-.eloward-rank-badge img[alt="IRON"] {
+.eloward-rank-badge:has(img[alt="IRON"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode IRON margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="IRON"] {
-  margin-right: -3px !important;
-  margin-left: 2px !important;
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="IRON"]) {
+  margin-right: -2.5px !important;
+  margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="BRONZE"],
@@ -75,13 +75,13 @@
 }
 
 /* Standard mode BRONZE margins */
-.eloward-rank-badge img[alt="BRONZE"] {
+.eloward-rank-badge:has(img[alt="BRONZE"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode BRONZE margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="BRONZE"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="BRONZE"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
@@ -92,49 +92,49 @@
 }
 
 /* Standard mode SILVER margins */
-.eloward-rank-badge img[alt="SILVER"] {
+.eloward-rank-badge:has(img[alt="SILVER"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode SILVER margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="SILVER"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="SILVER"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="GOLD"],
 .seventv-chat-badge.eloward-rank-badge img[alt="GOLD"] {
-  transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3px) !important;
+  transform: translate(-50%, -50%) scale(1.22) translate(-1.5px, 3px) !important;
 }
 
 /* Standard mode GOLD margins */
-.eloward-rank-badge img[alt="GOLD"] {
+.eloward-rank-badge:has(img[alt="GOLD"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode GOLD margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="GOLD"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="GOLD"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="PLATINUM"],
 .seventv-chat-badge.eloward-rank-badge img[alt="PLATINUM"] {
-  transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3.5px) !important;
+  transform: translate(-50%, -50%) scale(1.22) translate(-1.5px, 3.5px) !important;
 }
 
 /* Standard mode PLATINUM margins */
-.eloward-rank-badge img[alt="PLATINUM"] {
-  margin-right: 0px !important;
-  margin-left: 0px !important;
+.eloward-rank-badge:has(img[alt="PLATINUM"]) {
+  margin-right: 20px !important;
+  margin-left: 1px !important;
 }
 
 /* 7TV mode PLATINUM margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="PLATINUM"] {
-  margin-right: -1.5px !important;
-  margin-left: 2.5px !important;
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="PLATINUM"]) {
+  margin-right: 1px !important;
+  margin-left: 4px !important;
 }
 
 .eloward-rank-badge img[alt="EMERALD"],
@@ -143,13 +143,13 @@
 }
 
 /* Standard mode EMERALD margins */
-.eloward-rank-badge img[alt="EMERALD"] {
+.eloward-rank-badge:has(img[alt="EMERALD"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode EMERALD margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="EMERALD"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="EMERALD"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
@@ -160,13 +160,13 @@
 }
 
 /* Standard mode DIAMOND margins */
-.eloward-rank-badge img[alt="DIAMOND"] {
+.eloward-rank-badge:has(img[alt="DIAMOND"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode DIAMOND margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="DIAMOND"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="DIAMOND"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
@@ -177,13 +177,13 @@
 }
 
 /* Standard mode MASTER margins */
-.eloward-rank-badge img[alt="MASTER"] {
+.eloward-rank-badge:has(img[alt="MASTER"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode MASTER margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="MASTER"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="MASTER"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
@@ -194,13 +194,13 @@
 }
 
 /* Standard mode GRANDMASTER margins */
-.eloward-rank-badge img[alt="GRANDMASTER"] {
+.eloward-rank-badge:has(img[alt="GRANDMASTER"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode GRANDMASTER margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="GRANDMASTER"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="GRANDMASTER"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
@@ -211,13 +211,13 @@
 }
 
 /* Standard mode CHALLENGER margins */
-.eloward-rank-badge img[alt="CHALLENGER"] {
+.eloward-rank-badge:has(img[alt="CHALLENGER"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode CHALLENGER margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="CHALLENGER"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="CHALLENGER"]) {
   margin-right: 26px !important;
   margin-left: 2.5px !important;
 }
@@ -228,13 +228,13 @@
 }
 
 /* Standard mode UNRANKED margins */
-.eloward-rank-badge img[alt="UNRANKED"] {
+.eloward-rank-badge:has(img[alt="UNRANKED"]) {
   margin-right: 0px !important;
   margin-left: 0px !important;
 }
 
 /* 7TV mode UNRANKED margins */
-.seventv-chat-badge.eloward-rank-badge img[alt="UNRANKED"] {
+.seventv-chat-badge.eloward-rank-badge:has(img[alt="UNRANKED"]) {
   margin-right: -1.5px !important;
   margin-left: 2.5px !important;
 }
