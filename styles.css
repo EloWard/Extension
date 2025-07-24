@@ -26,7 +26,7 @@
   align-items: center !important;
   vertical-align: middle !important;
   cursor: pointer !important;
-  transform: translateY(-3.5px) !important;
+  transform: translateY(0px) !important;
   transition: none !important;
   width: 20px !important;
   height: 20px !important;
@@ -36,7 +36,8 @@
   -webkit-touch-callout: none !important;
   position: relative !important;
   overflow: visible !important;
-}
+  margin-right: -2px !important;
+  margin-left: 1.5px !important;
 
 /* Universal image styling within containers */
 .eloward-rank-badge img,
@@ -125,7 +126,7 @@
 
 /* Username spacing for 7TV */
 .seventv-chat-user .seventv-chat-user-badge-list + .seventv-chat-user-username {
-  margin-left: 4px !important;
+  margin-left: 2px !important;
 }
 
 /* Responsive design for small screens */
