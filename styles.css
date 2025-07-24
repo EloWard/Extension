@@ -229,14 +229,14 @@
 
 /* Standard mode UNRANKED margins */
 .eloward-rank-badge:has(img[alt="UNRANKED"]) {
-  margin-right: 0px !important;
-  margin-left: 0px !important;
+  margin-right: -1.5px !important;
+  margin-left: -1.5px !important;
 }
 
 /* 7TV mode UNRANKED margins */
 .seventv-chat-badge.eloward-rank-badge:has(img[alt="UNRANKED"]) {
-  margin-right: -1.5px !important;
-  margin-left: 2.5px !important;
+  margin-right: -3px !important;
+  margin-left: 1.5px !important;
 }
 
 /* 7TV Integration Base */
