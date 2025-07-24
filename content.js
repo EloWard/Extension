@@ -122,6 +122,7 @@ function detectChatMode() {
   if (!extensionState.initializationComplete) {
     console.log(`💬 EloWard: Chat mode detected - ${detectedMode}`);
   } else if (detectedMode !== previousMode) {
+    console.log(`💬 EloWard: Chat mode switched to - ${detectedMode}`);
     switchChatMode();
   }
   
@@ -644,7 +645,7 @@ function initializeExtension() {
         if (extensionState.currentInitializationId !== initializationId) return;
         
         if (channelActive) {
-          console.log(`🚀 EloWard: Extension active for ${extensionState.channelName}`);
+          console.log(`🚀 EloWard: Extension active for ${extensionState.channelName} (${extensionState.chatMode} mode)`);
           if (!extensionState.observerInitialized) {
             initializeObserver();
           }
