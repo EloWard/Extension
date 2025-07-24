@@ -1147,7 +1147,7 @@ function addBadgeToMessage(usernameElement, rankData) {
         addBadgeToFFZMessage(messageContainer, usernameElement, rankData);
         break;
       default:
-        addBadgeToStandardMessage(messageContainer, usernameElement, rankData);
+        addBadgeToStandardMessage(messageContainer, rankData);
         break;
     }
   } catch (error) {
@@ -1268,76 +1268,45 @@ function hideSevenTVTooltip() {
 }
 
 function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
-  const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
-  if (!insertionPoint.container) return;
+  // FFZ should use the same badge container approach as standard mode
+  const badgeContainer = findBadgeContainer(messageContainer);
+  
+  if (!badgeContainer) {
+    console.warn('EloWard: Could not find or create badge container for FFZ message');
+    return;
+  }
   
   const badge = createBadgeElement(rankData);
   badge.classList.add('ffz-badge');
   
-  try {
-    if (insertionPoint.before && insertionPoint.container.contains(insertionPoint.before)) {
-      insertionPoint.container.insertBefore(badge, insertionPoint.before);
-    } else {
-      insertionPoint.container.appendChild(badge);
-    }
-  } catch (error) {
-    try {
-      messageContainer.insertAdjacentElement('afterbegin', badge);
-    } catch (fallbackError) {
-      console.error('EloWard: FFZ badge insertion failed:', fallbackError);
-    }
-  }
+  // Create wrapper div to match other badges
+  const badgeWrapper = document.createElement('div');
+  badgeWrapper.className = 'InjectLayout-sc-1i43xsx-0 dvtAVE';
+  badgeWrapper.appendChild(badge);
+  badgeContainer.appendChild(badgeWrapper);
 }
 
-function addBadgeToStandardMessage(messageContainer, usernameElement, rankData) {
-  // Try to find proper badge container first
+function addBadgeToStandardMessage(messageContainer, rankData) {
+  // Find or create proper badge container - no fallbacks to username insertion
   const badgeContainer = findBadgeContainer(messageContainer);
   
-  if (badgeContainer) {
-    const badge = createBadgeElement(rankData);
-    
-    // Handle different wrapper structures based on chat mode
-    if (extensionState.chatMode === 'seventv') {
-      // 7TV mode - add directly to badge list
-      try {
-        badgeContainer.appendChild(badge);
-        return;
-      } catch (error) {
-        // Fall back to old method
-      }
-    } else {
-      // Standard mode - create wrapper div to match other badges
-      const badgeWrapper = document.createElement('div');
-      badgeWrapper.className = 'InjectLayout-sc-1i43xsx-0 dvtAVE';
-      badgeWrapper.appendChild(badge);
-      
-      try {
-        badgeContainer.appendChild(badgeWrapper);
-        return;
-      } catch (error) {
-        // Fall back to old method
-      }
-    }
+  if (!badgeContainer) {
+    console.warn('EloWard: Could not find or create badge container for message');
+    return;
   }
-  
-  // Fallback to original username insertion
-  const insertionPoint = findBadgeInsertionPoint(messageContainer, usernameElement);
-  if (!insertionPoint.container) return;
   
   const badge = createBadgeElement(rankData);
   
-  try {
-    if (insertionPoint.before && insertionPoint.container.contains(insertionPoint.before)) {
-      insertionPoint.container.insertBefore(badge, insertionPoint.before);
-    } else {
-      insertionPoint.container.appendChild(badge);
-    }
-  } catch (error) {
-    try {
-      messageContainer.insertAdjacentElement('afterbegin', badge);
-    } catch (fallbackError) {
-      console.error('EloWard: Standard badge insertion failed:', fallbackError);
-    }
+  // Handle different wrapper structures based on chat mode
+  if (extensionState.chatMode === 'seventv') {
+    // 7TV mode - add directly to badge list
+    badgeContainer.appendChild(badge);
+  } else {
+    // Standard/FFZ mode - create wrapper div to match other badges
+    const badgeWrapper = document.createElement('div');
+    badgeWrapper.className = 'InjectLayout-sc-1i43xsx-0 dvtAVE';
+    badgeWrapper.appendChild(badge);
+    badgeContainer.appendChild(badgeWrapper);
   }
 }
 
@@ -1387,7 +1356,7 @@ function findBadgeContainer(messageContainer) {
     }
   }
   
-  // If no badge container exists, create one like FFZ does
+  // If no badge container exists, create one - this should always succeed
   const messageContainerChild = messageContainer.querySelector('.chat-line__message-container');
   if (messageContainerChild) {
     const badgeContainer = document.createElement('span');
@@ -1395,7 +1364,8 @@ function findBadgeContainer(messageContainer) {
     
     // Insert before username container
     const usernameEl = messageContainerChild.querySelector('.chat-line__username') || 
-                       messageContainerChild.querySelector('[data-a-target="chat-message-username"]');
+                       messageContainerChild.querySelector('[data-a-target="chat-message-username"]') ||
+                       messageContainerChild.querySelector('.chat-author__display-name');
     
     if (usernameEl) {
       messageContainerChild.insertBefore(badgeContainer, usernameEl);
@@ -1406,30 +1376,13 @@ function findBadgeContainer(messageContainer) {
     return badgeContainer;
   }
   
-  return null;
+  // Last resort: create container at message level
+  const badgeContainer = document.createElement('span');
+  badgeContainer.className = 'chat-line__message--badges';
+  messageContainer.insertBefore(badgeContainer, messageContainer.firstChild);
+  return badgeContainer;
 }
 
-function findBadgeInsertionPoint(messageContainer, usernameElement) {
-  if (!usernameElement) {
-    return { container: null, before: null };
-  }
-  
-  const authorContainer = usernameElement.closest('.chat-author');
-  if (authorContainer && messageContainer.contains(authorContainer)) {
-    return { container: authorContainer, before: usernameElement };
-  }
-  
-  const parent = usernameElement.parentElement;
-  if (parent && messageContainer.contains(parent)) {
-    return { container: parent, before: usernameElement };
-  }
-  
-  if (messageContainer) {
-    return { container: messageContainer, before: messageContainer.firstElementChild };
-  }
-  
-  return { container: null, before: null };
-}
 
 function formatRankText(rankData) {
   if (!rankData || !rankData.tier || rankData.tier.toUpperCase() === 'UNRANKED') {
