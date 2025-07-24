@@ -1135,6 +1135,7 @@ function addBadgeToMessage(usernameElement, rankData) {
 
 function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) {
   let badgeList = messageContainer.querySelector('.seventv-chat-user-badge-list');
+  let badgeListWasEmpty = false;
   
   if (!badgeList) {
     const chatUser = messageContainer.querySelector('.seventv-chat-user');
@@ -1142,6 +1143,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
     
     badgeList = document.createElement('span');
     badgeList.className = 'seventv-chat-user-badge-list';
+    badgeListWasEmpty = true;
     
     const usernameEl = chatUser.querySelector('.seventv-chat-user-username');
     if (usernameEl) {
@@ -1149,12 +1151,22 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
     } else {
       chatUser.insertBefore(badgeList, chatUser.firstChild);
     }
+  } else {
+    // Check if badge list only contains non-badge elements or is empty
+    const existingBadges = badgeList.querySelectorAll('.seventv-chat-badge:not(.eloward-rank-badge)');
+    badgeListWasEmpty = existingBadges.length === 0;
   }
 
   if (badgeList.querySelector('.eloward-rank-badge')) return;
   
   const badge = document.createElement('div');
   badge.className = 'seventv-chat-badge eloward-rank-badge';
+  
+  // If this is the only badge, adjust positioning to align with username
+  if (badgeListWasEmpty) {
+    badge.classList.add('eloward-single-badge');
+  }
+  
   badge.dataset.rankText = formatRankText(rankData);
   badge.dataset.rank = rankData.tier.toLowerCase();
   badge.dataset.division = rankData.division || '';

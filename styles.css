@@ -38,6 +38,11 @@
   overflow: visible !important;
 }
 
+/* Single badge positioning fix for 7TV when no other badges exist */
+.seventv-chat-badge.eloward-rank-badge.eloward-single-badge {
+  transform: translateY(1px) !important;
+}
+
 /* Universal image styling within containers */
 .eloward-rank-badge img,
 .seventv-chat-badge.eloward-rank-badge img {
