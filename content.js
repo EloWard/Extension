@@ -1350,6 +1350,12 @@ function findBadgeContainer(messageContainer) {
     }
   }
   
+  // First, look for existing badge container (works with FFZ and other extensions)
+  const existingBadgeContainer = messageContainer.querySelector('.chat-line__message--badges');
+  if (existingBadgeContainer) {
+    return existingBadgeContainer;
+  }
+  
   // Handle standard Twitch chat - look for the badge container structure
   // Pattern: .chat-line__username-container > span (contains badge wrappers)
   const usernameContainer = messageContainer.querySelector('.chat-line__username-container');
@@ -1379,6 +1385,25 @@ function findBadgeContainer(messageContainer) {
     if (parent && parent !== messageContainer) {
       return parent.parentElement; // The span that contains badge wrappers
     }
+  }
+  
+  // If no badge container exists, create one like FFZ does
+  const messageContainerChild = messageContainer.querySelector('.chat-line__message-container');
+  if (messageContainerChild) {
+    const badgeContainer = document.createElement('span');
+    badgeContainer.className = 'chat-line__message--badges';
+    
+    // Insert before username container
+    const usernameEl = messageContainerChild.querySelector('.chat-line__username') || 
+                       messageContainerChild.querySelector('[data-a-target="chat-message-username"]');
+    
+    if (usernameEl) {
+      messageContainerChild.insertBefore(badgeContainer, usernameEl);
+    } else {
+      messageContainerChild.insertBefore(badgeContainer, messageContainerChild.firstChild);
+    }
+    
+    return badgeContainer;
   }
   
   return null;
