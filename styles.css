@@ -36,8 +36,6 @@
   -webkit-touch-callout: none !important;
   position: relative !important;
   overflow: visible !important;
-  margin-right: -1.5px !important;
-  margin-left: 2.5px !important;
 }
 
 /* Universal image styling within containers */
@@ -59,9 +57,33 @@
   transform: translate(-50%, -50%) scale(1.3) translate(-1.5px, 1px) !important;
 }
 
+/* Standard mode IRON margins */
+.eloward-rank-badge img[alt="IRON"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode IRON margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="IRON"] {
+  margin-right: -3px !important;
+  margin-left: 2px !important;
+}
+
 .eloward-rank-badge img[alt="BRONZE"],
 .seventv-chat-badge.eloward-rank-badge img[alt="BRONZE"] {
   transform: translate(-50%, -50%) scale(1.3) translate(-1.5px, 2px) !important;
+}
+
+/* Standard mode BRONZE margins */
+.eloward-rank-badge img[alt="BRONZE"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode BRONZE margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="BRONZE"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="SILVER"],
@@ -69,9 +91,33 @@
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 2px) !important;
 }
 
+/* Standard mode SILVER margins */
+.eloward-rank-badge img[alt="SILVER"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode SILVER margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="SILVER"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
+}
+
 .eloward-rank-badge img[alt="GOLD"],
 .seventv-chat-badge.eloward-rank-badge img[alt="GOLD"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3px) !important;
+}
+
+/* Standard mode GOLD margins */
+.eloward-rank-badge img[alt="GOLD"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode GOLD margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="GOLD"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="PLATINUM"],
@@ -79,9 +125,33 @@
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3.5px) !important;
 }
 
+/* Standard mode PLATINUM margins */
+.eloward-rank-badge img[alt="PLATINUM"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode PLATINUM margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="PLATINUM"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
+}
+
 .eloward-rank-badge img[alt="EMERALD"],
 .seventv-chat-badge.eloward-rank-badge img[alt="EMERALD"] {
   transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 3.5px) !important;
+}
+
+/* Standard mode EMERALD margins */
+.eloward-rank-badge img[alt="EMERALD"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode EMERALD margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="EMERALD"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="DIAMOND"],
@@ -89,9 +159,33 @@
   transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 3.5px) !important;
 }
 
+/* Standard mode DIAMOND margins */
+.eloward-rank-badge img[alt="DIAMOND"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode DIAMOND margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="DIAMOND"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
+}
+
 .eloward-rank-badge img[alt="MASTER"],
 .seventv-chat-badge.eloward-rank-badge img[alt="MASTER"] {
   transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 3.5px) !important;
+}
+
+/* Standard mode MASTER margins */
+.eloward-rank-badge img[alt="MASTER"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode MASTER margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="MASTER"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
 }
 
 .eloward-rank-badge img[alt="GRANDMASTER"],
@@ -99,14 +193,50 @@
   transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
 }
 
+/* Standard mode GRANDMASTER margins */
+.eloward-rank-badge img[alt="GRANDMASTER"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode GRANDMASTER margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="GRANDMASTER"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
+}
+
 .eloward-rank-badge img[alt="CHALLENGER"],
 .seventv-chat-badge.eloward-rank-badge img[alt="CHALLENGER"] {
   transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
 }
 
+/* Standard mode CHALLENGER margins */
+.eloward-rank-badge img[alt="CHALLENGER"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode CHALLENGER margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="CHALLENGER"] {
+  margin-right: 26px !important;
+  margin-left: 2.5px !important;
+}
+
 .eloward-rank-badge img[alt="UNRANKED"],
 .seventv-chat-badge.eloward-rank-badge img[alt="UNRANKED"] {
   transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
+}
+
+/* Standard mode UNRANKED margins */
+.eloward-rank-badge img[alt="UNRANKED"] {
+  margin-right: 0px !important;
+  margin-left: 0px !important;
+}
+
+/* 7TV mode UNRANKED margins */
+.seventv-chat-badge.eloward-rank-badge img[alt="UNRANKED"] {
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
 }
 
 /* 7TV Integration Base */
