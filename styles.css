@@ -71,7 +71,7 @@
 
 .eloward-rank-badge img[alt="BRONZE"],
 .seventv-chat-badge.eloward-rank-badge img[alt="BRONZE"] {
-  transform: translate(-50%, -50%) scale(1.3) translate(-1.5px, 2px) !important;
+  transform: translate(-50%, -50%) scale(1.2) translate(-1.5px, 2px) !important;
 }
 
 /* Standard mode BRONZE margins */
