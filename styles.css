@@ -26,7 +26,7 @@
   align-items: center !important;
   vertical-align: middle !important;
   cursor: pointer !important;
-  transform: translateY(0px) !important;
+  transform: translateY(-3px) !important;
   transition: none !important;
   width: 20px !important;
   height: 20px !important;
@@ -36,8 +36,8 @@
   -webkit-touch-callout: none !important;
   position: relative !important;
   overflow: visible !important;
-  margin-right: -2px !important;
-  margin-left: 1.5px !important;
+  margin-right: -1.5px !important;
+  margin-left: 2.5px !important;
 }
 
 /* Universal image styling within containers */
