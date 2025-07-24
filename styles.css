@@ -156,19 +156,19 @@
 
 .eloward-rank-badge img[alt="DIAMOND"],
 .seventv-chat-badge.eloward-rank-badge img[alt="DIAMOND"] {
-  transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 3.5px) !important;
+  transform: translate(-50%, -50%) scale(1.23) translate(-1.5px, 2.5px) !important;
 }
 
 /* Standard mode DIAMOND margins */
 .eloward-rank-badge:has(img[alt="DIAMOND"]) {
-  margin-right: 0px !important;
-  margin-left: 0px !important;
+  margin-right: 2px !important;
+  margin-left: 2px !important;
 }
 
 /* 7TV mode DIAMOND margins */
 .seventv-chat-badge.eloward-rank-badge:has(img[alt="DIAMOND"]) {
-  margin-right: -1.5px !important;
-  margin-left: 2.5px !important;
+  margin-right: 0.5px !important;
+  margin-left: 5px !important;
 }
 
 .eloward-rank-badge img[alt="MASTER"],
