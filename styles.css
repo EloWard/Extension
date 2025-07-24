@@ -82,7 +82,7 @@
 
 /* 7TV mode BRONZE margins */
 .seventv-chat-badge.eloward-rank-badge:has(img[alt="BRONZE"]) {
-  margin-right: -1.5px !important;
+  margin-right: -2.5px !important;
   margin-left: 2.5px !important;
 }
 
