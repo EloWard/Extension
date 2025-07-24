@@ -190,19 +190,19 @@
 
 .eloward-rank-badge img[alt="GRANDMASTER"],
 .seventv-chat-badge.eloward-rank-badge img[alt="GRANDMASTER"] {
-  transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
+  transform: translate(-50%, -50%) scale(1.1) translate(-1.5px, 4px) !important;
 }
 
 /* Standard mode GRANDMASTER margins */
 .eloward-rank-badge:has(img[alt="GRANDMASTER"]) {
-  margin-right: 0px !important;
-  margin-left: 0px !important;
+  margin-right: 1px !important;
+  margin-left: 1px !important;
 }
 
 /* 7TV mode GRANDMASTER margins */
 .seventv-chat-badge.eloward-rank-badge:has(img[alt="GRANDMASTER"]) {
-  margin-right: -1.5px !important;
-  margin-left: 2.5px !important;
+  margin-right: -1px !important;
+  margin-left: 3.5px !important;
 }
 
 .eloward-rank-badge img[alt="CHALLENGER"],
