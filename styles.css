@@ -207,19 +207,19 @@
 
 .eloward-rank-badge img[alt="CHALLENGER"],
 .seventv-chat-badge.eloward-rank-badge img[alt="CHALLENGER"] {
-  transform: translate(-50%, -50%) scale(1.0) translate(-1.5px, 4px) !important;
+  transform: translate(-50%, -50%) scale(1.22) translate(-1.5px, 4px) !important;
 }
 
 /* Standard mode CHALLENGER margins */
 .eloward-rank-badge:has(img[alt="CHALLENGER"]) {
-  margin-right: 0px !important;
-  margin-left: 0px !important;
+  margin-right: 2.5px !important;
+  margin-left: 2.5px !important;
 }
 
 /* 7TV mode CHALLENGER margins */
 .seventv-chat-badge.eloward-rank-badge:has(img[alt="CHALLENGER"]) {
-  margin-right: 26px !important;
-  margin-left: 2.5px !important;
+  margin-right: 0.5px !important;
+  margin-left: 6px !important;
 }
 
 .eloward-rank-badge img[alt="UNRANKED"],
