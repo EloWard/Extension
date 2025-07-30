@@ -880,7 +880,8 @@ async function fetchRankFromDatabase(twitchUsername) {
       division: rankData.rank_division,
       leaguePoints: rankData.lp,
       summonerName: rankData.riot_id,
-      puuid: rankData.riot_puuid
+      puuid: rankData.riot_puuid,
+      region: rankData.region
     };
   } catch (error) {
     return null;
