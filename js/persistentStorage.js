@@ -59,11 +59,15 @@ export const PersistentStorage = {
   async storeRiotUserData(userData) {
     if (!userData) return;
     
+    // Get current selectedRegion for local user region reference
+    const currentData = await chrome.storage.local.get(['selectedRegion']);
+    
     // Extract only the necessary data for display
     const persistentData = {
       gameName: userData.gameName,
       tagLine: userData.tagLine,
       puuid: userData.puuid,
+      region: currentData.selectedRegion, // Local user's selected region
       rankInfo: null
     };
     

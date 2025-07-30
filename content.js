@@ -951,7 +951,7 @@ function processUsernamesBatch(userMessageMap) {
 }
 
 function handleCurrentUserMessages(messageData) {
-  chrome.storage.local.get(['eloward_persistent_riot_user_data', 'selectedRegion'], (data) => {
+  chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
     const riotData = data.eloward_persistent_riot_user_data;
     
     if (riotData?.rankInfo) {
@@ -960,7 +960,7 @@ function handleCurrentUserMessages(messageData) {
         division: riotData.rankInfo.rank,
         leaguePoints: riotData.rankInfo.leaguePoints,
         summonerName: riotData.gameName,
-        region: data.selectedRegion
+        region: riotData.region
       };
       
       messageData.forEach(({ usernameElement }) => {
@@ -1054,7 +1054,7 @@ function processNewMessage(messageNode) {
     if (!username) return;
     
     if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
-      chrome.storage.local.get(['eloward_persistent_riot_user_data', 'selectedRegion'], (data) => {
+      chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
         const riotData = data.eloward_persistent_riot_user_data;
         
         if (riotData?.rankInfo) {
@@ -1063,7 +1063,7 @@ function processNewMessage(messageNode) {
             division: riotData.rankInfo.rank,
             leaguePoints: riotData.rankInfo.leaguePoints,
             summonerName: riotData.gameName,
-            region: data.selectedRegion
+            region: riotData.region
           };
           
           chrome.runtime.sendMessage({
