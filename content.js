@@ -102,6 +102,10 @@ function handleBadgeClick(event) {
   const username = badge.dataset.username;
   const badgeRegion = badge.dataset.region;
   
+  // Hide tooltips immediately when clicked
+  hideTooltip();
+  hideSevenTVTooltip();
+  
   if (!username || !badgeRegion) return;
   
   const opGGRegion = REGION_MAPPING[badgeRegion];
@@ -1512,6 +1516,12 @@ detectChatMode();
 setupCompatibilityMonitor();
 setupFallbackInitialization();
 initializeExtension();
+
+// Hide tooltips when window loses focus (fixes click -> new tab -> return issue)
+window.addEventListener('blur', () => {
+  hideTooltip();
+  hideSevenTVTooltip();
+});
 
 window.addEventListener('popstate', function() {
   if (!extensionState.initializationInProgress) {
