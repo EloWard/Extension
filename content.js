@@ -100,21 +100,18 @@ const REGION_MAPPING = {
 function handleBadgeClick(event) {
   const badge = event.currentTarget;
   const username = badge.dataset.username;
+  const badgeRegion = badge.dataset.region;
   
-  if (!username) return;
+  if (!username || !badgeRegion) return;
   
-  chrome.storage.local.get(['selectedRegion'], (result) => {
-    const region = result.selectedRegion || 'na1';
-    const opGGRegion = REGION_MAPPING[region];
-    
-    if (!opGGRegion) return;
-    
-    const encodedName = encodeURIComponent(username.split('#')[0]);
-    const tagLine = username.split('#')[1] || region.toUpperCase();
-    const opGGUrl = `https://op.gg/lol/summoners/${opGGRegion}/${encodedName}-${tagLine}`;
-    
-    window.open(opGGUrl, '_blank');
-  });
+  const opGGRegion = REGION_MAPPING[badgeRegion];
+  if (!opGGRegion) return;
+  
+  const encodedName = encodeURIComponent(username.split('#')[0]);
+  const tagLine = username.split('#')[1] || badgeRegion.toUpperCase();
+  const opGGUrl = `https://op.gg/lol/summoners/${opGGRegion}/${encodedName}-${tagLine}`;
+  
+  window.open(opGGUrl, '_blank');
 }
 
 function createBadgeElement(rankData) {
@@ -126,6 +123,7 @@ function createBadgeElement(rankData) {
   badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
+  badge.dataset.region = rankData.region;
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -953,7 +951,7 @@ function processUsernamesBatch(userMessageMap) {
 }
 
 function handleCurrentUserMessages(messageData) {
-  chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+  chrome.storage.local.get(['eloward_persistent_riot_user_data', 'selectedRegion'], (data) => {
     const riotData = data.eloward_persistent_riot_user_data;
     
     if (riotData?.rankInfo) {
@@ -961,7 +959,8 @@ function handleCurrentUserMessages(messageData) {
         tier: riotData.rankInfo.tier,
         division: riotData.rankInfo.rank,
         leaguePoints: riotData.rankInfo.leaguePoints,
-        summonerName: riotData.gameName
+        summonerName: riotData.gameName,
+        region: data.selectedRegion
       };
       
       messageData.forEach(({ usernameElement }) => {
@@ -1055,7 +1054,7 @@ function processNewMessage(messageNode) {
     if (!username) return;
     
     if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
-      chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+      chrome.storage.local.get(['eloward_persistent_riot_user_data', 'selectedRegion'], (data) => {
         const riotData = data.eloward_persistent_riot_user_data;
         
         if (riotData?.rankInfo) {
@@ -1063,7 +1062,8 @@ function processNewMessage(messageNode) {
             tier: riotData.rankInfo.tier,
             division: riotData.rankInfo.rank,
             leaguePoints: riotData.rankInfo.leaguePoints,
-            summonerName: riotData.gameName
+            summonerName: riotData.gameName,
+            region: data.selectedRegion
           };
           
           chrome.runtime.sendMessage({
@@ -1223,6 +1223,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
   badge.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? 
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
+  badge.dataset.region = rankData.region;
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
