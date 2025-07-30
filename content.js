@@ -91,6 +91,32 @@ const SUPPORTED_GAMES = { 'League of Legends': true };
 let processedMessages = new Set();
 let tooltipElement = null;
 
+const REGION_MAPPING = {
+  'na1': 'na', 'euw1': 'euw', 'eun1': 'eune', 'kr': 'kr', 'br1': 'br',
+  'jp1': 'jp', 'la1': 'lan', 'la2': 'las', 'oc1': 'oce', 'tr1': 'tr',
+  'ru': 'ru', 'me1': 'me', 'sea': 'sg', 'tw2': 'tw', 'vn2': 'vn'
+};
+
+function handleBadgeClick(event) {
+  const badge = event.currentTarget;
+  const username = badge.dataset.username;
+  
+  if (!username) return;
+  
+  chrome.storage.local.get(['selectedRegion'], (result) => {
+    const region = result.selectedRegion || 'na1';
+    const opGGRegion = REGION_MAPPING[region];
+    
+    if (!opGGRegion) return;
+    
+    const encodedName = encodeURIComponent(username.split('#')[0]);
+    const tagLine = username.split('#')[1] || region.toUpperCase();
+    const opGGUrl = `https://op.gg/lol/summoners/${opGGRegion}/${encodedName}-${tagLine}`;
+    
+    window.open(opGGUrl, '_blank');
+  });
+}
+
 function createBadgeElement(rankData) {
   const badge = document.createElement('span');
   badge.className = 'eloward-rank-badge';
@@ -111,6 +137,8 @@ function createBadgeElement(rankData) {
   badge.appendChild(img);
   badge.addEventListener('mouseenter', showTooltip);
   badge.addEventListener('mouseleave', hideTooltip);
+  badge.addEventListener('click', handleBadgeClick);
+  badge.style.cursor = 'pointer';
   
   return badge;
 }
@@ -1206,6 +1234,8 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
   badge.appendChild(img);
   badge.addEventListener('mouseenter', (e) => showSevenTVTooltip(e, rankData));
   badge.addEventListener('mouseleave', () => hideSevenTVTooltip());
+  badge.addEventListener('click', handleBadgeClick);
+  badge.style.cursor = 'pointer';
   
   badgeList.appendChild(badge);
 }
