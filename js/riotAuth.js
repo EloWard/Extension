@@ -761,28 +761,27 @@ export const RiotAuth = {
       } catch (error) {
       }
       
-      // Delete rank data from database if we have a Twitch username
-      if (twitchUsername) {
+      // Delete rank data from database
+      try {
+        let riotToken = null;
         try {
-          
-          const rankWorkerUrl = 'https://eloward-ranks.unleashai.workers.dev/api/ranks/lol';
-          const response = await fetch(`${rankWorkerUrl}/${twitchUsername.toLowerCase()}`, {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (response.ok) {
-            const result = await response.json();
-          } else if (response.status === 404) {
-          } else {
-          }
-        } catch (deleteError) {
-          // Don't fail the disconnect if database deletion fails
+          riotToken = await this.getValidToken();
+        } catch {
+          try {
+            const refreshResult = await this.refreshToken();
+            riotToken = refreshResult?.access_token;
+          } catch {}
         }
-      } else {
-      }
+        
+        if (riotToken) {
+          const region = await this._getStoredValue('selectedRegion') || 'na1';
+          await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ riot_token: riotToken, region: region })
+          });
+        }
+      } catch {}
       
       // Clear persistent user data
       await PersistentStorage.clearServiceData('riot');
