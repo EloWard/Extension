@@ -64,10 +64,9 @@ export const PersistentStorage = {
     
     // Extract only the necessary data for display
     const persistentData = {
-      gameName: userData.gameName,
-      tagLine: userData.tagLine,
+      riotId: userData.riotId,
       puuid: userData.puuid,
-      region: currentData.selectedRegion, // Local user's selected region
+      region: currentData.selectedRegion,
       rankInfo: null
     };
     
@@ -223,9 +222,7 @@ export const PersistentStorage = {
 
       return {
         twitchUsername: twitchData?.login || null,
-        riotUsername: riotData?.gameName && riotData?.tagLine 
-          ? `${riotData.gameName}#${riotData.tagLine}` 
-          : null,
+        riotUsername: riotData?.riotId || null,
         puuid: riotData?.puuid || null
       };
     } catch (error) {
@@ -250,7 +247,7 @@ export const PersistentStorage = {
 
       return {
         hasTwitchData: !!twitchData?.login,
-        hasRiotData: !!(riotData?.gameName && riotData?.puuid),
+        hasRiotData: !!(riotData?.riotId && riotData?.puuid),
         hasRankData: !!riotData?.rankInfo,
         canAccessDatabase: !!(twitchData?.login && riotData?.puuid)
       };

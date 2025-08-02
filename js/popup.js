@@ -310,10 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update UI based on user data
   function updateUserInterface(userData) {
     try {
-      if (userData && userData.gameName) {
-        // Show Riot ID
-        const riotId = `${userData.gameName}#${userData.tagLine}`;
-        riotConnectionStatus.textContent = riotId;
+      if (userData && userData.riotId) {
+        riotConnectionStatus.textContent = userData.riotId;
         riotConnectionStatus.classList.add('connected');
         riotConnectionStatus.classList.remove('error', 'connecting');
         updateRiotButtonText('Disconnect');
@@ -382,10 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Check persistent storage for user data (even if not "connected" due to expired tokens)
       const storedRiotData = await PersistentStorage.getRiotUserData();
       if (storedRiotData) {
-        // Adapt stored data to match the format expected by updateUserInterface
         const userData = {
-          gameName: storedRiotData.gameName,
-          tagLine: storedRiotData.tagLine,
+          riotId: storedRiotData.riotId,
           puuid: storedRiotData.puuid,
           soloQueueRank: storedRiotData.rankInfo
         };
@@ -400,9 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
           // Still show refresh button - it will handle re-authentication if needed
           refreshRankBtn.classList.remove('hidden');
           
-          // Show connection status as the stored username (data preserved)
-          const riotId = `${userData.gameName}#${userData.tagLine}`;
-          riotConnectionStatus.textContent = riotId;
+          riotConnectionStatus.textContent = userData.riotId;
           riotConnectionStatus.classList.add('connected');
           updateRiotButtonText('Disconnect');
         }

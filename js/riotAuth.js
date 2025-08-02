@@ -916,20 +916,7 @@ export const RiotAuth = {
         throw error || new Error('Failed to get account info from all available sources');
       }
       
-      // Ensure we have the most complete account info possible
-      // Don't overwrite existing values with default/generic ones
-      const storedAccountInfo = await this._getStoredValue(this.config.storageKeys.accountInfo) || {};
-      
-      // If the API response doesn't have game name/tag line but we have them stored, use the stored values
-      if (!accountInfo.gameName && storedAccountInfo.gameName && storedAccountInfo.gameName !== 'Summoner') {
-        accountInfo.gameName = storedAccountInfo.gameName;
-      }
-      
-      if (!accountInfo.tagLine && storedAccountInfo.tagLine && storedAccountInfo.tagLine !== 'Unknown') {
-        accountInfo.tagLine = storedAccountInfo.tagLine;
-      }
-      
-      // Only use default values if we don't have anything
+      // Use fallback values only if API data is missing
       if (!accountInfo.gameName) {
         accountInfo.gameName = 'Summoner';
       }
@@ -1181,9 +1168,10 @@ export const RiotAuth = {
         rankInfo = [];
       }
       
-      // Combine all data
+      // Combine all data with unified riotId
       const userData = {
-        ...accountInfo,
+        riotId: accountInfo.tagLine ? `${accountInfo.gameName}#${accountInfo.tagLine}` : accountInfo.gameName,
+        puuid: accountInfo.puuid,
         ranks: rankInfo || [],
         soloQueueRank: rankInfo && rankInfo.length ? 
           rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null : null
