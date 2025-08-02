@@ -959,11 +959,14 @@ function handleCurrentUserMessages(messageData) {
     const riotData = data.eloward_persistent_riot_user_data;
     
     if (riotData?.rankInfo) {
+      // Create the full Riot ID using both gameName and tagLine
+      const fullRiotId = riotData.tagLine ? `${riotData.gameName}#${riotData.tagLine}` : riotData.gameName;
+      
       const userRankData = {
         tier: riotData.rankInfo.tier,
         division: riotData.rankInfo.rank,
         leaguePoints: riotData.rankInfo.leaguePoints,
-        summonerName: riotData.gameName,
+        summonerName: fullRiotId,
         region: riotData.region
       };
       
@@ -1062,11 +1065,14 @@ function processNewMessage(messageNode) {
         const riotData = data.eloward_persistent_riot_user_data;
         
         if (riotData?.rankInfo) {
+          // Create the full Riot ID using both gameName and tagLine
+          const fullRiotId = riotData.tagLine ? `${riotData.gameName}#${riotData.tagLine}` : riotData.gameName;
+          
           const userRankData = {
             tier: riotData.rankInfo.tier,
             division: riotData.rankInfo.rank,
             leaguePoints: riotData.rankInfo.leaguePoints,
-            summonerName: riotData.gameName,
+            summonerName: fullRiotId,
             region: riotData.region
           };
           
