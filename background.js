@@ -203,6 +203,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[Background] Received internal message:', message, 'from sender:', sender);
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
@@ -276,11 +277,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'auth_callback') {
+    console.log('[Background] Received auth_callback message:', message);
+    
+    let params;
     if (message.code) {
-      // Handle auth callback with code
+      // Handle direct code in message
+      params = {
+        code: message.code,
+        state: message.state,
+        service: message.service || 'riot'
+      };
+    } else if (message.params) {
+      // Handle params object
+      params = message.params;
     } else {
-      handleAuthCallback(message.params);
+      console.log('[Background] No valid auth data in message');
+      sendResponse({ success: false, error: 'No auth data' });
+      return true;
     }
+    
+    console.log('[Background] Processing auth callback with params:', params);
+    handleAuthCallback(params);
     sendResponse({ success: true });
     return true;
   }
@@ -1022,4 +1039,35 @@ async function incrementSuccessfulLookupCounter(channelName) {
   } catch (error) {
     return false;
   }
-} 
+}
+
+// IMPORTANT: Listen for external messages from the redirect page
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  console.log('[Background] Received EXTERNAL message:', message, 'from sender:', sender);
+  
+  // Handle auth callbacks from the redirect page
+  if (message.type === 'auth_callback') {
+    console.log('[Background] Processing external auth_callback:', message);
+    
+    let params;
+    if (message.params) {
+      params = message.params;
+    } else {
+      params = {
+        code: message.code,
+        state: message.state,
+        service: message.service || 'riot'
+      };
+    }
+    
+    console.log('[Background] Processing external auth callback with params:', params);
+    handleAuthCallback(params);
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // Unknown external message
+  console.log('[Background] Unknown external message type:', message.type);
+  sendResponse({ success: false, error: 'Unknown message type' });
+  return true;
+}); 

@@ -120,6 +120,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Disable Riot controls initially (will be updated after auth status check)
   setRiotControlsDisabled(true);
 
+  // Check for any pending auth callbacks in localStorage first
+  checkForPendingAuthCallback();
+  
+  // Also check if we should look for auth data when no Riot account exists
+  checkForAuthOnStartup();
+  
   // Check authentication status
   checkAuthStatus();
 
@@ -245,10 +251,19 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Listen for messages from the auth window or background script
   window.addEventListener('message', function(event) {
+    // Debug logging for all messages
+    if (event.data && (event.data.source === 'eloward_auth' || event.data.type === 'auth_callback')) {
+      console.log('[Popup] Received message:', event.data);
+      console.log('[Popup] Message service:', event.data.service);
+      console.log('[Popup] processingMessage flag:', processingMessage);
+    }
+    
     // Handle auth callback messages
     if (!processingMessage && event.data && 
         ((event.data.type === 'auth_callback' && event.data.code) || 
          (event.data.source === 'eloward_auth' && event.data.code))) {
+      
+      console.log('[Popup] Processing auth callback message');
       
       // Set flag to prevent recursion
       processingMessage = true;
@@ -258,6 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'auth_callback': event.data,
         'eloward_auth_callback': event.data
       }, () => {
+        console.log('[Popup] Stored auth callback in chrome.storage');
         // Process the auth callback now
         processAuthCallback(event.data);
         
@@ -369,6 +385,148 @@ document.addEventListener('DOMContentLoaded', () => {
     const firstTime = await isFirstTimeUser();
     updateRiotButtonText(firstTime ? 'Sign In' : 'Connect');
     connectRiotBtn.disabled = false;
+  }
+
+  // Check for pending auth callbacks in localStorage (handles timing issues)
+  async function checkForPendingAuthCallback() {
+    try {
+      console.log('[Popup] Checking localStorage for pending auth callbacks');
+      console.log('[Popup] Current window.location:', window.location.href);
+      console.log('[Popup] Current origin:', window.location.origin);
+      
+      // Log all localStorage contents for debugging
+      console.log('[Popup] All localStorage keys:', Object.keys(localStorage));
+      console.log('[Popup] localStorage.length:', localStorage.length);
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        console.log(`[Popup] localStorage[${key}]:`, value);
+      }
+      
+      // Check for Riot auth callback
+      const riotCallback = localStorage.getItem('eloward_auth_callback');
+      console.log('[Popup] Riot callback from localStorage:', riotCallback);
+      if (riotCallback) {
+        console.log('[Popup] Found pending Riot auth callback in localStorage');
+        try {
+          const parsed = JSON.parse(riotCallback);
+          if (parsed && parsed.code && parsed.service === 'riot') {
+            console.log('[Popup] Processing pending Riot auth callback:', parsed);
+            
+            // Store in chrome.storage for RiotAuth to find
+            chrome.storage.local.set({
+              'auth_callback': parsed,
+              'eloward_auth_callback': parsed
+            }, () => {
+              console.log('[Popup] Stored pending Riot callback in chrome.storage');
+              processAuthCallback(parsed);
+              // Stop polling since we found and processed the callback
+              stopAuthPolling();
+            });
+            
+            // Clean up localStorage
+            localStorage.removeItem('eloward_auth_callback');
+          }
+        } catch (parseError) {
+          console.error('[Popup] Failed to parse localStorage auth callback:', parseError);
+          localStorage.removeItem('eloward_auth_callback'); // Clean up bad data
+        }
+      }
+      
+      // Check for other possible keys
+      const altCallback = localStorage.getItem('auth_callback');
+      if (altCallback && !riotCallback) { // Only if we didn't already process one
+        console.log('[Popup] Found pending auth callback in localStorage (alt key)');
+        try {
+          const parsed = JSON.parse(altCallback);
+          if (parsed && parsed.code && parsed.service === 'riot') {
+            console.log('[Popup] Processing pending alt auth callback:', parsed);
+            
+            chrome.storage.local.set({
+              'auth_callback': parsed,
+              'eloward_auth_callback': parsed
+            }, () => {
+              console.log('[Popup] Stored pending alt callback in chrome.storage');
+              processAuthCallback(parsed);
+              // Stop polling since we found and processed the callback
+              stopAuthPolling();
+            });
+            
+            localStorage.removeItem('auth_callback');
+          }
+        } catch (parseError) {
+          console.error('[Popup] Failed to parse alt localStorage auth callback:', parseError);
+          localStorage.removeItem('auth_callback');
+        }
+      }
+      
+    } catch (error) {
+      console.error('[Popup] Error checking localStorage for auth callbacks:', error);
+    }
+  }
+
+  // Check for auth data on startup if no Riot account exists
+  async function checkForAuthOnStartup() {
+    try {
+      console.log('[Popup] Checking if we should look for auth data on startup');
+      
+      // Check if we already have a Riot account in persistent storage
+      const persistentRiotData = await PersistentStorage.getRiotUserData();
+      console.log('[Popup] Existing persistent Riot data:', persistentRiotData);
+      
+      if (!persistentRiotData || !persistentRiotData.riotId) {
+        console.log('[Popup] No Riot account in persistent storage, checking localStorage for auth data');
+        
+        // Force check localStorage for any auth data
+        await checkForPendingAuthCallback();
+        
+        // Also set up a brief polling period in case auth data arrives shortly
+        setTimeout(() => {
+          console.log('[Popup] Delayed startup auth check');
+          checkForPendingAuthCallback();
+        }, 1000);
+        
+        setTimeout(() => {
+          console.log('[Popup] Final delayed startup auth check');
+          checkForPendingAuthCallback();
+        }, 3000);
+      } else {
+        console.log('[Popup] Riot account already exists, skipping startup auth check');
+      }
+    } catch (error) {
+      console.error('[Popup] Error in startup auth check:', error);
+    }
+  }
+
+  // Polling for localStorage during active authentication
+  let authPollingInterval = null;
+  
+  function startAuthPolling() {
+    console.log('[Popup] Starting auth polling for instant localStorage detection');
+    
+    // Clear any existing polling
+    if (authPollingInterval) {
+      clearInterval(authPollingInterval);
+    }
+    
+    // Poll every 500ms during auth
+    authPollingInterval = setInterval(() => {
+      console.log('[Popup] Polling localStorage for auth updates...');
+      checkForPendingAuthCallback();
+    }, 500);
+    
+    // Stop polling after 5 minutes (safety timeout)
+    setTimeout(() => {
+      stopAuthPolling();
+    }, 5 * 60 * 1000);
+  }
+  
+  function stopAuthPolling() {
+    if (authPollingInterval) {
+      console.log('[Popup] Stopping auth polling');
+      clearInterval(authPollingInterval);
+      authPollingInterval = null;
+    }
   }
 
   // Functions
@@ -528,6 +686,9 @@ document.addEventListener('DOMContentLoaded', () => {
   async function connectRiotAccount() {
     // Disable button during operation
     connectRiotBtn.disabled = true;
+    
+    // Start polling for localStorage updates during auth (for instant detection)
+    startAuthPolling();
     
     try {
       // Store current UI state to determine actual intent

@@ -80,6 +80,7 @@ export const RiotAuth = {
    */
   async authenticate(region) {
     try {
+      console.log('[RiotAuth] Starting authentication flow for region:', region);
       
       // Clear any previous auth states
       await chrome.storage.local.remove([this.config.storageKeys.authState]);
@@ -102,33 +103,40 @@ export const RiotAuth = {
         // Non-fatal error, continue with authentication
       }
       
-      // Open the auth window
-      this._openAuthWindow(authUrl);
+      // Set up callback listener BEFORE opening the auth window
+      const authResultPromise = this._waitForAuthCallback();
+      
+      // Small delay to ensure listener is set up
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Open the auth window and wait for it to open
+      const openedAuthWindow = await this._openAuthWindow(authUrl);
+      
+      // Update the authWindow reference for the AuthCallbackWatcher
+      if (openedAuthWindow) {
+        this.authWindow = openedAuthWindow;
+        // Also update the current watcher if it exists
+        if (this._currentAuthWatcher) {
+          this._currentAuthWatcher.updateWindow(openedAuthWindow);
+        }
+      }
       
       // Wait for the authentication callback
-      const authResult = await this._waitForAuthCallback();
+      const authResult = await authResultPromise;
       
       if (!authResult || !authResult.code) {
         throw new Error('Authentication cancelled or failed');
       }
       
-      
       // Verify the state parameter to prevent CSRF attacks
       if (authResult.state !== state) {
-        
         // Try fallback state check using storage
         const storedState = await this._getStoredAuthState();
         
         if (authResult.state !== storedState) {
-          
-          // Security failure - state mismatch indicates potential CSRF attack
           throw new Error('Security verification failed: state parameter mismatch. Please try again.');
-        } else {
         }
-      } else {
       }
-      
-
       
       // Exchange code for tokens
       await this.exchangeCodeForTokens(authResult.code);
@@ -138,9 +146,11 @@ export const RiotAuth = {
       
       // Store the user data in persistent storage
       await PersistentStorage.storeRiotUserData(userData);
+      console.log('[RiotAuth] Authentication completed successfully');
       
       return userData;
     } catch (error) {
+      console.error('[RiotAuth] Authentication error:', error.message);
       throw error;
     }
   },
@@ -211,113 +221,69 @@ export const RiotAuth = {
    * @private
    */
   _openAuthWindow(authUrl) {
-    
-    try {
-      // Try to open directly with window.open
-      this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
-      
-      if (this.authWindow) {
-      } else {
-        // If window.open failed (likely due to popup blocker), try using the background script
-        chrome.runtime.sendMessage({
-          type: 'open_auth_window',
-          url: authUrl,
-          state: this._getStoredAuthState()
-        }, response => {
-          if (chrome.runtime.lastError) {
-            throw new Error('Failed to open authentication window - popup may be blocked');
-          } else if (response && response.success) {
-          } else {
-            throw new Error('Failed to open authentication window - unknown error');
+    return new Promise((resolve, reject) => {
+      try {
+        // Try to open directly with window.open first
+        console.log('[RiotAuth] Attempting to open auth window with window.open');
+        this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
+        
+        if (this.authWindow && !this.authWindow.closed) {
+          console.log('[RiotAuth] Successfully opened window with window.open');
+          // Try to focus the window
+          if (this.authWindow.focus) {
+            this.authWindow.focus();
           }
-        });
+          resolve(this.authWindow);
+        } else {
+          console.log('[RiotAuth] window.open failed, falling back to background script');
+          // If window.open failed (likely due to popup blocker), use background script
+          this.authWindow = null; // Ensure it's null
+          
+          // Get the stored state asynchronously and then send message
+          this._getStoredAuthState().then(storedState => {
+            chrome.runtime.sendMessage({
+              type: 'open_auth_window',
+              url: authUrl,
+              state: storedState
+            }, response => {
+              if (chrome.runtime.lastError) {
+                console.error('[RiotAuth] Background script failed:', chrome.runtime.lastError);
+                reject(new Error('Failed to open authentication window - popup may be blocked'));
+              } else if (response && response.success) {
+                console.log('[RiotAuth] Background script opened window successfully');
+                // When using background script, we don't have a direct window reference
+                // But the window will still send postMessage to popup.js which will store it in chrome.storage
+                resolve(null); // No direct window reference, but window was opened
+              } else {
+                console.error('[RiotAuth] Background script response:', response);
+                reject(new Error('Failed to open authentication window - unknown error'));
+              }
+            });
+          }).catch(error => {
+            console.error('[RiotAuth] Failed to get stored state:', error);
+            reject(new Error('Failed to get authentication state'));
+          });
+        }
+      } catch (e) {
+        console.error('[RiotAuth] Exception opening window:', e);
+        reject(new Error('Failed to open authentication window - ' + e.message));
       }
-    } catch (e) {
-      throw new Error('Failed to open authentication window - ' + e.message);
-    }
+    });
   },
   
   /**
-   * Wait for authentication callback
+   * Wait for authentication callback using a robust polling strategy
    * @returns {Promise<Object|null>} - The authentication result or null if cancelled
    * @private
    */
   async _waitForAuthCallback() {
+    console.log('[RiotAuth] Starting callback wait mechanism');
     
     return new Promise(resolve => {
-      const maxWaitTime = 300000; // 5 minutes
-      const checkInterval = 1000; // 1 second
-      let elapsedTime = 0;
-      let intervalId; // Declare intervalId variable here
-      
-      // Function to check for auth callback data
-      const checkForCallback = async () => {
-        // Check chrome.storage for callback data
-        const data = await new Promise(r => {
-          chrome.storage.local.get(['auth_callback', 'eloward_auth_callback'], r);
-        });
-        
-        const callback = data.auth_callback || data.eloward_auth_callback;
-        
-        if (callback && callback.code) {
-          clearInterval(intervalId);
-          
-          // Clear the callback data from storage to prevent reuse
-          try {
-            chrome.storage.local.remove(['auth_callback', 'eloward_auth_callback'], () => {
-            });
-          } catch (e) {
-          }
-          
-          resolve(callback);
-          return true;
-        }
-        
-        // Check if auth window was closed by user
-        if (this.authWindow && this.authWindow.closed) {
-          clearInterval(intervalId);
-          resolve(null); // User cancelled
-          return true;
-        }
-        
-        // Check if we've waited too long
-        elapsedTime += checkInterval;
-        if (elapsedTime >= maxWaitTime) {
-          clearInterval(intervalId);
-          resolve(null); // Timeout
-          return true;
-        }
-        
-        return false;
-      };
-      
-      // Check immediately first
-      checkForCallback().then(found => {
-        if (!found) {
-          // If not found, start interval for checking
-          intervalId = setInterval(checkForCallback, checkInterval);
-        }
-      });
-      
-      // Also add a message listener for direct window messages
-      const messageListener = event => {
-        if (event.data && 
-            ((event.data.type === 'auth_callback' && event.data.code) || 
-             (event.data.source === 'eloward_auth' && event.data.code))) {
-          
-          window.removeEventListener('message', messageListener);
-          
-          // Store in chrome.storage for consistency
-          chrome.storage.local.set({
-            'auth_callback': event.data,
-            'eloward_auth_callback': event.data
-          });
-          
-          resolve(event.data);
-        }
-      };
-      
-      window.addEventListener('message', messageListener);
+      const authCallbackWatcher = new AuthCallbackWatcher(this.authWindow, resolve);
+      // Store reference so we can update the window later
+      this._currentAuthWatcher = authCallbackWatcher;
+      authCallbackWatcher.start();
     });
   },
   
@@ -1340,3 +1306,293 @@ export const RiotAuth = {
   
   // Additional methods and helper functions can be added here
 };
+
+/**
+ * Robust authentication callback watcher using OOP principles
+ * Handles the complexity of waiting for OAuth callbacks while avoiding false positives
+ */
+class AuthCallbackWatcher {
+  constructor(authWindow, resolveCallback) {
+    this.authWindow = authWindow;
+    this.resolveCallback = resolveCallback;
+    
+    // Configuration
+    this.config = {
+      maxWaitTime: 600000, // 10 minutes total - allow time for complex auth flows
+      checkInterval: 500, // Check every 500ms for faster callback detection
+      windowStabilityDelay: 10000, // Wait 10 seconds after window appears closed - account for slow redirects
+      callbackKeys: ['auth_callback', 'eloward_auth_callback', 'riot_auth_callback']
+    };
+    
+    // State tracking
+    this.state = {
+      elapsedTime: 0,
+      intervalId: null,
+      windowClosedTime: null,
+      isResolved: false,
+      messageListener: null
+    };
+    
+    // Set up window message listener to catch postMessage from redirect page
+    this.state.messageListener = (event) => {
+      if (this.state.isResolved) return;
+      
+      // Check if this is an auth callback message
+      if (event.data && 
+          event.data.source === 'eloward_auth' && 
+          event.data.type === 'auth_callback' &&
+          event.data.service === 'riot' &&
+          event.data.code) {
+        console.log('[AuthCallbackWatcher] Received auth callback via postMessage');
+        this._resolveWith({
+          code: event.data.code,
+          state: event.data.state
+        });
+      }
+    };
+    
+    // Start listening for messages
+    window.addEventListener('message', this.state.messageListener);
+    
+    console.log('[AuthCallbackWatcher] Initialized with window:', !!authWindow);
+  }
+  
+  /**
+   * Update the window reference (useful when window is opened after AuthCallbackWatcher creation)
+   * @param {Window} newWindow - The new window reference
+   */
+  updateWindow(newWindow) {
+    this.authWindow = newWindow;
+    console.log('[AuthCallbackWatcher] Updated window reference:', !!newWindow);
+  }
+  
+  /**
+   * Start the callback watching process
+   */
+  start() {
+    console.log('[AuthCallbackWatcher] Starting callback monitoring');
+    
+    // Check immediately first
+    this._checkForCallback().then(found => {
+      if (!found && !this.state.isResolved) {
+        // Start interval checking
+        this.state.intervalId = setInterval(() => this._checkForCallback(), this.config.checkInterval);
+      }
+    });
+    
+    // Also immediately check localStorage for any existing data
+    // This handles cases where the redirect page already loaded and stored data
+    setTimeout(() => {
+      if (!this.state.isResolved) {
+        this._checkForCallback();
+      }
+    }, 50);
+  }
+  
+  /**
+   * Check for authentication callback data
+   * @returns {Promise<boolean>} - True if callback found and resolved
+   * @private
+   */
+  async _checkForCallback() {
+    if (this.state.isResolved) {
+      return true;
+    }
+    
+    // Priority check: Look for callback data first and always prioritize it
+    const callbackData = await this._getCallbackData();
+    if (callbackData) {
+      console.log('[AuthCallbackWatcher] Callback data found, resolving successfully');
+      this._resolveWith(callbackData);
+      return true;
+    }
+    
+    // Only check window state if we don't have callback data
+    // This prevents premature window closure detection during OAuth redirects
+    const windowState = this._getWindowState();
+    if (windowState === 'open') {
+      // Reset closed timer if window is open
+      this.state.windowClosedTime = null;
+    } else if (windowState === 'closed') {
+      // Only handle window closure if we're really sure it's closed
+      return this._handleWindowClosed();
+    }
+    
+    // Check timeout - but give plenty of time for complex auth flows
+    this.state.elapsedTime += this.config.checkInterval;
+    if (this.state.elapsedTime >= this.config.maxWaitTime) {
+      console.log('[AuthCallbackWatcher] Timeout reached after', this.config.maxWaitTime / 1000, 'seconds');
+      // Final desperate check for callback data before giving up
+      const finalCallbackCheck = await this._getCallbackData();
+      if (finalCallbackCheck) {
+        console.log('[AuthCallbackWatcher] Found callback data at last second!');
+        this._resolveWith(finalCallbackCheck);
+        return true;
+      }
+      console.log('[AuthCallbackWatcher] No callback data found, resolving as cancelled');
+      this._resolveWith(null);
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Get callback data from storage
+   * @returns {Promise<Object|null>} - Callback data or null
+   * @private
+   */
+  async _getCallbackData() {
+    // First check chrome.storage.local
+    const chromeStorageData = await new Promise(resolve => {
+      chrome.storage.local.get(this.config.callbackKeys, data => {
+        // Check all possible callback keys
+        for (const key of this.config.callbackKeys) {
+          const callback = data[key];
+          if (callback && callback.code) {
+            console.log(`[AuthCallbackWatcher] Found callback data in chrome.storage key: ${key}`);
+            resolve(callback);
+            return;
+          }
+        }
+        resolve(null);
+      });
+    });
+    
+    if (chromeStorageData) {
+      return chromeStorageData;
+    }
+    
+    // Also check localStorage as fallback (where the redirect page stores data)
+    try {
+      const localStorageKeys = ['eloward_auth_callback', 'auth_callback'];
+      for (const key of localStorageKeys) {
+        const storedData = localStorage.getItem(key);
+        if (storedData) {
+          const parsed = JSON.parse(storedData);
+          if (parsed && parsed.code && parsed.service === 'riot') {
+            console.log(`[AuthCallbackWatcher] Found callback data in localStorage key: ${key}`);
+            // Clean up localStorage after successful retrieval
+            localStorage.removeItem(key);
+            return parsed;
+          }
+        }
+      }
+    } catch (error) {
+      console.log('[AuthCallbackWatcher] Error checking localStorage:', error);
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Get current window state
+   * @returns {string} - 'open', 'closed', or 'unknown'
+   * @private
+   */
+  _getWindowState() {
+    if (!this.authWindow) {
+      // If no window reference, assume window is open (could be opened via background script)
+      // We'll rely on callback detection and timeout instead of window state
+      return 'open';
+    }
+    
+    try {
+      // During OAuth redirects, window.closed can temporarily return true
+      // We need to be more intelligent about detecting actual window closure
+      if (this.authWindow.closed) {
+        // Double-check by trying to access window properties
+        // If the window is truly closed, these will throw or be inaccessible
+        try {
+          // Try to access the location - this will fail if window is actually closed
+          const location = this.authWindow.location;
+          // If we can access location, window is likely just navigating, not closed
+          return 'open';
+        } catch (locationError) {
+          // If we can't access location due to cross-origin restrictions, 
+          // that actually means the window is still open but on a different domain
+          if (locationError.name === 'SecurityError' || locationError.message.includes('cross-origin')) {
+            return 'open';
+          }
+          // True closure - we can't access anything
+          return 'closed';
+        }
+      } else {
+        return 'open';
+      }
+    } catch (error) {
+      // If we can't access the window object at all, it's truly closed
+      console.log('[AuthCallbackWatcher] Window access error, window is closed:', error.message);
+      return 'closed';
+    }
+  }
+  
+  /**
+   * Handle window closed state with stability delay
+   * @returns {Promise<boolean>} - True if resolved
+   * @private
+   */
+  async _handleWindowClosed() {
+    const now = Date.now();
+    
+    // Start the closed timer if not already started
+    if (!this.state.windowClosedTime) {
+      this.state.windowClosedTime = now;
+      console.log('[AuthCallbackWatcher] Window appears closed, starting stability delay');
+      return false;
+    }
+    
+    // Check if window has been closed long enough to be considered truly closed
+    const closedDuration = now - this.state.windowClosedTime;
+    if (closedDuration >= this.config.windowStabilityDelay) {
+      // Final check for late-arriving callback data
+      const lateCallback = await this._getCallbackData();
+      if (lateCallback) {
+        console.log('[AuthCallbackWatcher] Found late callback data after window closed');
+        this._resolveWith(lateCallback);
+        return true;
+      }
+      
+      console.log('[AuthCallbackWatcher] Window confirmed closed, resolving as cancelled');
+      this._resolveWith(null);
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Clean up and resolve with the given result
+   * @param {Object|null} result - The result to resolve with
+   * @private
+   */
+  _resolveWith(result) {
+    if (this.state.isResolved) {
+      return;
+    }
+    
+    this.state.isResolved = true;
+    
+    // Clean up interval
+    if (this.state.intervalId) {
+      clearInterval(this.state.intervalId);
+      this.state.intervalId = null;
+    }
+    
+    // Clean up message listener
+    if (this.state.messageListener) {
+      window.removeEventListener('message', this.state.messageListener);
+      this.state.messageListener = null;
+    }
+    
+    // Clean up callback data from storage if successful
+    if (result && result.code) {
+      chrome.storage.local.remove(this.config.callbackKeys, () => {
+        console.log('[AuthCallbackWatcher] Cleaned up callback data from storage');
+      });
+    }
+    
+    // Resolve the promise
+    this.resolveCallback(result);
+  }
+}
