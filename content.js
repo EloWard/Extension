@@ -1,24 +1,4 @@
-/*
- * Copyright 2024 EloWard
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * "Commons Clause" License Condition v1.0
- * The Software is provided to you by the Licensor under the License, as defined below, 
- * subject to the following condition. Without limiting other conditions in the License, 
- * the grant of rights under the License will not include, and the License does not grant 
- * to you, the right to Sell the Software.
- */
+/* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
 document.body.setAttribute('data-eloward-chrome-ext', 'active');
 document.documentElement.setAttribute('data-eloward-chrome-ext', 'active');
@@ -102,7 +82,7 @@ function handleBadgeClick(event) {
   const username = badge.dataset.username;
   const badgeRegion = badge.dataset.region;
   
-  // Hide tooltips immediately when clicked
+
   hideTooltip();
   hideSevenTVTooltip();
   
@@ -171,10 +151,7 @@ function detectChatMode() {
   extensionState.compatibilityMode = detectedMode !== 'standard';
   extensionState.chatMode = detectedMode;
   
-  if (!extensionState.initializationComplete) {
-    console.log(`💬 EloWard: Chat mode detected - ${detectedMode}`);
-  } else if (detectedMode !== previousMode) {
-    console.log(`💬 EloWard: Chat mode switched to - ${detectedMode}`);
+  if (detectedMode !== previousMode && extensionState.initializationComplete) {
     switchChatMode();
   }
   
@@ -812,7 +789,7 @@ function setupChatObserver(chatContainer) {
   const currentSelectors = SELECTORS[extensionState.chatMode];
   const messageSelectors = currentSelectors.message;
   
-  // Use the same logic for all chat modes, just with different selectors
+
   processExistingMessages(chatContainer, messageSelectors);
   
   const chatObserver = new MutationObserver((mutations) => {
@@ -840,7 +817,7 @@ function setupChatObserver(chatContainer) {
         }
       }
     } catch (error) {
-      console.error('EloWard: Mutation observer error:', error);
+      // Silent error handling for production
     }
   });
   
@@ -855,7 +832,7 @@ function setupChatObserver(chatContainer) {
     try {
       processExistingMessages(chatContainer, messageSelectors);
     } catch (error) {
-      console.error('EloWard: Delayed message processing error:', error);
+      // Silent error handling for production
     }
   }, 3000);
 }
@@ -866,13 +843,13 @@ function processExistingMessages(chatContainer, messageSelectors) {
     const currentSelectors = SELECTORS[extensionState.chatMode];
     const usernameSelectors = currentSelectors.username;
     
-    // Collect unique usernames and their message elements (batch processing)
+
     const userMessageMap = new Map();
     
     for (const message of existingMessages) {
       if (processedMessages.has(message)) continue;
       
-      // Find username element using current chat mode selectors
+
       let usernameElement = null;
       for (const selector of usernameSelectors) {
         usernameElement = message.querySelector(selector);
@@ -898,12 +875,12 @@ function processExistingMessages(chatContainer, messageSelectors) {
       });
     }
     
-    // Process each unique username (batch processing)
+
     if (userMessageMap.size > 0) {
       processUsernamesBatch(userMessageMap);
     }
   } catch (error) {
-    console.error('EloWard: Error processing existing messages:', error);
+    // Silent error handling for production
   }
 }
 
@@ -911,24 +888,24 @@ function processExistingMessages(chatContainer, messageSelectors) {
 
 function processUsernamesBatch(userMessageMap) {
   try {
-    // First, get all cached ranks
+
     chrome.runtime.sendMessage({ action: 'get_all_cached_ranks' }, (response) => {
       const cachedRanks = response?.ranks || {};
       const usersNeedingFetch = new Set();
       
-      // Apply cached ranks immediately and collect users needing fetch
+
       for (const [username, messageData] of userMessageMap.entries()) {
-        // Handle current user separately
+
         if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
           handleCurrentUserMessages(messageData);
           continue;
         }
         
         if (cachedRanks[username]) {
-          // Apply rank to all messages for this user immediately
+
           applyRankToAllUserMessages(username, messageData, cachedRanks[username]);
           
-          // Increment metrics once per user (not per message)
+
           if (extensionState.channelName) {
             chrome.runtime.sendMessage({
               action: 'increment_db_reads',
@@ -944,13 +921,13 @@ function processUsernamesBatch(userMessageMap) {
         }
       }
       
-      // Fetch ranks for users not in cache
+
       if (usersNeedingFetch.size > 0) {
         fetchRanksForUsers(usersNeedingFetch, userMessageMap);
       }
     });
   } catch (error) {
-    console.error('EloWard: Error in batch username processing:', error);
+    // Silent error handling for production
   }
 }
 
@@ -1397,7 +1374,7 @@ function findBadgeContainer(messageContainer) {
     const badgeContainer = document.createElement('span');
     badgeContainer.className = 'chat-line__message--badges';
     
-    // Insert before username container
+  
     const usernameEl = messageContainerChild.querySelector('.chat-line__username') || 
                        messageContainerChild.querySelector('[data-a-target="chat-message-username"]') ||
                        messageContainerChild.querySelector('.chat-author__display-name');
@@ -1411,7 +1388,7 @@ function findBadgeContainer(messageContainer) {
     return badgeContainer;
   }
   
-  // Last resort: create container at message level
+
   const badgeContainer = document.createElement('span');
   badgeContainer.className = 'chat-line__message--badges';
   messageContainer.insertBefore(badgeContainer, messageContainer.firstChild);
@@ -1517,7 +1494,7 @@ setupCompatibilityMonitor();
 setupFallbackInitialization();
 initializeExtension();
 
-// Hide tooltips when window loses focus (fixes click -> new tab -> return issue)
+
 window.addEventListener('blur', () => {
   hideTooltip();
   hideSevenTVTooltip();

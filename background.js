@@ -1,24 +1,4 @@
-/*
- * Copyright 2024 EloWard
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * "Commons Clause" License Condition v1.0
- * The Software is provided to you by the Licensor under the License, as defined below, 
- * subject to the following condition. Without limiting other conditions in the License, 
- * the grant of rights under the License will not include, and the License does not grant 
- * to you, the right to Sell the Software.
- */
+/* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
@@ -895,7 +875,7 @@ async function fetchRankByTwitchUsername(twitchUsername, platform) {
   }
 }
 
-// Legacy function removed - now using PersistentStorage only
+
 
 function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();
@@ -956,9 +936,9 @@ async function incrementSuccessfulLookupCounter(channelName) {
   }
 }
 
-// IMPORTANT: Listen for external messages from the redirect page
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  // Handle auth callbacks from the redirect page
+
   if (message.type === 'auth_callback') {
     let params;
     if (message.params) {
@@ -976,7 +956,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     return true;
   }
   
-  // Unknown external message
+
   sendResponse({ success: false, error: 'Unknown message type' });
   return true;
 }); 

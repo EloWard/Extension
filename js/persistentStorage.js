@@ -1,68 +1,25 @@
-/*
- * Copyright 2024 EloWard
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * "Commons Clause" License Condition v1.0
- * The Software is provided to you by the Licensor under the License, as defined below, 
- * subject to the following condition. Without limiting other conditions in the License, 
- * the grant of rights under the License will not include, and the License does not grant 
- * to you, the right to Sell the Software.
- */
+/* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
-// EloWard Persistent User Data Storage
-// This module handles storing and retrieving user data that persists across sessions
-// without requiring re-authentication on every extension popup.
-
-/**
- * PersistentStorage module for the EloWard extension.
- * Handles storing authenticated user data for long-term access without
- * requiring re-authentication every time the extension popup is opened.
- */
-
-// Storage keys
 const STORAGE_KEYS = {
   RIOT_USER_DATA: 'eloward_persistent_riot_user_data',
   TWITCH_USER_DATA: 'eloward_persistent_twitch_user_data',
   LAST_UPDATED: 'eloward_persistent_last_updated',
-  CONNECTED_STATE: 'eloward_persistent_connected_state', // Tracks if accounts are connected
-  DATA_PERSISTENCE_ENABLED: 'eloward_data_persistence_enabled' // Flag to control persistence
+  CONNECTED_STATE: 'eloward_persistent_connected_state',
+  DATA_PERSISTENCE_ENABLED: 'eloward_data_persistence_enabled'
 };
 
 export const PersistentStorage = {
-  /**
-   * Initialize persistence
-   * Sets up the persistence flag to ensure data doesn't expire
-   * User data is preserved across sessions even when tokens expire
-   */
   init() {
     chrome.storage.local.set({
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
   },
   
-  /**
-   * Store Riot user data persistently
-   * @param {Object} userData - The Riot user data to store
-   * @returns {Promise<void>}
-   */
   async storeRiotUserData(userData) {
     if (!userData) return;
     
-    // Get current selectedRegion for local user region reference
     const currentData = await chrome.storage.local.get(['selectedRegion']);
     
-    // Extract only the necessary data for display
     const persistentData = {
       riotId: userData.riotId,
       puuid: userData.puuid,
@@ -70,7 +27,6 @@ export const PersistentStorage = {
       rankInfo: null
     };
     
-    // Add rank information if available
     if (userData.soloQueueRank) {
       persistentData.rankInfo = {
         tier: userData.soloQueueRank.tier,
@@ -81,37 +37,23 @@ export const PersistentStorage = {
       };
     }
     
-    // Store the data and set persistence flag
     await chrome.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,
       [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
     
-    // Update connected state
     await this.updateConnectedState('riot', true);
   },
   
-  /**
-   * Get stored Riot user data
-   * @returns {Promise<Object|null>} - The stored Riot user data or null if not found
-   */
   async getRiotUserData() {
     const data = await chrome.storage.local.get([STORAGE_KEYS.RIOT_USER_DATA]);
-    const userData = data[STORAGE_KEYS.RIOT_USER_DATA];
-    
-    return userData || null;
+    return data[STORAGE_KEYS.RIOT_USER_DATA] || null;
   },
   
-  /**
-   * Store Twitch user data persistently
-   * @param {Object} userData - The Twitch user data to store
-   * @returns {Promise<void>}
-   */
   async storeTwitchUserData(userData) {
     if (!userData) return;
     
-    // Extract only the necessary data for display
     const persistentData = {
       id: userData.id,
       login: userData.login,
@@ -119,72 +61,41 @@ export const PersistentStorage = {
       profile_image_url: userData.profile_image_url
     };
     
-    // Store the data and set persistence flag
     await chrome.storage.local.set({
       [STORAGE_KEYS.TWITCH_USER_DATA]: persistentData,
       [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
     
-    // Update connected state
     await this.updateConnectedState('twitch', true);
   },
   
-  /**
-   * Get stored Twitch user data
-   * @returns {Promise<Object|null>} - The stored Twitch user data or null if not found
-   */
   async getTwitchUserData() {
     const data = await chrome.storage.local.get([STORAGE_KEYS.TWITCH_USER_DATA]);
-    const userData = data[STORAGE_KEYS.TWITCH_USER_DATA];
-    
-    return userData || null;
+    return data[STORAGE_KEYS.TWITCH_USER_DATA] || null;
   },
   
-  /**
-   * Update the connected state for a service
-   * @param {string} service - The service name ('riot' or 'twitch')
-   * @param {boolean} isConnected - Whether the service is connected
-   * @returns {Promise<void>}
-   */
   async updateConnectedState(service, isConnected) {
-    // Get current state
     const data = await chrome.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
     const connectedState = data[STORAGE_KEYS.CONNECTED_STATE] || {};
     
-    // Update state for the specific service
     connectedState[service] = isConnected;
     
-    // Store updated state
     await chrome.storage.local.set({
       [STORAGE_KEYS.CONNECTED_STATE]: connectedState
     });
   },
   
-  /**
-   * Get the connected state
-   * @returns {Promise<Object>} - Object with connected state for each service
-   */
   async getConnectedState() {
     const data = await chrome.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
     return data[STORAGE_KEYS.CONNECTED_STATE] || { riot: false, twitch: false };
   },
   
-  /**
-   * Check if a service is connected
-   * @param {string} service - The service name ('riot' or 'twitch')
-   * @returns {Promise<boolean>} - Whether the service is connected
-   */
   async isServiceConnected(service) {
     const connectedState = await this.getConnectedState();
     return connectedState[service] === true;
   },
   
-  /**
-   * Clear stored data for a service
-   * @param {string} service - The service name ('riot' or 'twitch')
-   * @returns {Promise<void>}
-   */
   async clearServiceData(service) {
     if (service === 'riot') {
       await chrome.storage.local.remove([STORAGE_KEYS.RIOT_USER_DATA]);
@@ -192,14 +103,9 @@ export const PersistentStorage = {
       await chrome.storage.local.remove([STORAGE_KEYS.TWITCH_USER_DATA]);
     }
     
-    // Update connected state
     await this.updateConnectedState(service, false);
   },
   
-  /**
-   * Clear all stored data
-   * @returns {Promise<void>}
-   */
   async clearAllData() {
     await chrome.storage.local.remove([
       STORAGE_KEYS.RIOT_USER_DATA,
@@ -209,10 +115,6 @@ export const PersistentStorage = {
     ]);
   },
 
-  /**
-   * Get stored usernames even if not currently connected (for database access)
-   * @returns {Promise<Object>} - Object with Twitch and Riot usernames if available
-   */
   async getStoredUsernames() {
     try {
       const [twitchData, riotData] = await Promise.all([
@@ -234,10 +136,6 @@ export const PersistentStorage = {
     }
   },
 
-  /**
-   * Check if we have stored user data (regardless of connection status)
-   * @returns {Promise<Object>} - Object indicating what data is available
-   */
   async hasStoredUserData() {
     try {
       const [twitchData, riotData] = await Promise.all([
