@@ -1,6 +1,7 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
 import { PersistentStorage } from './persistentStorage.js';
+import { TwitchAuth } from './twitchAuth.js';
 
 class ReAuthenticationRequiredError extends Error {
   constructor(message = "User re-authentication is required.") {
@@ -1017,11 +1018,14 @@ export const RiotAuth = {
       
       // ADDED: First try to get data from persistent storage
       const persistentData = await this.getUserDataFromStorage();
-      if (persistentData) {
-        return persistentData;
-      }
       
-      // If no persistent data, proceed with API calls
+      // Always attempt to store rank data in backend, regardless of persistent data
+      let userData;
+      
+      if (persistentData) {
+        userData = persistentData;
+      } else {
+        // If no persistent data, proceed with API calls
       
       // Get account info
       const accountInfo = await this.getAccountInfo();
@@ -1042,18 +1046,19 @@ export const RiotAuth = {
         rankInfo = [];
       }
       
-      // Combine all data with unified riotId
-      const userData = {
-        riotId: accountInfo.tagLine ? `${accountInfo.gameName}#${accountInfo.tagLine}` : accountInfo.gameName,
-        puuid: accountInfo.puuid,
-        ranks: rankInfo || [],
-        soloQueueRank: rankInfo && rankInfo.length ? 
-          rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null : null
-      };
+        // Combine all data with unified riotId
+        userData = {
+          riotId: accountInfo.tagLine ? `${accountInfo.gameName}#${accountInfo.tagLine}` : accountInfo.gameName,
+          puuid: accountInfo.puuid,
+          ranks: rankInfo || [],
+          soloQueueRank: rankInfo && rankInfo.length ? 
+            rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null : null
+        };
+        
+        await PersistentStorage.storeRiotUserData(userData);
+      }
       
-      await PersistentStorage.storeRiotUserData(userData);
-      
-      // ADDED: Store rank data securely via backend
+      // ALWAYS store rank data securely via backend for any successful auth
       try {
         // Get current Twitch username and token from storage
         const twitchData = await new Promise(resolve => {
@@ -1063,13 +1068,11 @@ export const RiotAuth = {
         const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
         
         if (twitchUsername) {
-          
           // Get current access token and region
           const accessToken = await this.getValidToken();
           const region = await this._getStoredValue('selectedRegion') || 'na1';
           
-          // Get Twitch token for verification
-          const { TwitchAuth } = await import('./twitchAuth.js');
+          // Get Twitch token for verification (using static import)
           const twitchToken = await TwitchAuth.getValidToken();
           
           if (accessToken && twitchToken) {
@@ -1092,7 +1095,6 @@ export const RiotAuth = {
             } else {
               const errorData = await response.json();
             }
-          } else {
           }
         }
       } catch (uploadError) {
