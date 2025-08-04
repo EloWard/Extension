@@ -252,7 +252,7 @@ export const RiotAuth = {
               } else if (response && response.success) {
                 console.log('[RiotAuth] Background script opened window successfully');
                 // When using background script, we don't have a direct window reference
-                // But the window will still send postMessage to popup.js which will store it in chrome.storage
+                // But the auth data will be sent directly to background script via chrome.runtime
                 resolve(null); // No direct window reference, but window was opened
               } else {
                 console.error('[RiotAuth] Background script response:', response);
@@ -1329,30 +1329,8 @@ class AuthCallbackWatcher {
       elapsedTime: 0,
       intervalId: null,
       windowClosedTime: null,
-      isResolved: false,
-      messageListener: null
+      isResolved: false
     };
-    
-    // Set up window message listener to catch postMessage from redirect page
-    this.state.messageListener = (event) => {
-      if (this.state.isResolved) return;
-      
-      // Check if this is an auth callback message
-      if (event.data && 
-          event.data.source === 'eloward_auth' && 
-          event.data.type === 'auth_callback' &&
-          event.data.service === 'riot' &&
-          event.data.code) {
-        console.log('[AuthCallbackWatcher] Received auth callback via postMessage');
-        this._resolveWith({
-          code: event.data.code,
-          state: event.data.state
-        });
-      }
-    };
-    
-    // Start listening for messages
-    window.addEventListener('message', this.state.messageListener);
     
     console.log('[AuthCallbackWatcher] Initialized with window:', !!authWindow);
   }
@@ -1438,13 +1416,12 @@ class AuthCallbackWatcher {
   }
   
   /**
-   * Get callback data from storage
+   * Get callback data from chrome.storage.local
    * @returns {Promise<Object|null>} - Callback data or null
    * @private
    */
   async _getCallbackData() {
-    // First check chrome.storage.local
-    const chromeStorageData = await new Promise(resolve => {
+    return new Promise(resolve => {
       chrome.storage.local.get(this.config.callbackKeys, data => {
         // Check all possible callback keys
         for (const key of this.config.callbackKeys) {
@@ -1458,31 +1435,6 @@ class AuthCallbackWatcher {
         resolve(null);
       });
     });
-    
-    if (chromeStorageData) {
-      return chromeStorageData;
-    }
-    
-    // Also check localStorage as fallback (where the redirect page stores data)
-    try {
-      const localStorageKeys = ['eloward_auth_callback', 'auth_callback'];
-      for (const key of localStorageKeys) {
-        const storedData = localStorage.getItem(key);
-        if (storedData) {
-          const parsed = JSON.parse(storedData);
-          if (parsed && parsed.code && parsed.service === 'riot') {
-            console.log(`[AuthCallbackWatcher] Found callback data in localStorage key: ${key}`);
-            // Clean up localStorage after successful retrieval
-            localStorage.removeItem(key);
-            return parsed;
-          }
-        }
-      }
-    } catch (error) {
-      console.log('[AuthCallbackWatcher] Error checking localStorage:', error);
-    }
-    
-    return null;
   }
   
   /**
@@ -1577,12 +1529,6 @@ class AuthCallbackWatcher {
     if (this.state.intervalId) {
       clearInterval(this.state.intervalId);
       this.state.intervalId = null;
-    }
-    
-    // Clean up message listener
-    if (this.state.messageListener) {
-      window.removeEventListener('message', this.state.messageListener);
-      this.state.messageListener = null;
     }
     
     // Clean up callback data from storage if successful
