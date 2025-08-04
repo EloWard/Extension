@@ -1,8 +1,6 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
 import { PersistentStorage } from './persistentStorage.js';
-import { TwitchAuth } from './twitchAuth.js';
-
 
 class ReAuthenticationRequiredError extends Error {
   constructor(message = "User re-authentication is required.") {
