@@ -1,8 +1,37 @@
-/* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
+/*
+ * Copyright 2024 EloWard
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * "Commons Clause" License Condition v1.0
+ * The Software is provided to you by the Licensor under the License, as defined below, 
+ * subject to the following condition. Without limiting other conditions in the License, 
+ * the grant of rights under the License will not include, and the License does not grant 
+ * to you, the right to Sell the Software.
+ */
 
+// EloWard Riot RSO Authentication
 import { PersistentStorage } from './persistentStorage.js';
 
+/**
+ * Riot RSO (Riot Sign On) Authentication Module
+ * This module handles the authentication flow with Riot Games API
+ * using the OAuth 2.0 protocol via a secure backend proxy.
+ * 
+ * Note: This implementation uses the public client flow which only requires a client ID.
+ */
 
+// Custom error for signaling re-authentication need
 class ReAuthenticationRequiredError extends Error {
   constructor(message = "User re-authentication is required.") {
     super(message);
@@ -10,7 +39,7 @@ class ReAuthenticationRequiredError extends Error {
   }
 }
 
-
+// Set default configuration if not provided
 const defaultConfig = {
   proxyBaseUrl: 'https://eloward-riotauth.unleashai.workers.dev',
   clientId: '38a4b902-7186-44ac-8183-89ba1ac56cf3',
@@ -36,9 +65,19 @@ const defaultConfig = {
 };
 
 export const RiotAuth = {
+  // Riot RSO Configuration
   config: defaultConfig,
+  
+  // Reference to the auth window if opened
   authWindow: null,
   
+  /**
+   * High-level authentication method for popup.js
+   * Initiates the Riot authentication flow and handles the entire process
+   * @param {string} region - The Riot region (e.g., 'na1', 'euw1')
+   * @param {boolean} isSilentReauth - Whether this is a silent re-authentication
+   * @returns {Promise<object>} - Resolves with user data on success
+   */
   async authenticate(region) {
     try {
       
@@ -88,9 +127,9 @@ export const RiotAuth = {
         throw new Error('Authentication cancelled or failed');
       }
       
-
+      // Verify the state parameter to prevent CSRF attacks
       if (authResult.state !== state) {
-
+        // Try fallback state check using storage
         const storedState = await this._getStoredAuthState();
         
         if (authResult.state !== storedState) {
@@ -101,10 +140,10 @@ export const RiotAuth = {
       // Exchange code for tokens
       await this.exchangeCodeForTokens(authResult.code);
       
-
+      // Get user data
       const userData = await this.getUserData();
       
-
+      // Store the user data in persistent storage
       await PersistentStorage.storeRiotUserData(userData);
       
       return userData;
@@ -113,6 +152,11 @@ export const RiotAuth = {
     }
   },
   
+  /**
+   * Store authentication state in both storage mechanisms
+   * @param {string} state - The state to store
+   * @private
+   */
   async _storeAuthState(state) {
     await new Promise(resolve => {
       chrome.storage.local.set({
@@ -121,7 +165,13 @@ export const RiotAuth = {
     });
   },
   
+  /**
+   * Get stored authentication state from storage
+   * @returns {Promise<string|null>} - The stored state or null if not found
+   * @private
+   */
   async _getStoredAuthState() {
+    // Get from chrome.storage.local
     const chromeData = await new Promise(resolve => {
       chrome.storage.local.get([this.config.storageKeys.authState], resolve);
     });
@@ -134,6 +184,13 @@ export const RiotAuth = {
     return null;
   },
   
+  /**
+   * Get authentication URL from backend
+   * @param {string} region - The Riot region
+   * @param {string} state - The state parameter for CSRF protection
+   * @returns {Promise<string>} - The authentication URL
+   * @private
+   */
   async _getAuthUrl(region, state) {
     try {
       const url = `${this.config.proxyBaseUrl}${this.config.endpoints.authInit}?state=${state}&region=${region}`;
@@ -155,14 +212,19 @@ export const RiotAuth = {
     }
   },
   
+  /**
+   * Open authentication window with given URL
+   * @param {string} authUrl - The authentication URL
+   * @private
+   */
   _openAuthWindow(authUrl) {
     return new Promise((resolve, reject) => {
       try {
-
+        // Try to open directly with window.open first
         this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
         
         if (this.authWindow && !this.authWindow.closed) {
-
+          // Try to focus the window
           if (this.authWindow.focus) {
             this.authWindow.focus();
           }

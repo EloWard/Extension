@@ -1,11 +1,31 @@
-/* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
+/*
+ * Copyright 2024 EloWard
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * "Commons Clause" License Condition v1.0
+ * The Software is provided to you by the Licensor under the License, as defined below, 
+ * subject to the following condition. Without limiting other conditions in the License, 
+ * the grant of rights under the License will not include, and the License does not grant 
+ * to you, the right to Sell the Software.
+ */
 
 import { RiotAuth } from './riotAuth.js';
 import { TwitchAuth } from './twitchAuth.js';
 import { PersistentStorage } from './persistentStorage.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-
+  // DOM elements
   const connectRiotBtn = document.getElementById('connect-riot');
   const riotConnectionStatus = document.getElementById('riot-connection-status');
   const currentRank = document.getElementById('current-rank');
@@ -23,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
 
 
-
+  // Helper function to disable/enable Riot controls
   function setRiotControlsDisabled(isDisabled) {
     connectRiotBtn.disabled = isDisabled;
     regionSelect.disabled = isDisabled;
@@ -37,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-
+  // Update Riot controls based on current Twitch connection status
   function updateRiotControlsBasedOnTwitchStatus() {
     const isTwitchConnected = twitchConnectionStatus.classList.contains('connected') && 
                               twitchConnectionStatus.textContent !== 'Not Connected';
@@ -45,55 +65,56 @@ document.addEventListener('DOMContentLoaded', () => {
     setRiotControlsDisabled(!isTwitchConnected);
   }
 
-
+  // Helper function to update button text and styling
   function updateRiotButtonText(text) {
     connectRiotBtn.textContent = text;
     
-
+    // Remove any special styling - keep consistent button appearance
     connectRiotBtn.classList.remove('btn-signin');
   }
 
-
+  // Helper function to check if this is a first-time user (no stored Riot data)
   async function isFirstTimeUser() {
     try {
+      // Check persistent storage only - single source of truth
       const persistentData = await PersistentStorage.getRiotUserData();
-      return !persistentData;
+      return !persistentData; // If no persistent data, it's first time
     } catch (error) {
-      return true;
+      return true; // Assume first time on error
     }
   }
 
-
+  // Initialize persistent storage
   PersistentStorage.init();
   
 
- 
+  // Initialize the streamer dropdown with proper styling 
   streamerContent.style.display = 'none';
 
-
+  // Initialize the account dropdown state from storage (default to open on first install)
   initializeAccountSectionState();
 
-
+  // Disable Riot controls initially (will be updated after auth status check)
   setRiotControlsDisabled(true);
 
-
+  // Check authentication status
   checkAuthStatus();
 
-
+  // Event Listeners
   connectRiotBtn.addEventListener('click', connectRiotAccount);
   regionSelect.addEventListener('change', handleRegionChange);
   refreshRankBtn.addEventListener('click', refreshRank);
   
-
+  // Add event listener for Twitch connect button
   if (connectTwitchBtn) {
     connectTwitchBtn.addEventListener('click', connectTwitchAccount);
   }
   
-
+  // Tooltip functionality for disabled buttons
   let tooltipElement = null;
   let tooltipTimeout = null;
   
-
+  // Create tooltip element
   function createTooltip() {
     if (tooltipElement) return tooltipElement;
     
@@ -117,21 +138,21 @@ document.addEventListener('DOMContentLoaded', () => {
     tooltip.style.visibility = 'hidden';
     tooltip.style.display = 'block';
     
-
+    // Position tooltip
     const rect = target.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
     
     tooltip.style.left = `${rect.left + (rect.width - tooltipRect.width) / 2 - 40}px`;
     tooltip.style.top = `${rect.top - tooltipRect.height - 8}px`;
     
-
+    // Show tooltip with delay
     tooltipTimeout = setTimeout(() => {
       tooltip.style.visibility = 'visible';
       tooltip.style.opacity = '1';
     }, 0);
   }
   
-
+  // Hide tooltip
   function hideTooltip() {
     clearTimeout(tooltipTimeout);
     if (tooltipElement) {
@@ -140,11 +161,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
-
+  // Add tooltip event listeners to connect button
   connectRiotBtn.addEventListener('mouseenter', showTooltip);
   connectRiotBtn.addEventListener('mouseleave', hideTooltip);
   
-
+  // Add toggle functionality for the streamer section
   streamerHeader.addEventListener('click', () => {
     const isHidden = streamerContent.style.display === 'none';
     
@@ -158,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   
-
+  // Add toggle functionality for the account section
   accountHeader.addEventListener('click', () => {
     const isHidden = accountContent.style.display === 'none';
     
@@ -171,17 +192,17 @@ document.addEventListener('DOMContentLoaded', () => {
       accountDropdownArrow.classList.remove('rotated');
     }
     
-
+    // Save the collapse state to chrome storage
     chrome.storage.local.set({ 'accountSectionCollapsed': !isHidden });
   });
 
-
+  // Initialize account section state from storage
   async function initializeAccountSectionState() {
     try {
       const result = await chrome.storage.local.get(['accountSectionCollapsed']);
       const isCollapsed = result.accountSectionCollapsed;
       
-
+      // Default to open (not collapsed) on first install
       if (isCollapsed === undefined || isCollapsed === false) {
         accountContent.style.display = 'block';
         accountDropdownArrow.classList.add('rotated');
@@ -190,41 +211,41 @@ document.addEventListener('DOMContentLoaded', () => {
         accountDropdownArrow.classList.remove('rotated');
       }
     } catch (error) {
-
+      // Default to open on error
       accountContent.style.display = 'block';
       accountDropdownArrow.classList.add('rotated');
     }
   }
   
   
-
+  // Listen for messages from the background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-
+    // Handle auth callback messages
     if (message.type === 'auth_callback' && message.params) {
       processAuthCallback(message.params);
       sendResponse({ success: true });
     }
     
-
+    // Handle auth completion notification to refresh popup
     if (message.type === 'auth_completed') {
-
+      // Automatically refresh auth status when auth completes
       checkAuthStatus();
       sendResponse({ success: true });
     }
     
-
+    // Handle clear_local_storage message (kept for backward compatibility)
     if (message.action === 'clear_local_storage') {
-
+      // No action needed as we only use chrome.storage.local now
       sendResponse({ success: true });
     }
     
-    return true;
+    return true; // Keep the message channel open for async response
   });
 
-
+  // Process auth callback from various sources
   async function processAuthCallback(params) {
     try {
-
+      // Store the auth callback data in chrome.storage for processing by authenticator
       await new Promise(resolve => {
         chrome.storage.local.set({ 'auth_callback': { code: params.code, state: params.state } }, resolve);
         chrome.storage.local.set({ 'eloward_auth_callback': { code: params.code, state: params.state } }, resolve);
@@ -236,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-
+  // Update UI based on user data
   function updateUserInterface(userData) {
     try {
       if (userData && userData.riotId) {
@@ -249,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let rankInfo = null;
         
-
+        // Extract rank info from various data formats
         if (userData.soloQueueRank) {
           rankInfo = {
             tier: userData.soloQueueRank.tier.charAt(0) + userData.soloQueueRank.tier.slice(1).toLowerCase(),
@@ -271,26 +292,26 @@ document.addEventListener('DOMContentLoaded', () => {
         
 
         
-
+        // Show rank if available
         if (rankInfo) {
           displayRank(rankInfo);
         } else {
-
+          // Show unranked if rank info is missing
           currentRank.textContent = 'Unranked';
           rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
           rankBadgePreview.style.transform = 'translateY(-3px)';
         }
       } else {
-
+        // Not connected or incomplete data
         showNotConnectedUI();
       }
     } catch (error) {
-
+      // Fallback to not connected UI on error
       showNotConnectedUI();
     }
   }
 
-
+  // Handle authentication errors gracefully
   async function showAuthError(message) {
     riotConnectionStatus.textContent = 'Not Connected';
     riotConnectionStatus.classList.remove('error', 'connected');
@@ -301,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 
-
+  // Functions
   async function checkAuthStatus() {
     try {
       
