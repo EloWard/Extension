@@ -163,6 +163,8 @@ function switchChatMode() {
     return;
   }
 
+  console.log(`🔄 EloWard: Switching to ${extensionState.chatMode} mode`);
+  
   cleanupChatObserver();
   processedMessages.clear();
   
