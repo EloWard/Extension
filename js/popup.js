@@ -622,49 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateUserInterface(userData);
     await PersistentStorage.storeRiotUserData(userData);
     
-    // Update rank in the database via secure backend
-    try {
-      // Get current Twitch username
-      const twitchData = await new Promise(resolve => {
-        chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
-      });
-      
-      const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
-      
-      if (twitchUsername) {
-        // Get current access token and region
-        const accessToken = await RiotAuth.getValidToken();
-        const region = regionSelect.value;
-        
-        // Get Twitch token for verification
-        const twitchToken = await TwitchAuth.getValidToken();
-        
-        if (accessToken && twitchToken) {
-          // Call the secure backend endpoint
-          const response = await fetch(`https://eloward-riotauth.unleashai.workers.dev/store-rank`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              twitch_token: twitchToken,
-              riot_token: accessToken,
-              region: region,
-              twitch_username: twitchUsername
-            })
-          });
-          
-          if (response.ok) {
-            const result = await response.json();
-          } else {
-            const errorData = await response.json();
-          }
-        } else {
-        }
-      }
-    } catch (dbError) {
-      // Don't fail the entire operation if database update fails
-    }
+    // Backend storage is now handled by getUserData() - no duplicate call needed
   }
 
   function displayRank(rankData) {
