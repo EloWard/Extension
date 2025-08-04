@@ -1,8 +1,6 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
-// EloWard Persistent User Data Storage
-// This module handles storing and retrieving user data that persists across sessions
-// without requiring re-authentication on every extension popup.
+
 
 /**
  * PersistentStorage module for the EloWard extension.

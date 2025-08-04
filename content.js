@@ -335,9 +335,9 @@ async function initializeChannel(channelName, initializationId) {
   }
 }
 
-// Storage initialization removed - managed through PersistentStorage
 
-// Function removed - user management through PersistentStorage
+
+
 
 async function checkChannelActive(channelName, forceCheck = false, signal = null) {
   if (!channelName) return false;
@@ -781,7 +781,7 @@ function processExistingMessages(chatContainer, messageSelectors) {
     for (const message of existingMessages) {
       if (processedMessages.has(message)) continue;
       
-      // Find username element using current chat mode selectors
+    
       let usernameElement = null;
       for (const selector of usernameSelectors) {
         usernameElement = message.querySelector(selector);
@@ -793,7 +793,7 @@ function processExistingMessages(chatContainer, messageSelectors) {
       const username = usernameElement.textContent?.trim().toLowerCase();
       if (!username) continue;
       
-      // Skip if already has badge
+
       if (message.querySelector('.eloward-rank-badge')) continue;
       
       processedMessages.add(message);
@@ -1044,14 +1044,14 @@ function applyRankToAllUserMessagesInChat(username, rankData) {
     const messageSelectors = currentSelectors.message;
     const usernameSelectors = currentSelectors.username;
     
-    // Find all messages in the current chat
+  
     const allMessages = document.querySelectorAll(messageSelectors.join(', '));
     
     allMessages.forEach(messageElement => {
-      // Skip if already has badge
+
       if (messageElement.querySelector('.eloward-rank-badge')) return;
       
-      // Find username element
+  
       let usernameElement = null;
       for (const selector of usernameSelectors) {
         usernameElement = messageElement.querySelector(selector);
@@ -1212,11 +1212,11 @@ function hideSevenTVTooltip() {
 }
 
 function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
-  // FFZ should use the same badge container approach as standard mode
+
   const badgeContainer = findBadgeContainer(messageContainer);
   
   if (!badgeContainer) {
-            // Could not find badge container for FFZ message
+    
     return;
   }
   
@@ -1231,11 +1231,11 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
 }
 
 function addBadgeToStandardMessage(messageContainer, rankData) {
-  // Find or create proper badge container - no fallbacks to username insertion
+
   const badgeContainer = findBadgeContainer(messageContainer);
   
   if (!badgeContainer) {
-          // Could not find badge container for message
+    
     return;
   }
   
@@ -1419,7 +1419,7 @@ function hideTooltip() {
   }
 }
 
-// Storage initialization removed - managed through PersistentStorage
+
 setupUrlChangeObserver();
 detectChatMode();
 setupCompatibilityMonitor();

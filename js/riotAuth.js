@@ -48,7 +48,6 @@ export const RiotAuth = {
   // Riot RSO Configuration
   config: defaultConfig,
   
-  // Reference to the auth window if opened
   authWindow: null,
   
   /**

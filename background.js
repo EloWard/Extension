@@ -164,16 +164,16 @@ async function initiateTokenExchange(authData, service = 'riot') {
       const tokenData = await TwitchAuth.exchangeCodeForTokens(authData.code);
       const userInfo = await TwitchAuth.getUserInfo();
 
-      // Ensure all storage operations complete before returning
+
       await PersistentStorage.storeTwitchUserData(userInfo);
       await PersistentStorage.updateConnectedState('twitch', true);
 
-      // Notify popup after all data is successfully stored
+
       chrome.runtime.sendMessage({
         type: 'auth_completed',
         service: 'twitch'
       }).catch(() => {
-        // Popup may not be open, ignore errors
+
       });
 
       return userInfo;
@@ -181,16 +181,16 @@ async function initiateTokenExchange(authData, service = 'riot') {
       const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
       const userData = await RiotAuth.getUserData();
 
-      // Ensure all storage operations complete in sequence
+
       await PersistentStorage.storeRiotUserData(userData);
       await PersistentStorage.updateConnectedState('riot', true);
 
-      // Only notify popup after ALL data is successfully stored
+
       chrome.runtime.sendMessage({
         type: 'auth_completed',
         service: 'riot'
       }).catch(() => {
-        // Popup may not be open, ignore errors
+
       });
 
       return userData;
@@ -758,7 +758,7 @@ async function handleAuthCallbackFromRedirect(code, state) {
         success: true
       });
     } catch (e) {
-      // Ignore messaging errors
+      
     }
     
     return { success: true, username: tokenData.data.user_info?.game_name };
@@ -785,7 +785,7 @@ async function getUserLinkedAccount(twitchUsername) {
   
   const normalizedTwitchUsername = twitchUsername.toLowerCase();
   
-  // Get current user data from PersistentStorage only
+
   const twitchData = await PersistentStorage.getTwitchUserData();
   const riotData = await PersistentStorage.getRiotUserData();
   
@@ -870,7 +870,7 @@ async function fetchRankByTwitchUsername(twitchUsername, platform) {
   }
 }
 
-// Legacy function removed - now using PersistentStorage only
+
 
 function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();
