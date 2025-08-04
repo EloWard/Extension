@@ -136,7 +136,7 @@ export const RiotAuth = {
   
   async _getAuthUrl(region, state) {
     try {
-      const url = `${this.config.proxyBaseUrl}${this.config.endpoints.authInit}?state=${state}&region=${region}`;
+      const url = `${this.config.proxyBaseUrl}${this.config.endpoints.authInit}?state=${state}`;
       
       const response = await fetch(url);
       if (!response.ok) {
@@ -678,6 +678,17 @@ export const RiotAuth = {
       
       // Clear from chrome.storage
       await chrome.storage.local.remove(keysToRemove);
+      
+      // Clear Riot browser session by opening logout URL in hidden window
+      try {
+        const logoutUrl = 'https://auth.riotgames.com/logout';
+        const logoutWindow = window.open(logoutUrl, '_blank', 'width=1,height=1,left=-1000,top=-1000');
+        if (logoutWindow) {
+          setTimeout(() => logoutWindow.close(), 2000);
+        }
+      } catch (logoutError) {
+        // Non-critical error, continue with disconnect
+      }
       
       return true;
     } catch (error) {

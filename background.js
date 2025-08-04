@@ -363,8 +363,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       'selectedRegion': message.region || 'na1'
     });
     
-    const region = message.region || 'na1';
-    const url = `${RIOT_AUTH_URL}/auth/init?state=${state}&region=${region}`;
+      const url = `${RIOT_AUTH_URL}/auth/init?state=${state}`;
     
     fetch(url)
       .then(response => {
