@@ -246,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.remove('error');
         updateRiotButtonText('Disconnect');
         connectRiotBtn.disabled = false;
-        refreshRankBtn.classList.remove('hidden');
+        refreshRankBtn.classList.remove('hidden'); // Show refresh button
         
         let rankInfo = null;
         
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rankInfo) {
           displayRank(rankInfo);
         } else {
-  
+          // Show unranked if rank info is missing
           currentRank.textContent = 'Unranked';
           rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
           rankBadgePreview.style.transform = 'translateY(-3px)';
@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (persistentConnectedState.riot) {
           // User is actively connected with valid tokens
           updateUserInterface(userData);
-          refreshRankBtn.classList.remove('hidden');
+          refreshRankBtn.classList.remove('hidden'); // Show refresh button
         } else {
           // User has stored data but tokens may be expired
           updateUserInterface(userData);
@@ -350,14 +350,14 @@ document.addEventListener('DOMContentLoaded', () => {
         connectRiotBtn.disabled = false;
         currentRank.textContent = 'Unknown';
         rankBadgePreview.style.backgroundImage = 'none';
-        refreshRankBtn.classList.add('hidden');
+        refreshRankBtn.classList.add('hidden'); // Hide refresh button
         
-
+        // Reset rank display and show unranked graphic
         currentRank.textContent = 'Unranked';
         rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
         
-
+        // Set region from storage if available
         chrome.storage.local.get(['selectedRegion'], (result) => {
           if (result.selectedRegion) {
             regionSelect.value = result.selectedRegion;
@@ -440,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
     connectRiotBtn.disabled = false;
     currentRank.textContent = 'Unknown';
     rankBadgePreview.style.backgroundImage = 'none';
-    refreshRankBtn.classList.add('hidden');
+    refreshRankBtn.classList.add('hidden'); // Hide refresh button
     
     // Reset Twitch connection UI
     twitchConnectionStatus.textContent = 'Not Connected';
@@ -479,24 +479,24 @@ document.addEventListener('DOMContentLoaded', () => {
             // Use disconnect method to clear both tokens and persistent data
             await RiotAuth.disconnect();
             
-    
+            // Update UI manually
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('connected');
             updateRiotButtonText('Connect');
             
-    
+            // Show unranked rank display
             currentRank.textContent = 'Unranked';
             rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
             rankBadgePreview.style.transform = 'translateY(-3px)';
-            refreshRankBtn.classList.add('hidden');
+            refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
           } catch (error) {
             
-    
+            // Show normal not connected state instead of error
             updateRiotButtonText('Connect');
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('error', 'connected');
           } finally {
-  
+            // Re-enable button
             connectRiotBtn.disabled = false;
           }
           return; // Exit the function after disconnect flow
@@ -506,7 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Connect flow - check if first time to determine UI behavior
       const isFirstTime = await isFirstTimeUser();
       
-
+      // Show connecting in button only
       updateRiotButtonText('Connecting...');
       
       if (isFirstTime) {
@@ -514,33 +514,33 @@ document.addEventListener('DOMContentLoaded', () => {
         await chrome.storage.local.set({ 'eloward_signin_attempted': true });
       }
       
-      
+      // Get selected region
       const region = regionSelect.value;
       
       try {
         // Use the Riot RSO authentication module
         const userData = await RiotAuth.authenticate(region);
         
-
+        // Store user data in persistent storage
         await PersistentStorage.storeRiotUserData(userData);
         
-
+        // Update UI with the user data
         updateUserInterface(userData);
         
-
+        // Store the connected region in storage and ensure the region selector reflects the current region
         await chrome.storage.local.set({ selectedRegion: region });
               } catch (error) {
           
-
+          // Show normal not connected state
           updateRiotButtonText('Connect');
           riotConnectionStatus.textContent = 'Not Connected';
           riotConnectionStatus.classList.remove('error', 'connected');
         } finally {
-
+          // Re-enable button
           connectRiotBtn.disabled = false;
         }
     } catch (error) {
-      
+      // Re-enable button in case of a general error
       connectRiotBtn.disabled = false;
     }
   }
@@ -586,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Handle other errors (e.g., network issues, data not found)
       
-      
+      // Show "Unranked" if there's a rank lookup error or no data found for this region
       if (error.message && (
           error.message.includes('not found') || 
           error.message.includes('not available') || 
@@ -732,12 +732,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use disconnect method to clear both tokens and persistent data
         await TwitchAuth.disconnect();
         
-
+        // Update UI after logout
         twitchConnectionStatus.textContent = 'Not Connected';
         connectTwitchBtn.textContent = 'Connect';
         twitchConnectionStatus.classList.remove('connected');
         
-
+        // Update Riot controls based on disconnected status
         updateRiotControlsBasedOnTwitchStatus();
       } else {
         // Connect flow
@@ -752,18 +752,18 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             const userData = await TwitchAuth.getUserInfo();
             
-    
+            // Store user data in persistent storage
             if (userData) {
               await PersistentStorage.storeTwitchUserData(userData);
               
-  
+              // Update UI with user data
               twitchConnectionStatus.textContent = userData.display_name || userData.login;
               
-        
+                          // Only mark as connected if we have valid user data
             twitchConnectionStatus.classList.add('connected');
             connectTwitchBtn.textContent = 'Disconnect';
             
-    
+            // Update Riot controls based on successful connection
             updateRiotControlsBasedOnTwitchStatus();
             } else {
               // Authentication succeeded but no user data
@@ -775,7 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
             twitchConnectionStatus.classList.remove('error', 'connected');
             connectTwitchBtn.textContent = 'Connect';
             
-  
+            // Update Riot controls based on failed connection
             updateRiotControlsBasedOnTwitchStatus();
           }
           
@@ -784,7 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
           twitchConnectionStatus.classList.remove('error', 'connected');
           connectTwitchBtn.textContent = 'Connect';
           
-
+          // Update Riot controls based on failed authentication
           updateRiotControlsBasedOnTwitchStatus();
           
           // Ensure the connected state is properly reset in case of error
@@ -805,12 +805,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  
+  // Get references to all stored regions
   chrome.storage.local.get(['selectedRegion'], (result) => {
-    
+    // First clean up any old key that might exist
     chrome.storage.local.remove('connected_region');
     
-
+    // Set the region selector value
     if (result.selectedRegion) {
       regionSelect.value = result.selectedRegion;
     }

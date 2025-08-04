@@ -41,6 +41,7 @@ export const TwitchAuth = {
   // Twitch Configuration
   config: defaultConfig,
   
+  // Reference to the auth window if opened
   authWindow: null,
   
   /**

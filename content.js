@@ -1,4 +1,24 @@
-/* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
+/*
+ * Copyright 2024 EloWard
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * "Commons Clause" License Condition v1.0
+ * The Software is provided to you by the Licensor under the License, as defined below, 
+ * subject to the following condition. Without limiting other conditions in the License, 
+ * the grant of rights under the License will not include, and the License does not grant 
+ * to you, the right to Sell the Software.
+ */
 
 document.body.setAttribute('data-eloward-chrome-ext', 'active');
 document.documentElement.setAttribute('data-eloward-chrome-ext', 'active');
@@ -7,10 +27,14 @@ const extensionState = {
   isChannelActive: false,
   channelName: '',
   currentGame: null,
+  currentUser: null,
   observerInitialized: false,
+  lastChannelActiveCheck: null,
   initializationInProgress: false,
   currentInitializationId: null,
+  compatibilityMode: false,
   initializationComplete: false,
+  lastInitAttempt: 0,
   fallbackInitialized: false,
   chatMode: 'standard'
 };
@@ -148,9 +172,9 @@ function detectChatMode() {
   extensionState.chatMode = detectedMode;
   
   if (!extensionState.initializationComplete) {
-    
+    console.log(`💬 EloWard: Chat mode detected - ${detectedMode}`);
   } else if (detectedMode !== previousMode) {
-    
+    console.log(`💬 EloWard: Chat mode switched to - ${detectedMode}`);
     switchChatMode();
   }
   
@@ -251,22 +275,69 @@ function setupFallbackInitialization() {
       fallbackInitialization();
     }
   }, 10000);
+  
+  const fallbackCheckInterval = setInterval(() => {
+    const currentChannel = getCurrentChannelName();
+    if (currentChannel && 
+        !extensionState.initializationComplete && 
+        !extensionState.initializationInProgress &&
+        !extensionState.fallbackInitialized &&
+        (Date.now() - extensionState.lastInitAttempt) > 15000) {
+      
+      extensionState.fallbackInitialized = true;
+      fallbackInitialization();
+      clearInterval(fallbackCheckInterval);
+    }
+  }, 5000);
+  
+  setTimeout(() => {
+    clearInterval(fallbackCheckInterval);
+  }, 120000);
 }
 
 function fallbackInitialization() {
   const currentChannel = getCurrentChannelName();
   if (!currentChannel) return;
   
-  const chatContainer = findChatContainer();
-  if (chatContainer) {
-    extensionState.channelName = currentChannel;
-    extensionState.currentGame = 'League of Legends';
-    extensionState.isChannelActive = true;
+  if (!extensionState.compatibilityMode) {
+    const hasThirdPartyExtensions = !!(
+      document.querySelector('.ffz-addon') ||
+      document.querySelector('.seventv-paint') ||
+      document.querySelector('[data-ffz-component]') ||
+      document.querySelector('[data-seventv]') ||
+      window.ffz ||
+      window.FrankerFaceZ ||
+      window.SevenTV || window.seventv
+    );
     
-    setupChatObserver(chatContainer);
-    extensionState.observerInitialized = true;
-    extensionState.initializationComplete = true;
+    if (hasThirdPartyExtensions) {
+      extensionState.compatibilityMode = true;
+    }
   }
+  
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  function tryFallbackSetup() {
+    const chatContainer = findChatContainer();
+    
+    if (chatContainer) {
+      extensionState.channelName = currentChannel;
+      extensionState.currentGame = 'League of Legends';
+      extensionState.isChannelActive = true;
+      
+      setupChatObserver(chatContainer);
+      extensionState.observerInitialized = true;
+      extensionState.initializationComplete = true;
+    } else {
+      attempts++;
+      if (attempts < maxAttempts) {
+        setTimeout(tryFallbackSetup, attempts * 1000);
+      }
+    }
+  }
+  
+  tryFallbackSetup();
 }
 
 function clearRankCache() {
@@ -335,9 +406,30 @@ async function initializeChannel(channelName, initializationId) {
   }
 }
 
+function initializeStorage() {
+  chrome.storage.local.get(null, (allData) => {
+    extensionState.currentUser = findCurrentUser(allData);
+    
+    if (extensionState.currentUser) {
+      chrome.runtime.sendMessage({
+        action: 'set_current_user',
+        username: extensionState.currentUser
+      });
+    }
+  });
+}
 
-
-
+function findCurrentUser(allData) {
+  if (allData.eloward_persistent_twitch_user_data?.login) {
+    return allData.eloward_persistent_twitch_user_data.login.toLowerCase();
+  } 
+  
+  if (allData.twitchUsername) {
+    return allData.twitchUsername.toLowerCase();
+  }
+  
+  return null;
+}
 
 async function checkChannelActive(channelName, forceCheck = false, signal = null) {
   if (!channelName) return false;
@@ -392,7 +484,6 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
           
           const isActive = response && response.active === true;
           console.log(`${isActive ? '✅' : '❌'} EloWard: Channel ${channelName} is ${isActive ? 'active' : 'not active'}`);
-      
           
           if (!signal?.aborted) {
             extensionState.lastChannelActiveCheck = now;
@@ -781,7 +872,7 @@ function processExistingMessages(chatContainer, messageSelectors) {
     for (const message of existingMessages) {
       if (processedMessages.has(message)) continue;
       
-    
+      // Find username element using current chat mode selectors
       let usernameElement = null;
       for (const selector of usernameSelectors) {
         usernameElement = message.querySelector(selector);
@@ -793,7 +884,7 @@ function processExistingMessages(chatContainer, messageSelectors) {
       const username = usernameElement.textContent?.trim().toLowerCase();
       if (!username) continue;
       
-
+      // Skip if already has badge
       if (message.querySelector('.eloward-rank-badge')) continue;
       
       processedMessages.add(message);
@@ -1044,14 +1135,14 @@ function applyRankToAllUserMessagesInChat(username, rankData) {
     const messageSelectors = currentSelectors.message;
     const usernameSelectors = currentSelectors.username;
     
-  
+    // Find all messages in the current chat
     const allMessages = document.querySelectorAll(messageSelectors.join(', '));
     
     allMessages.forEach(messageElement => {
-
+      // Skip if already has badge
       if (messageElement.querySelector('.eloward-rank-badge')) return;
       
-  
+      // Find username element
       let usernameElement = null;
       for (const selector of usernameSelectors) {
         usernameElement = messageElement.querySelector(selector);
@@ -1212,11 +1303,11 @@ function hideSevenTVTooltip() {
 }
 
 function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
-
+  // FFZ should use the same badge container approach as standard mode
   const badgeContainer = findBadgeContainer(messageContainer);
   
   if (!badgeContainer) {
-    
+    console.warn('EloWard: Could not find or create badge container for FFZ message');
     return;
   }
   
@@ -1231,11 +1322,11 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
 }
 
 function addBadgeToStandardMessage(messageContainer, rankData) {
-
+  // Find or create proper badge container - no fallbacks to username insertion
   const badgeContainer = findBadgeContainer(messageContainer);
   
   if (!badgeContainer) {
-    
+    console.warn('EloWard: Could not find or create badge container for message');
     return;
   }
   
@@ -1419,7 +1510,7 @@ function hideTooltip() {
   }
 }
 
-
+initializeStorage();
 setupUrlChangeObserver();
 detectChatMode();
 setupCompatibilityMonitor();
