@@ -543,31 +543,15 @@ export const RiotAuth = {
       chrome.storage.local.get([
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
-        this.config.storageKeys.tokenExpiry,
-        'eloward_riot_access_token',
-        'eloward_riot_refresh_token',
-        'eloward_riot_token_expiry',
-        'riotAuth'
+        this.config.storageKeys.tokenExpiry
       ], resolve);
     });
     
-    let accessToken = tokenData[this.config.storageKeys.accessToken] || tokenData.eloward_riot_access_token;
-    let refreshToken = tokenData[this.config.storageKeys.refreshToken] || tokenData.eloward_riot_refresh_token;
-    let tokenExpiry = tokenData[this.config.storageKeys.tokenExpiry] || tokenData.eloward_riot_token_expiry;
-    
-    // Fallback to riotAuth object
-    if (!accessToken && tokenData.riotAuth) {
-      accessToken = tokenData.riotAuth.access_token;
-      refreshToken = refreshToken || tokenData.riotAuth.refresh_token;
-      
-      if (!tokenExpiry) {
-        tokenExpiry = tokenData.riotAuth.expires_at || 
-          (tokenData.riotAuth.issued_at && tokenData.riotAuth.expires_in ? 
-           tokenData.riotAuth.issued_at + (tokenData.riotAuth.expires_in * 1000) : null);
-      }
-    }
-    
-    return { accessToken, refreshToken, tokenExpiry };
+    return {
+      accessToken: tokenData[this.config.storageKeys.accessToken],
+      refreshToken: tokenData[this.config.storageKeys.refreshToken],
+      tokenExpiry: tokenData[this.config.storageKeys.tokenExpiry]
+    };
   },
   
   /**

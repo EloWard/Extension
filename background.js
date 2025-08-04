@@ -184,18 +184,28 @@ async function initiateTokenExchange(authData, service = 'riot') {
       const tokenData = await TwitchAuth.exchangeCodeForTokens(authData.code);
       const userInfo = await TwitchAuth.getUserInfo();
 
+      // Ensure all storage operations complete before returning
       await PersistentStorage.storeTwitchUserData(userInfo);
       await PersistentStorage.updateConnectedState('twitch', true);
+
+      // Notify popup after all data is successfully stored
+      chrome.runtime.sendMessage({
+        type: 'auth_completed',
+        service: 'twitch'
+      }).catch(() => {
+        // Popup may not be open, ignore errors
+      });
 
       return userInfo;
     } else {
       const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
       const userData = await RiotAuth.getUserData();
 
+      // Ensure all storage operations complete in sequence
       await PersistentStorage.storeRiotUserData(userData);
       await PersistentStorage.updateConnectedState('riot', true);
 
-      // Notify popup to refresh after data is stored
+      // Only notify popup after ALL data is successfully stored
       chrome.runtime.sendMessage({
         type: 'auth_completed',
         service: 'riot'
@@ -596,19 +606,17 @@ function clearAllStoredData() {
   return new Promise((resolve) => {
     try {
       const keysToRemove = [
+        // Auth tokens (kept for API functionality)
         'eloward_riot_access_token',
         'eloward_riot_refresh_token',
         'eloward_riot_token_expiry',
         'eloward_riot_tokens',
-        'eloward_riot_account_info',
-        'eloward_riot_rank_info',
-        'eloward_auth_state',
-        'eloward_riot_id_token',
         'eloward_twitch_access_token',
         'eloward_twitch_refresh_token',
         'eloward_twitch_token_expiry',
         'eloward_twitch_tokens',
-        'eloward_twitch_user_info',
+        // Auth state and callback handling
+        'eloward_auth_state',
         'eloward_twitch_auth_state',
         'auth_callback',
         'eloward_auth_callback',
@@ -795,86 +803,43 @@ self.eloward = {
   getRankIconUrl
 };
 
-function getUserLinkedAccount(twitchUsername) {
-  return new Promise((resolve) => {
-    if (!twitchUsername) {
-      resolve(null);
-      return;
-    }
-    
-    const normalizedTwitchUsername = twitchUsername.toLowerCase();
-    
-    chrome.storage.local.get('linkedAccounts', data => {
-      const linkedAccounts = data.linkedAccounts || {};
-      
-      if (linkedAccounts[normalizedTwitchUsername]) {
-        resolve(linkedAccounts[normalizedTwitchUsername]);
-        return;
-      }
-      
-      chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'eloward_persistent_riot_user_data'], currentUserData => {
-        const currentTwitchData = currentUserData.eloward_persistent_twitch_user_data;
-        const currentRiotData = currentUserData.eloward_persistent_riot_user_data;
-        
-        if (currentTwitchData?.login?.toLowerCase() === normalizedTwitchUsername && currentRiotData) {
-          resolve(currentRiotData);
-          return;
-        }
-        
-        resolve(null);
-      });
-    });
-  });
-}
-
-function getRankForLinkedAccount(linkedAccount, platform) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get('riotAuthToken', data => {
-      if (!data.riotAuthToken) {
-        reject(new Error('No Riot auth token available'));
-        return;
-      }
-      
-      getRankByPuuid(data.riotAuthToken, linkedAccount.puuid, platform)
-        .then(rankData => {
-          resolve(rankData);
-        })
-        .catch(reject);
-    });
-  });
-}
-
-function loadConfiguration() {
-  chrome.storage.local.get(['selectedRegion', 'riotAccountInfo', 'twitchUsername'], (data) => {
-    if (!data.selectedRegion) {
-      chrome.storage.local.set({ selectedRegion: 'na1' });
-    }
-    
-    if (data.riotAccountInfo && data.twitchUsername) {
-      addLinkedAccount(data.twitchUsername, data.riotAccountInfo);
-    }
-  });
-}
-
-function addLinkedAccount(twitchUsername, riotAccountInfo) {
-  if (!twitchUsername || !riotAccountInfo) {
-    return;
+async function getUserLinkedAccount(twitchUsername) {
+  if (!twitchUsername) {
+    return null;
   }
   
   const normalizedTwitchUsername = twitchUsername.toLowerCase();
   
-  chrome.storage.local.get('linkedAccounts', data => {
-    const linkedAccounts = data.linkedAccounts || {};
+  // Get current user data from PersistentStorage only
+  const twitchData = await PersistentStorage.getTwitchUserData();
+  const riotData = await PersistentStorage.getRiotUserData();
+  
+  if (twitchData?.login?.toLowerCase() === normalizedTwitchUsername && riotData) {
+    return riotData;
+  }
+  
+  return null;
+}
+
+async function getRankForLinkedAccount(linkedAccount, platform) {
+  try {
+    // Get valid token through RiotAuth
+    const token = await RiotAuth.getValidToken();
+    if (!token) {
+      throw new Error('No valid Riot auth token available');
+    }
     
-    linkedAccounts[normalizedTwitchUsername] = {
-      ...riotAccountInfo,
-      twitchUsername,
-      normalizedTwitchUsername,
-      linkedAt: Date.now(),
-      lastUpdated: Date.now()
-    };
-    
-    chrome.storage.local.set({ linkedAccounts });
+    return await getRankByPuuid(token, linkedAccount.puuid, platform);
+  } catch (error) {
+    throw error;
+  }
+}
+
+function loadConfiguration() {
+  chrome.storage.local.get(['selectedRegion'], (data) => {
+    if (!data.selectedRegion) {
+      chrome.storage.local.set({ selectedRegion: 'na1' });
+    }
   });
 }
 
@@ -908,82 +873,29 @@ async function fetchRankFromDatabase(twitchUsername) {
   }
 }
 
-function fetchRankByTwitchUsername(twitchUsername, platform) {
-  return new Promise((resolve, reject) => {
+async function fetchRankByTwitchUsername(twitchUsername, platform) {
+  try {
+    // Try to get linked account data first
+    const linkedAccount = await getUserLinkedAccount(twitchUsername);
     
-    getUserLinkedAccount(twitchUsername)
-      .then(linkedAccount => {
-        if (linkedAccount) {
-          getRankForLinkedAccount(linkedAccount, platform)
-            .then(rankData => {
-              resolve(rankData);
-            })
-            .catch(() => {
-              fetchRankFromDatabase(twitchUsername)
-                .then(dbRankData => {
-                  if (dbRankData) {
-                    resolve(dbRankData);
-                  } else {
-                    resolve(null);
-                  }
-                })
-                .catch(() => resolve(null));
-            });
-        } else {
-          fetchRankFromDatabase(twitchUsername)
-            .then(rankData => {
-              if (rankData) {
-                resolve(rankData);
-              } else {
-                resolve(null);
-              }
-            })
-            .catch(() => resolve(null));
-        }
-      });
-  });
-}
-
-function preloadLinkedAccounts() {
-  chrome.storage.local.get('linkedAccounts', (data) => {
-    const linkedAccounts = data.linkedAccounts || {};
-    
-    chrome.storage.local.get(['twitchUsername', 'riotAccountInfo'], (userData) => {
-      let updated = false;
-      
-      if (userData.twitchUsername && userData.riotAccountInfo) {
-        const normalizedUsername = userData.twitchUsername.toLowerCase();
-        
-        if (!linkedAccounts[normalizedUsername] || 
-            !linkedAccounts[normalizedUsername].puuid) {
-          linkedAccounts[normalizedUsername] = {
-            ...userData.riotAccountInfo,
-            twitchUsername: userData.twitchUsername,
-            normalizedTwitchUsername: normalizedUsername,
-            linkedAt: Date.now(),
-            lastUpdated: Date.now()
-          };
-          
-          updated = true;
-        }
+    if (linkedAccount) {
+      try {
+        const rankData = await getRankForLinkedAccount(linkedAccount, platform);
+        return rankData;
+      } catch (error) {
+        // Fall through to database lookup
       }
-      
-      if (updated) {
-        chrome.storage.local.set({ linkedAccounts });
-      }
-    });
-  });
-}
-
-preloadLinkedAccounts();
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local') {
-    if (changes.riotAccountInfo || changes.twitchUsername) {
-      preloadLinkedAccounts();
     }
+    
+    // Fall back to database lookup
+    const dbRankData = await fetchRankFromDatabase(twitchUsername);
+    return dbRankData;
+  } catch (error) {
+    return null;
   }
-});
+}
+
+// Legacy function removed - now using PersistentStorage only
 
 function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();

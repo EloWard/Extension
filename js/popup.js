@@ -60,9 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update Riot controls based on current Twitch connection status
   function updateRiotControlsBasedOnTwitchStatus() {
     const isTwitchConnected = twitchConnectionStatus.classList.contains('connected') && 
-                              twitchConnectionStatus.textContent !== 'Not Connected' &&
-                              twitchConnectionStatus.textContent !== 'Connecting...' &&
-                              twitchConnectionStatus.textContent !== 'Disconnecting...';
+                              twitchConnectionStatus.textContent !== 'Not Connected';
     
     setRiotControlsDisabled(!isTwitchConnected);
   }
@@ -78,26 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Helper function to check if this is a first-time user (no stored Riot data)
   async function isFirstTimeUser() {
     try {
+      // Check persistent storage only - single source of truth
       const persistentData = await PersistentStorage.getRiotUserData();
-      if (persistentData) return false;
-      
-      const storageData = await new Promise(resolve => {
-        chrome.storage.local.get([
-          'eloward_riot_access_token',
-          'eloward_riot_refresh_token', 
-          'eloward_riot_account_info',
-          'riotAuth',
-          'eloward_signin_attempted'
-        ], resolve);
-      });
-      
-      // If sign-in has been attempted, no longer consider them a first-time user
-      if (storageData.eloward_signin_attempted) return false;
-      
-      return !storageData.eloward_riot_access_token && 
-             !storageData.eloward_riot_refresh_token && 
-             !storageData.eloward_riot_account_info && 
-             !storageData.riotAuth;
+      return !persistentData; // If no persistent data, it's first time
     } catch (error) {
       return true; // Assume first time on error
     }
@@ -272,10 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
     } catch (error) {
-      // Only show error if the connection button isn't in a "connecting" state
-      if (!riotConnectionStatus.classList.contains('connecting')) {
-        showAuthError(error.message || 'Failed to process authentication');
-      }
+      showAuthError(error.message || 'Failed to process authentication');
     }
   }
 
@@ -285,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (userData && userData.riotId) {
         riotConnectionStatus.textContent = userData.riotId;
         riotConnectionStatus.classList.add('connected');
-        riotConnectionStatus.classList.remove('error', 'connecting');
+        riotConnectionStatus.classList.remove('error');
         updateRiotButtonText('Disconnect');
         connectRiotBtn.disabled = false;
         refreshRankBtn.classList.remove('hidden'); // Show refresh button
@@ -336,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Handle authentication errors gracefully
   async function showAuthError(message) {
     riotConnectionStatus.textContent = 'Not Connected';
-    riotConnectionStatus.classList.remove('error', 'connecting', 'connected');
+    riotConnectionStatus.classList.remove('error', 'connected');
     
     const firstTime = await isFirstTimeUser();
     updateRiotButtonText('Connect');
@@ -347,6 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Functions
   async function checkAuthStatus() {
     try {
+      
       // First check persistent storage for connected states
       const persistentConnectedState = await PersistentStorage.getConnectedState();
       
@@ -383,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         // Show not connected UI for Riot
         riotConnectionStatus.textContent = 'Not Connected';
-        riotConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+        riotConnectionStatus.classList.remove('connected', 'error');
         
         // Check if first-time user to determine button text
         const firstTime = await isFirstTimeUser();
@@ -426,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const displayName = userData?.display_name || userData?.login || 'Connected';
           twitchConnectionStatus.textContent = displayName;
           twitchConnectionStatus.classList.add('connected');
-          twitchConnectionStatus.classList.remove('connecting', 'disconnecting', 'error');
+          twitchConnectionStatus.classList.remove('error');
           connectTwitchBtn.textContent = 'Disconnect';
           
                   // Update persistent storage with latest data
@@ -441,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (!persistentConnectedState.twitch) {
           // Only update UI if we haven't already displayed data from persistent storage
           twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+          twitchConnectionStatus.classList.remove('connected', 'error');
           connectTwitchBtn.textContent = 'Connect';
           isTwitchConnected = false; // Mark as not connected based on live check failure
         }
@@ -453,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!persistentConnectedState.twitch) {
             // Only update UI if we haven't already displayed data from persistent storage
             twitchConnectionStatus.textContent = 'Not Connected';
-            twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+            twitchConnectionStatus.classList.remove('connected', 'error');
             connectTwitchBtn.textContent = 'Connect';
             // Update Riot controls based on the new Twitch status
             updateRiotControlsBasedOnTwitchStatus();
@@ -475,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Reset Riot connection UI - always show "Not Connected" for consistency
     riotConnectionStatus.textContent = 'Not Connected';
-    riotConnectionStatus.classList.remove('connected', 'error', 'connecting');
+    riotConnectionStatus.classList.remove('connected', 'error');
     
     updateRiotButtonText('Connect');
     connectRiotBtn.disabled = false;
@@ -485,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Reset Twitch connection UI
     twitchConnectionStatus.textContent = 'Not Connected';
-    twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting', 'error');
+    twitchConnectionStatus.classList.remove('connected', 'error');
     connectTwitchBtn.textContent = 'Connect';
     connectTwitchBtn.disabled = false;
     
@@ -514,10 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (isAuthenticated) {
           // Disconnect flow
-          // Show loading state
           updateRiotButtonText('Disconnecting...');
-          riotConnectionStatus.textContent = 'Disconnecting...';
-          riotConnectionStatus.classList.add('disconnecting');
           
           try {
             // Use disconnect method to clear both tokens and persistent data
@@ -525,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Update UI manually
             riotConnectionStatus.textContent = 'Not Connected';
-            riotConnectionStatus.classList.remove('connected', 'disconnecting');
+            riotConnectionStatus.classList.remove('connected');
             updateRiotButtonText('Connect');
             
             // Show unranked rank display
@@ -538,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Show normal not connected state instead of error
             updateRiotButtonText('Connect');
             riotConnectionStatus.textContent = 'Not Connected';
-            riotConnectionStatus.classList.remove('error', 'disconnecting', 'connected');
+            riotConnectionStatus.classList.remove('error', 'connected');
           } finally {
             // Re-enable button
             connectRiotBtn.disabled = false;
@@ -550,19 +526,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Connect flow - check if first time to determine UI behavior
       const isFirstTime = await isFirstTimeUser();
       
+      // Show connecting in button only
+      updateRiotButtonText('Connecting...');
+      
       if (isFirstTime) {
-        // First time - just change button text, don't show connecting state
-        updateRiotButtonText('Connecting...');
-        // Status remains "Not Connected" for consistency
-        
         // Mark that connect button has been pressed so we switch to normal state afterwards
         await chrome.storage.local.set({ 'eloward_signin_attempted': true });
-      } else {
-        // Returning user - show normal connecting state
-        updateRiotButtonText('Connecting...');
-        riotConnectionStatus.textContent = 'Connecting...';
-        riotConnectionStatus.classList.remove('error');
-        riotConnectionStatus.classList.add('connecting');
       }
       
       // Get selected region
@@ -582,18 +551,11 @@ document.addEventListener('DOMContentLoaded', () => {
         await chrome.storage.local.set({ selectedRegion: region });
               } catch (error) {
           
-          // Show normal not connected state instead of error
-          // After first sign-in attempt, always show normal state
-          const firstTime = await isFirstTimeUser();
+          // Show normal not connected state
           updateRiotButtonText('Connect');
           riotConnectionStatus.textContent = 'Not Connected';
-          riotConnectionStatus.classList.remove('error', 'connecting', 'connected');
+          riotConnectionStatus.classList.remove('error', 'connected');
         } finally {
-          // Remove connecting class if still present and not connected
-          if (!riotConnectionStatus.classList.contains('connected')) {
-            riotConnectionStatus.classList.remove('connecting');
-          }
-          
           // Re-enable button
           connectRiotBtn.disabled = false;
         }
@@ -774,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check if TwitchAuth is available
     if (typeof TwitchAuth === 'undefined') {
       twitchConnectionStatus.textContent = 'Not Connected';
-      twitchConnectionStatus.classList.remove('error', 'connecting', 'disconnecting', 'connected');
+      twitchConnectionStatus.classList.remove('error', 'connected');
       return;
     }
     
@@ -784,9 +746,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (isAuthenticated) {
         // Disconnect flow
-        twitchConnectionStatus.textContent = 'Disconnecting...';
-        twitchConnectionStatus.classList.add('disconnecting');
-        twitchConnectionStatus.classList.remove('connected', 'connecting', 'error');
         connectTwitchBtn.textContent = 'Disconnecting...';
         connectTwitchBtn.disabled = true;
         
@@ -796,15 +755,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update UI after logout
         twitchConnectionStatus.textContent = 'Not Connected';
         connectTwitchBtn.textContent = 'Connect';
-        twitchConnectionStatus.classList.remove('connected', 'connecting', 'disconnecting');
+        twitchConnectionStatus.classList.remove('connected');
         
         // Update Riot controls based on disconnected status
         updateRiotControlsBasedOnTwitchStatus();
       } else {
         // Connect flow
-        twitchConnectionStatus.textContent = 'Connecting...';
-        twitchConnectionStatus.classList.add('connecting');
-        twitchConnectionStatus.classList.remove('connected', 'disconnecting', 'error');
         connectTwitchBtn.textContent = 'Connecting...';
         connectTwitchBtn.disabled = true;
         
@@ -825,7 +781,6 @@ document.addEventListener('DOMContentLoaded', () => {
               
                           // Only mark as connected if we have valid user data
             twitchConnectionStatus.classList.add('connected');
-            twitchConnectionStatus.classList.remove('connecting');
             connectTwitchBtn.textContent = 'Disconnect';
             
             // Update Riot controls based on successful connection
@@ -837,7 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (userInfoError) {
             // User info failed - show not connected state
             twitchConnectionStatus.textContent = 'Not Connected';
-            twitchConnectionStatus.classList.remove('error', 'connecting', 'connected');
+            twitchConnectionStatus.classList.remove('error', 'connected');
             connectTwitchBtn.textContent = 'Connect';
             
             // Update Riot controls based on failed connection
@@ -846,7 +801,7 @@ document.addEventListener('DOMContentLoaded', () => {
           
         } catch (authError) {
           twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('error', 'connecting', 'connected');
+          twitchConnectionStatus.classList.remove('error', 'connected');
           connectTwitchBtn.textContent = 'Connect';
           
           // Update Riot controls based on failed authentication
@@ -858,7 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       twitchConnectionStatus.textContent = 'Not Connected';
-      twitchConnectionStatus.classList.remove('error', 'connecting', 'disconnecting', 'connected');
+      twitchConnectionStatus.classList.remove('error', 'connected');
       
       // Ensure connected state is reset on error
       await PersistentStorage.updateConnectedState('twitch', false);
