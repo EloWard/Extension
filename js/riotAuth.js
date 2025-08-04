@@ -80,7 +80,6 @@ export const RiotAuth = {
    */
   async authenticate(region) {
     try {
-      console.log('[RiotAuth] Starting authentication flow for region:', region);
       
       // Clear any previous auth states
       await chrome.storage.local.remove([this.config.storageKeys.authState]);
@@ -146,11 +145,9 @@ export const RiotAuth = {
       
       // Store the user data in persistent storage
       await PersistentStorage.storeRiotUserData(userData);
-      console.log('[RiotAuth] Authentication completed successfully');
       
       return userData;
     } catch (error) {
-      console.error('[RiotAuth] Authentication error:', error.message);
       throw error;
     }
   },
@@ -224,18 +221,15 @@ export const RiotAuth = {
     return new Promise((resolve, reject) => {
       try {
         // Try to open directly with window.open first
-        console.log('[RiotAuth] Attempting to open auth window with window.open');
         this.authWindow = window.open(authUrl, 'riotAuthWindow', 'width=500,height=700');
         
         if (this.authWindow && !this.authWindow.closed) {
-          console.log('[RiotAuth] Successfully opened window with window.open');
           // Try to focus the window
           if (this.authWindow.focus) {
             this.authWindow.focus();
           }
           resolve(this.authWindow);
         } else {
-          console.log('[RiotAuth] window.open failed, falling back to background script');
           // If window.open failed (likely due to popup blocker), use background script
           this.authWindow = null; // Ensure it's null
           
@@ -247,25 +241,20 @@ export const RiotAuth = {
               state: storedState
             }, response => {
               if (chrome.runtime.lastError) {
-                console.error('[RiotAuth] Background script failed:', chrome.runtime.lastError);
                 reject(new Error('Failed to open authentication window - popup may be blocked'));
               } else if (response && response.success) {
-                console.log('[RiotAuth] Background script opened window successfully');
                 // When using background script, we don't have a direct window reference
                 // But the auth data will be sent directly to background script via chrome.runtime
                 resolve(null); // No direct window reference, but window was opened
               } else {
-                console.error('[RiotAuth] Background script response:', response);
                 reject(new Error('Failed to open authentication window - unknown error'));
               }
             });
           }).catch(error => {
-            console.error('[RiotAuth] Failed to get stored state:', error);
             reject(new Error('Failed to get authentication state'));
           });
         }
       } catch (e) {
-        console.error('[RiotAuth] Exception opening window:', e);
         reject(new Error('Failed to open authentication window - ' + e.message));
       }
     });
@@ -277,8 +266,6 @@ export const RiotAuth = {
    * @private
    */
   async _waitForAuthCallback() {
-    console.log('[RiotAuth] Starting callback wait mechanism');
-    
     return new Promise(resolve => {
       const authCallbackWatcher = new AuthCallbackWatcher(this.authWindow, resolve);
       // Store reference so we can update the window later
@@ -1331,8 +1318,6 @@ class AuthCallbackWatcher {
       windowClosedTime: null,
       isResolved: false
     };
-    
-    console.log('[AuthCallbackWatcher] Initialized with window:', !!authWindow);
   }
   
   /**
@@ -1341,15 +1326,12 @@ class AuthCallbackWatcher {
    */
   updateWindow(newWindow) {
     this.authWindow = newWindow;
-    console.log('[AuthCallbackWatcher] Updated window reference:', !!newWindow);
   }
   
   /**
    * Start the callback watching process
    */
   start() {
-    console.log('[AuthCallbackWatcher] Starting callback monitoring');
-    
     // Check immediately first
     this._checkForCallback().then(found => {
       if (!found && !this.state.isResolved) {
@@ -1380,7 +1362,6 @@ class AuthCallbackWatcher {
     // Priority check: Look for callback data first and always prioritize it
     const callbackData = await this._getCallbackData();
     if (callbackData) {
-      console.log('[AuthCallbackWatcher] Callback data found, resolving successfully');
       this._resolveWith(callbackData);
       return true;
     }
@@ -1399,15 +1380,12 @@ class AuthCallbackWatcher {
     // Check timeout - but give plenty of time for complex auth flows
     this.state.elapsedTime += this.config.checkInterval;
     if (this.state.elapsedTime >= this.config.maxWaitTime) {
-      console.log('[AuthCallbackWatcher] Timeout reached after', this.config.maxWaitTime / 1000, 'seconds');
       // Final desperate check for callback data before giving up
       const finalCallbackCheck = await this._getCallbackData();
       if (finalCallbackCheck) {
-        console.log('[AuthCallbackWatcher] Found callback data at last second!');
         this._resolveWith(finalCallbackCheck);
         return true;
       }
-      console.log('[AuthCallbackWatcher] No callback data found, resolving as cancelled');
       this._resolveWith(null);
       return true;
     }
@@ -1427,7 +1405,6 @@ class AuthCallbackWatcher {
         for (const key of this.config.callbackKeys) {
           const callback = data[key];
           if (callback && callback.code) {
-            console.log(`[AuthCallbackWatcher] Found callback data in chrome.storage key: ${key}`);
             resolve(callback);
             return;
           }
@@ -1474,7 +1451,6 @@ class AuthCallbackWatcher {
       }
     } catch (error) {
       // If we can't access the window object at all, it's truly closed
-      console.log('[AuthCallbackWatcher] Window access error, window is closed:', error.message);
       return 'closed';
     }
   }
@@ -1490,7 +1466,6 @@ class AuthCallbackWatcher {
     // Start the closed timer if not already started
     if (!this.state.windowClosedTime) {
       this.state.windowClosedTime = now;
-      console.log('[AuthCallbackWatcher] Window appears closed, starting stability delay');
       return false;
     }
     
@@ -1500,12 +1475,10 @@ class AuthCallbackWatcher {
       // Final check for late-arriving callback data
       const lateCallback = await this._getCallbackData();
       if (lateCallback) {
-        console.log('[AuthCallbackWatcher] Found late callback data after window closed');
         this._resolveWith(lateCallback);
         return true;
       }
       
-      console.log('[AuthCallbackWatcher] Window confirmed closed, resolving as cancelled');
       this._resolveWith(null);
       return true;
     }
@@ -1534,7 +1507,7 @@ class AuthCallbackWatcher {
     // Clean up callback data from storage if successful
     if (result && result.code) {
       chrome.storage.local.remove(this.config.callbackKeys, () => {
-        console.log('[AuthCallbackWatcher] Cleaned up callback data from storage');
+        // Callback data cleaned up
       });
     }
     

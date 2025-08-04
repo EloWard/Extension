@@ -249,6 +249,13 @@ document.addEventListener('DOMContentLoaded', () => {
       sendResponse({ success: true });
     }
     
+    // Handle auth completion notification to refresh popup
+    if (message.type === 'auth_completed') {
+      // Automatically refresh auth status when auth completes
+      checkAuthStatus();
+      sendResponse({ success: true });
+    }
+    
     // Handle clear_local_storage message (kept for backward compatibility)
     if (message.action === 'clear_local_storage') {
       // No action needed as we only use chrome.storage.local now
