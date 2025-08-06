@@ -126,7 +126,16 @@ function createBadgeElement(rankData) {
 }
 
 function detectChatMode() {
+  // More robust 7TV detection using multiple reliable indicators
   const has7TVElements = !!(
+    // Primary indicators - these are present when 7TV is loaded
+    document.querySelector('seventv-container') ||
+    document.querySelector('#seventv-settings-button') ||
+    document.body.classList.contains('seventv-transparent') ||
+    // CSS custom properties indicate 7TV is active
+    getComputedStyle(document.body).getPropertyValue('--seventv-chat-padding').trim() ||
+    getComputedStyle(document.body).getPropertyValue('--seventv-channel-accent').trim() ||
+    // Fallback to message-level selectors
     document.querySelector('.seventv-message') ||
     document.querySelector('.seventv-chat-user') ||
     document.querySelector('[data-seventv]') ||
@@ -152,6 +161,7 @@ function detectChatMode() {
   extensionState.chatMode = detectedMode;
   
   if (detectedMode !== previousMode && extensionState.initializationComplete) {
+    console.log(`🔄 EloWard: Chat mode changed from ${previousMode} to ${detectedMode}`);
     switchChatMode();
   }
   
@@ -219,12 +229,27 @@ function setupCompatibilityMonitor() {
       if (mutation.type === 'childList') {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.querySelector && (
+            // Check for 7TV indicators
+            const has7TVIndicators = !!(
+              node.tagName === 'SEVENTV-CONTAINER' ||
+              node.id === 'seventv-settings-button' ||
+              node.querySelector && (
+                node.querySelector('seventv-container') ||
+                node.querySelector('#seventv-settings-button') ||
                 node.querySelector('.seventv-message') ||
+                node.classList.contains('seventv-paint')
+              )
+            );
+            
+            // Check for FFZ indicators
+            const hasFFZIndicators = !!(
+              node.querySelector && (
                 node.querySelector('.ffz-message-line') ||
-                node.classList.contains('seventv-paint') ||
                 node.classList.contains('ffz-addon')
-            )) {
+              )
+            );
+            
+            if (has7TVIndicators || hasFFZIndicators) {
               if (detectionCount < maxDetections) {
                 detectionCount++;
                 detectChatMode();
@@ -234,12 +259,25 @@ function setupCompatibilityMonitor() {
           }
         }
       }
+      
+      // Also check for class changes on body element
+      if (mutation.type === 'attributes' && 
+          mutation.target === document.body && 
+          mutation.attributeName === 'class') {
+        if (detectionCount < maxDetections) {
+          detectionCount++;
+          detectChatMode();
+          return;
+        }
+      }
     }
   });
   
   compatibilityObserver.observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'style']
   });
   
   setTimeout(() => {
