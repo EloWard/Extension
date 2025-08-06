@@ -126,16 +126,17 @@ function createBadgeElement(rankData) {
 }
 
 function detectChatMode() {
-  // More robust 7TV detection using multiple reliable indicators
+  // Comprehensive 7TV detection - if ANY of these indicators are present, 7TV is active
   const has7TVElements = !!(
-    // Primary indicators - these are present when 7TV is loaded
+    // Structural indicators (container, settings button)
     document.querySelector('seventv-container') ||
     document.querySelector('#seventv-settings-button') ||
+    // Body class indicators  
     document.body.classList.contains('seventv-transparent') ||
-    // CSS custom properties indicate 7TV is active
+    // CSS custom properties (set when 7TV loads)
     getComputedStyle(document.body).getPropertyValue('--seventv-chat-padding').trim() ||
     getComputedStyle(document.body).getPropertyValue('--seventv-channel-accent').trim() ||
-    // Fallback to message-level selectors
+    // Message and element indicators
     document.querySelector('.seventv-message') ||
     document.querySelector('.seventv-chat-user') ||
     document.querySelector('[data-seventv]') ||
