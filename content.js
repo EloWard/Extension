@@ -194,7 +194,7 @@ function cleanupChatObserver() {
 
 function setupCompatibilityMonitor() {
   let detectionCount = 0;
-  const maxDetections = 2;
+  const maxDetections = 15;
   
   const scheduleFollowUpDetection = () => {
     if (detectionCount < maxDetections && extensionState.chatMode === 'standard') {
@@ -203,7 +203,7 @@ function setupCompatibilityMonitor() {
           detectionCount++;
           detectChatMode();
         }
-      }, 2500);
+      }, 1000);
     }
   };
   
