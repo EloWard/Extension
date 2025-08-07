@@ -1,8 +1,5 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
-// Import webextension-polyfill for cross-browser compatibility
-importScripts('./browser-polyfill.js');
-
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
