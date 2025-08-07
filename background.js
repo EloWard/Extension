@@ -1,5 +1,8 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
+// Import webextension-polyfill for cross-browser compatibility
+importScripts('./browser-polyfill.js');
+
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
@@ -125,30 +128,28 @@ function handleAuthCallback(params) {
     return;
   }
 
-  const promiseStorage = new Promise(resolve => {
-    chrome.storage.local.set({
-      'auth_callback': params,
-      'eloward_auth_callback': params
-    }, resolve);
+  const promiseStorage = browser.storage.local.set({
+    'auth_callback': params,
+    'eloward_auth_callback': params
   });
 
   const isTwitchCallback = params.service === 'twitch';
 
   if (isTwitchCallback) {
-    chrome.storage.local.set({
+    browser.storage.local.set({
       'twitch_auth_callback': params
-    }, () => {
+    }).then(() => {
       initiateTokenExchange(params, 'twitch');
     });
   } else {
-    chrome.storage.local.set({
+    browser.storage.local.set({
       'riot_auth_callback': params
-    }, () => {
+    }).then(() => {
       initiateTokenExchange(params, 'riot');
     });
   }
 
-  chrome.runtime.sendMessage({
+  browser.runtime.sendMessage({
     type: 'auth_callback',
     params: params
   });
@@ -169,7 +170,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
       await PersistentStorage.updateConnectedState('twitch', true);
 
       // Notify popup after all data is successfully stored
-      chrome.runtime.sendMessage({
+      browser.runtime.sendMessage({
         type: 'auth_completed',
         service: 'twitch'
       }).catch(() => {
@@ -200,7 +201,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
@@ -248,7 +249,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       
       setTimeout(() => {
-        chrome.runtime.sendMessage({
+        browser.runtime.sendMessage({
           type: 'twitch_auth_processed',
           success: true,
           timestamp: Date.now()
@@ -266,7 +267,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'get_auth_callback') {
-    chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
+    browser.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback']).then((data) => {
       const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
       sendResponse({ data: callback });
     });
@@ -299,12 +300,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.url) {
       const windowId = Date.now().toString();
       
-      chrome.windows.create({
+      browser.windows.create({
         url: message.url,
         type: 'popup',
         width: 500,
         height: 700
-      }, (window) => {
+      }).then((window) => {
         authWindows[windowId] = {
           window,
           state: message.state,
@@ -320,13 +321,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'check_auth_tokens') {
-    chrome.storage.local.get([
+    browser.storage.local.get([
       'eloward_riot_access_token',
       'eloward_riot_refresh_token',
       'eloward_riot_token_expiry',
       'eloward_riot_tokens',
       'riotAuth'
-    ], (data) => {
+    ]).then((data) => {
       sendResponse({ data });
     });
     return true;
@@ -334,7 +335,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'store_tokens') {
     if (message.tokens) {
-      chrome.storage.local.set({
+      browser.storage.local.set({
         'eloward_riot_access_token': message.tokens.access_token,
         'eloward_riot_refresh_token': message.tokens.refresh_token,
         'eloward_riot_token_expiry': message.tokens.expires_at || (Date.now() + (message.tokens.expires_in * 1000)),
@@ -343,7 +344,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ...message.tokens,
           issued_at: Date.now()
         }
-      }, () => {
+      }).then(() => {
         sendResponse({ success: true });
       });
     } else {
@@ -357,7 +358,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     
-    chrome.storage.local.set({
+    browser.storage.local.set({
       'eloward_auth_state': state,
       [RiotAuth.config.storageKeys.authState]: state,
       'selectedRegion': message.region || 'na1'
@@ -558,23 +559,23 @@ self.addEventListener('message', (event) => {
   }
 });
 
-chrome.runtime.onInstalled.addListener((details) => {
+browser.runtime.onInstalled.addListener((details) => {
   clearAllStoredData();
   
-  chrome.storage.local.set({
+  browser.storage.local.set({
     selectedRegion: 'na1'
   });
   
-  chrome.action.setBadgeText({ text: 'ON' });
-  chrome.action.setBadgeBackgroundColor({ color: '#DC2123' });
+  browser.action.setBadgeText({ text: 'ON' });
+  browser.action.setBadgeBackgroundColor({ color: '#DC2123' });
   
   setTimeout(() => {
-    chrome.action.setBadgeText({ text: '' });
+    browser.action.setBadgeText({ text: '' });
   }, 5000);
   
-  chrome.storage.local.get('linkedAccounts', (data) => {
+  browser.storage.local.get('linkedAccounts').then((data) => {
     if (!data.linkedAccounts) {
-      chrome.storage.local.set({ linkedAccounts: {} });
+      browser.storage.local.set({ linkedAccounts: {} });
     }
   });
   
@@ -604,7 +605,7 @@ function clearAllStoredData() {
         'authCallbackProcessed'
       ];
       
-      chrome.storage.local.remove(keysToRemove, () => {
+      browser.storage.local.remove(keysToRemove).then(() => {
         PersistentStorage.clearAllData()
           .then(() => {
             PersistentStorage.init();
@@ -712,7 +713,7 @@ function getRankIconUrl(tier) {
 
 async function handleAuthCallbackFromRedirect(code, state) {
   try {
-    const storedData = await chrome.storage.local.get(['authState']);
+    const storedData = await browser.storage.local.get(['authState']);
     const expectedState = storedData.authState;
     
     let stateValid = expectedState && expectedState === state;
@@ -742,7 +743,7 @@ async function handleAuthCallbackFromRedirect(code, state) {
     
     const tokenExpiry = Date.now() + (tokenData.data.expires_in * 1000);
     
-    await chrome.storage.local.set({
+    await browser.storage.local.set({
       eloward_riot_access_token: tokenData.data.access_token,
       eloward_riot_refresh_token: tokenData.data.refresh_token,
       eloward_riot_token_expiry: tokenExpiry,
@@ -754,10 +755,10 @@ async function handleAuthCallbackFromRedirect(code, state) {
       authInProgress: false
     });
     
-    await chrome.storage.local.remove(['authState']);
+    await browser.storage.local.remove(['authState']);
     
     try {
-      chrome.runtime.sendMessage({
+      browser.runtime.sendMessage({
         action: 'auth_completed',
         success: true
       });
@@ -768,7 +769,7 @@ async function handleAuthCallbackFromRedirect(code, state) {
     return { success: true, username: tokenData.data.user_info?.game_name };
   } catch (error) {
     
-    await chrome.storage.local.set({
+    await browser.storage.local.set({
       authInProgress: false
     });
     
@@ -815,9 +816,9 @@ async function getRankForLinkedAccount(linkedAccount, platform) {
 }
 
 function loadConfiguration() {
-  chrome.storage.local.get(['selectedRegion'], (data) => {
+  browser.storage.local.get(['selectedRegion']).then((data) => {
     if (!data.selectedRegion) {
-      chrome.storage.local.set({ selectedRegion: 'na1' });
+      browser.storage.local.set({ selectedRegion: 'na1' });
     }
   });
 }
@@ -878,7 +879,7 @@ async function fetchRankByTwitchUsername(twitchUsername, platform) {
 
 function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();
-  chrome.storage.local.remove('connected_region');
+  browser.storage.local.remove('connected_region');
 }
 
 async function incrementDbReadCounter(channelName) {
@@ -936,7 +937,7 @@ async function incrementSuccessfulLookupCounter(channelName) {
 }
 
 
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+browser.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'auth_callback') {
     let params;

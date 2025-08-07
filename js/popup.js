@@ -172,13 +172,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
 
-    chrome.storage.local.set({ 'accountSectionCollapsed': !isHidden });
+    browser.storage.local.set({ 'accountSectionCollapsed': !isHidden });
   });
 
 
   async function initializeAccountSectionState() {
     try {
-      const result = await chrome.storage.local.get(['accountSectionCollapsed']);
+      const result = await browser.storage.local.get(['accountSectionCollapsed']);
       const isCollapsed = result.accountSectionCollapsed;
       
 
@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === 'auth_callback' && message.params) {
       processAuthCallback(message.params);
@@ -225,10 +225,9 @@ document.addEventListener('DOMContentLoaded', () => {
   async function processAuthCallback(params) {
     try {
 
-      await new Promise(resolve => {
-        chrome.storage.local.set({ 'auth_callback': { code: params.code, state: params.state } }, resolve);
-        chrome.storage.local.set({ 'eloward_auth_callback': { code: params.code, state: params.state } }, resolve);
-        resolve();
+      await browser.storage.local.set({ 
+        'auth_callback': { code: params.code, state: params.state },
+        'eloward_auth_callback': { code: params.code, state: params.state }
       });
       
     } catch (error) {
@@ -333,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // Get the connected region from storage and update the selector
-        chrome.storage.local.get(['selectedRegion'], (result) => {
+        browser.storage.local.get(['selectedRegion']).then((result) => {
           if (result.selectedRegion) {
             regionSelect.value = result.selectedRegion;
           }
@@ -357,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rankBadgePreview.style.transform = 'translateY(-3px)';
         
         // Set region from storage if available
-        chrome.storage.local.get(['selectedRegion'], (result) => {
+        browser.storage.local.get(['selectedRegion']).then((result) => {
           if (result.selectedRegion) {
             regionSelect.value = result.selectedRegion;
           }
@@ -510,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (isFirstTime) {
         // Mark that connect button has been pressed so we switch to normal state afterwards
-        await chrome.storage.local.set({ 'eloward_signin_attempted': true });
+        await browser.storage.local.set({ 'eloward_signin_attempted': true });
       }
       
       // Get selected region
@@ -527,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateUserInterface(userData);
         
         // Store the connected region in storage and ensure the region selector reflects the current region
-        await chrome.storage.local.set({ selectedRegion: region });
+        await browser.storage.local.set({ selectedRegion: region });
               } catch (error) {
           
           // Show normal not connected state
@@ -546,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
-    chrome.storage.local.set({ selectedRegion });
+    browser.storage.local.set({ selectedRegion });
   }
 
   // Refresh rank function to update player rank information
@@ -763,9 +762,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Get references to all stored regions
-  chrome.storage.local.get(['selectedRegion'], (result) => {
+  browser.storage.local.get(['selectedRegion']).then((result) => {
     // First clean up any old key that might exist
-    chrome.storage.local.remove('connected_region');
+    browser.storage.local.remove('connected_region');
     
     // Set the region selector value
     if (result.selectedRegion) {

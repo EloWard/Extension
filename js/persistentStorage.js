@@ -10,7 +10,7 @@ const STORAGE_KEYS = {
 
 export const PersistentStorage = {
   init() {
-    chrome.storage.local.set({
+    browser.storage.local.set({
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
   },
@@ -18,7 +18,7 @@ export const PersistentStorage = {
   async storeRiotUserData(userData) {
     if (!userData) return;
     
-    const currentData = await chrome.storage.local.get(['selectedRegion']);
+    const currentData = await browser.storage.local.get(['selectedRegion']);
     
     const persistentData = {
       riotId: userData.riotId,
@@ -37,7 +37,7 @@ export const PersistentStorage = {
       };
     }
     
-    await chrome.storage.local.set({
+    await browser.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,
       [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
@@ -47,7 +47,7 @@ export const PersistentStorage = {
   },
   
   async getRiotUserData() {
-    const data = await chrome.storage.local.get([STORAGE_KEYS.RIOT_USER_DATA]);
+    const data = await browser.storage.local.get([STORAGE_KEYS.RIOT_USER_DATA]);
     return data[STORAGE_KEYS.RIOT_USER_DATA] || null;
   },
   
@@ -61,7 +61,7 @@ export const PersistentStorage = {
       profile_image_url: userData.profile_image_url
     };
     
-    await chrome.storage.local.set({
+    await browser.storage.local.set({
       [STORAGE_KEYS.TWITCH_USER_DATA]: persistentData,
       [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
@@ -71,23 +71,23 @@ export const PersistentStorage = {
   },
   
   async getTwitchUserData() {
-    const data = await chrome.storage.local.get([STORAGE_KEYS.TWITCH_USER_DATA]);
+    const data = await browser.storage.local.get([STORAGE_KEYS.TWITCH_USER_DATA]);
     return data[STORAGE_KEYS.TWITCH_USER_DATA] || null;
   },
   
   async updateConnectedState(service, isConnected) {
-    const data = await chrome.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
+    const data = await browser.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
     const connectedState = data[STORAGE_KEYS.CONNECTED_STATE] || {};
     
     connectedState[service] = isConnected;
     
-    await chrome.storage.local.set({
+    await browser.storage.local.set({
       [STORAGE_KEYS.CONNECTED_STATE]: connectedState
     });
   },
   
   async getConnectedState() {
-    const data = await chrome.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
+    const data = await browser.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
     return data[STORAGE_KEYS.CONNECTED_STATE] || { riot: false, twitch: false };
   },
   
@@ -98,16 +98,16 @@ export const PersistentStorage = {
   
   async clearServiceData(service) {
     if (service === 'riot') {
-      await chrome.storage.local.remove([STORAGE_KEYS.RIOT_USER_DATA]);
+      await browser.storage.local.remove([STORAGE_KEYS.RIOT_USER_DATA]);
     } else if (service === 'twitch') {
-      await chrome.storage.local.remove([STORAGE_KEYS.TWITCH_USER_DATA]);
+      await browser.storage.local.remove([STORAGE_KEYS.TWITCH_USER_DATA]);
     }
     
     await this.updateConnectedState(service, false);
   },
   
   async clearAllData() {
-    await chrome.storage.local.remove([
+    await browser.storage.local.remove([
       STORAGE_KEYS.RIOT_USER_DATA,
       STORAGE_KEYS.TWITCH_USER_DATA,
       STORAGE_KEYS.LAST_UPDATED,

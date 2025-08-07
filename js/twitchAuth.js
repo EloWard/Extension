@@ -51,7 +51,7 @@ export const TwitchAuth = {
     try {
       
       // Clear any previous auth states
-      await chrome.storage.local.remove([this.config.storageKeys.authState]);
+      await browser.storage.local.remove([this.config.storageKeys.authState]);
       
       // Generate a unique state value for CSRF protection
       const state = this._generateRandomState();
@@ -64,9 +64,7 @@ export const TwitchAuth = {
       
       // Clear any existing callbacks before opening the window
       try {
-        await new Promise(resolve => {
-          chrome.storage.local.remove(['auth_callback', 'twitch_auth_callback'], resolve);
-        });
+        await browser.storage.local.remove(['auth_callback', 'twitch_auth_callback']);
       } catch (e) {
         // Non-fatal error, continue with authentication
       }
@@ -134,9 +132,7 @@ export const TwitchAuth = {
    * @private
    */
   async _storeAuthState(state) {
-    await new Promise(resolve => {
-      chrome.storage.local.set({ [this.config.storageKeys.authState]: state }, resolve);
-    });
+    await browser.storage.local.set({ [this.config.storageKeys.authState]: state });
   },
   
   /**
@@ -145,14 +141,12 @@ export const TwitchAuth = {
    * @private
    */
   async _getStoredAuthState() {
-    // Get from chrome.storage.local
-    const chromeData = await new Promise(resolve => {
-      chrome.storage.local.get([this.config.storageKeys.authState], resolve);
-    });
+    // Get from browser.storage.local
+    const browserData = await browser.storage.local.get([this.config.storageKeys.authState]);
     
-    const chromeState = chromeData[this.config.storageKeys.authState];
-    if (chromeState) {
-      return chromeState;
+    const state = browserData[this.config.storageKeys.authState];
+    if (state) {
+      return state;
     }
     
     return null;
@@ -223,17 +217,17 @@ export const TwitchAuth = {
         }
       } else {
         // If window.open failed (likely due to popup blocker), try using the background script
-        chrome.runtime.sendMessage({
+        browser.runtime.sendMessage({
           type: 'open_auth_window',
           url: authUrl,
           service: 'twitch'
-        }, response => {
-          if (chrome.runtime.lastError) {
-            throw new Error('Failed to open authentication window - popup may be blocked');
-          } else if (response && response.success) {
+        }).then(response => {
+          if (response && response.success) {
           } else {
             throw new Error('Failed to open authentication window - unknown error');
           }
+        }).catch(() => {
+          throw new Error('Failed to open authentication window - popup may be blocked');
         });
       }
     } catch (error) {
@@ -256,10 +250,8 @@ export const TwitchAuth = {
       
       // Function to check for auth callback data
       const checkForCallback = async () => {
-        // Check chrome.storage for callback data
-        const data = await new Promise(r => {
-          chrome.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], r);
-        });
+        // Check browser.storage for callback data
+        const data = await browser.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]);
         
         // Check in multiple possible storage locations
         const callback = data.auth_callback || 
@@ -277,10 +269,8 @@ export const TwitchAuth = {
           
           // Clear the callback data from storage to prevent reuse
           try {
-            chrome.storage.local.remove(
-              ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], 
-              () => {
-              }
+            browser.storage.local.remove(
+              ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]
             );
           } catch (e) {
           }
@@ -301,7 +291,7 @@ export const TwitchAuth = {
           clearInterval(intervalId);
           
           // Try to check storage for any last-moment callbacks that might have been missed
-          chrome.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback], 
+          browser.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]).then(
             lastCheck => {
               const lastCallback = lastCheck.auth_callback || 
                                   lastCheck.twitch_auth_callback || 
@@ -314,7 +304,7 @@ export const TwitchAuth = {
               }
               
               // Clear any callback data
-              chrome.storage.local.remove(
+              browser.storage.local.remove(
                 ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]
               );
             }
@@ -352,13 +342,13 @@ export const TwitchAuth = {
           
           window.removeEventListener('message', messageListener);
           
-          // Store in chrome.storage for consistency
+          // Store in browser.storage for consistency
           const callbackData = {
             ...event.data,
             timestamp: Date.now()
           };
           
-          chrome.storage.local.set({
+          browser.storage.local.set({
             'auth_callback': callbackData,
             'twitch_auth_callback': callbackData,
             [this.config.storageKeys.authCallback]: callbackData
@@ -573,7 +563,7 @@ export const TwitchAuth = {
       // Clear persistent user data
       await PersistentStorage.clearServiceData('twitch');
       
-      // Clear auth data from chrome.storage
+      // Clear auth data from browser.storage
       let keysToRemove = [
         this.config.storageKeys.accessToken,
         this.config.storageKeys.refreshToken,
@@ -584,7 +574,7 @@ export const TwitchAuth = {
         'eloward_auth_callback'
       ];
       
-      await chrome.storage.local.remove(keysToRemove);
+      await browser.storage.local.remove(keysToRemove);
       
       return true;
     } catch (error) {
@@ -676,38 +666,34 @@ export const TwitchAuth = {
   },
   
   /**
-   * Store a value in chrome.storage.local
+   * Store a value in browser.storage.local
    * @param {string} key - The key to store under
    * @param {string} value - The value to store
    * @private
    */
   async _storeValue(key, value) {
-    // Store only in chrome.storage.local for consistency
-    return new Promise((resolve, reject) => {
-      chrome.storage.local.set({ [key]: value }, () => {
-        const error = chrome.runtime.lastError;
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    });
+    // Store only in browser.storage.local for consistency
+    try {
+      await browser.storage.local.set({ [key]: value });
+    } catch (error) {
+      throw error;
+    }
   },
   
   /**
-   * Get a stored value from chrome.storage.local
+   * Get a stored value from browser.storage.local
    * @param {string} key - The key to retrieve
    * @returns {Promise<string|null>} The stored value or null if not found
    * @private
    */
   async _getStoredValue(key) {
-    // Get only from chrome.storage.local for consistency
-    return new Promise(resolve => {
-      chrome.storage.local.get([key], result => {
-        resolve(result[key] || null);
-      });
-    });
+    // Get only from browser.storage.local for consistency
+    try {
+      const result = await browser.storage.local.get([key]);
+      return result[key] || null;
+    } catch (error) {
+      return null;
+    }
   },
   
 

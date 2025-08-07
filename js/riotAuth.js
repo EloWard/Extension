@@ -43,7 +43,7 @@ export const RiotAuth = {
     try {
       
       // Clear any previous auth states
-      await chrome.storage.local.remove([this.config.storageKeys.authState]);
+      await browser.storage.local.remove([this.config.storageKeys.authState]);
       
       // Generate a unique state
       const state = this._generateRandomState();
@@ -57,7 +57,7 @@ export const RiotAuth = {
       // Clear any existing callbacks before opening the window
       try {
         await new Promise(resolve => {
-          chrome.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback'], resolve);
+          browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']).then(resolve);
         });
       } catch (e) {
         // Non-fatal error, continue with authentication
@@ -115,20 +115,18 @@ export const RiotAuth = {
   
   async _storeAuthState(state) {
     await new Promise(resolve => {
-      chrome.storage.local.set({
+      browser.storage.local.set({
         [this.config.storageKeys.authState]: state
-      }, resolve);
+      }).then(resolve);
     });
   },
   
   async _getStoredAuthState() {
-    const chromeData = await new Promise(resolve => {
-      chrome.storage.local.get([this.config.storageKeys.authState], resolve);
-    });
+    const browserData = await browser.storage.local.get([this.config.storageKeys.authState]);
     
-    const chromeState = chromeData[this.config.storageKeys.authState];
-    if (chromeState) {
-      return chromeState;
+    const state = browserData[this.config.storageKeys.authState];
+    if (state) {
+      return state;
     }
     
     return null;
@@ -173,20 +171,20 @@ export const RiotAuth = {
           
           // Get the stored state asynchronously and then send message
           this._getStoredAuthState().then(storedState => {
-            chrome.runtime.sendMessage({
+            browser.runtime.sendMessage({
               type: 'open_auth_window',
               url: authUrl,
               state: storedState
-            }, response => {
-              if (chrome.runtime.lastError) {
-                reject(new Error('Failed to open authentication window - popup may be blocked'));
-              } else if (response && response.success) {
+            }).then(response => {
+              if (response && response.success) {
                 // When using background script, we don't have a direct window reference
-                // But the auth data will be sent directly to background script via chrome.runtime
+                // But the auth data will be sent directly to background script via browser.runtime
                 resolve(null); // No direct window reference, but window was opened
               } else {
                 reject(new Error('Failed to open authentication window - unknown error'));
               }
+            }).catch(() => {
+              reject(new Error('Failed to open authentication window - popup may be blocked'));
             });
           }).catch(error => {
             reject(new Error('Failed to get authentication state'));
@@ -287,9 +285,7 @@ export const RiotAuth = {
         }
       };
       
-      await new Promise(resolve => {
-        chrome.storage.local.set(storageData, resolve);
-      });
+      await browser.storage.local.set(storageData);
       
       // Also decode and store the ID token if present
       if (tokens.id_token) {
@@ -372,10 +368,8 @@ export const RiotAuth = {
         }
       }
       
-      // Store in chrome.storage.local
-      await new Promise(resolve => {
-        chrome.storage.local.set(storageData, resolve);
-      });
+      // Store in browser.storage.local
+      await browser.storage.local.set(storageData);
 
     } catch (error) {
       throw error;
@@ -477,13 +471,11 @@ export const RiotAuth = {
    * @private
    */
   async _getTokensFromStorage() {
-    const tokenData = await new Promise(resolve => {
-      chrome.storage.local.get([
-        this.config.storageKeys.accessToken,
-        this.config.storageKeys.refreshToken,
-        this.config.storageKeys.tokenExpiry
-      ], resolve);
-    });
+    const tokenData = await browser.storage.local.get([
+      this.config.storageKeys.accessToken,
+      this.config.storageKeys.refreshToken,
+      this.config.storageKeys.tokenExpiry
+    ]);
     
     return {
       accessToken: tokenData[this.config.storageKeys.accessToken],
@@ -501,15 +493,12 @@ export const RiotAuth = {
   async _getStoredValue(key) {
     if (!key) return null;
     
-    return new Promise((resolve) => {
-      chrome.storage.local.get([key], (result) => {
-        if (chrome.runtime.lastError) {
-          resolve(null);
-        } else {
-          resolve(result[key]);
-        }
-      });
-    });
+    try {
+      const result = await browser.storage.local.get([key]);
+      return result[key] || null;
+    } catch (error) {
+      return null;
+    }
   },
   
   /**
@@ -572,9 +561,7 @@ export const RiotAuth = {
   async performSilentReauth(region) {
     try {
       // Clear any existing callbacks to ensure clean auth flow
-      await new Promise(resolve => {
-        chrome.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback'], resolve);
-      });
+      await browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']);
       
       // Generate a unique state for this silent auth
       const state = this._generateRandomState();
@@ -628,9 +615,7 @@ export const RiotAuth = {
         
         // Fallback to other storage locations if not found in persistent storage
         if (!twitchUsername) {
-          const storageData = await new Promise(resolve => {
-            chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
-          });
+          const storageData = await browser.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername']);
           twitchUsername = storageData.eloward_persistent_twitch_user_data?.login || storageData.twitchUsername;
         }
       } catch (error) {
@@ -676,8 +661,8 @@ export const RiotAuth = {
         'eloward_auth_callback'
       ];
       
-      // Clear from chrome.storage
-      await chrome.storage.local.remove(keysToRemove);
+      // Clear from browser.storage
+      await browser.storage.local.remove(keysToRemove);
       
       // Clear Riot browser session with logout window
       try {
@@ -897,7 +882,7 @@ export const RiotAuth = {
    */
   async _storeAccountInfo(accountInfo) {
     try {
-      await chrome.storage.local.set({
+      await browser.storage.local.set({
         [this.config.storageKeys.accountInfo]: accountInfo
       });
     } catch (e) {
@@ -1015,7 +1000,7 @@ export const RiotAuth = {
    */
   async _storeRankInfo(rankInfo) {
     try {
-      await chrome.storage.local.set({
+      await browser.storage.local.set({
         [this.config.storageKeys.rankInfo]: rankInfo
       });
     } catch (e) {
@@ -1112,9 +1097,7 @@ export const RiotAuth = {
       // ALWAYS store rank data securely via backend for any successful auth
       try {
         // Get current Twitch username and token from storage
-        const twitchData = await new Promise(resolve => {
-          chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], resolve);
-        });
+        const twitchData = await browser.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername']);
         
         const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
         
@@ -1170,10 +1153,8 @@ export const RiotAuth = {
     }
     
     
-    // Store the raw ID token directly using chrome.storage
-    await new Promise(resolve => {
-      chrome.storage.local.set({ [this.config.storageKeys.idToken]: idToken }, resolve);
-    });
+    // Store the raw ID token directly using browser.storage
+    await browser.storage.local.set({ [this.config.storageKeys.idToken]: idToken });
     
     // Decode the ID token (it's a JWT)
     const parts = idToken.split('.');
@@ -1223,16 +1204,11 @@ export const RiotAuth = {
     try {
       if (!key) throw new Error('No storage key provided');
       
-      return new Promise((resolve, reject) => {
-        chrome.storage.local.set({ [key]: value }, () => {
-          const error = chrome.runtime.lastError;
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
-      });
+      try {
+        await browser.storage.local.set({ [key]: value });
+      } catch (error) {
+        throw error;
+      }
     } catch (error) {
       throw error;
     }
@@ -1373,19 +1349,19 @@ class AuthCallbackWatcher {
    * @private
    */
   async _getCallbackData() {
-    return new Promise(resolve => {
-      chrome.storage.local.get(this.config.callbackKeys, data => {
-        // Check all possible callback keys
-        for (const key of this.config.callbackKeys) {
-          const callback = data[key];
-          if (callback && callback.code) {
-            resolve(callback);
-            return;
-          }
+    try {
+      const data = await browser.storage.local.get(this.config.callbackKeys);
+      // Check all possible callback keys
+      for (const key of this.config.callbackKeys) {
+        const callback = data[key];
+        if (callback && callback.code) {
+          return callback;
         }
-        resolve(null);
-      });
-    });
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
   }
   
   /**
@@ -1480,7 +1456,7 @@ class AuthCallbackWatcher {
     
     // Clean up callback data from storage if successful
     if (result && result.code) {
-      chrome.storage.local.remove(this.config.callbackKeys, () => {
+      browser.storage.local.remove(this.config.callbackKeys).catch(() => {
         // Callback data cleaned up
       });
     }
