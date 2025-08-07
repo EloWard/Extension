@@ -38,9 +38,6 @@ const baseManifest = {
   ],
   content_security_policy: {
     extension_pages: "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev"
-  },
-  externally_connectable: {
-    matches: ["https://www.eloward.com/*"]
   }
 };
 
@@ -104,6 +101,9 @@ function generateFirefoxManifest() {
   
   // Convert MV3 CSP format to MV2
   manifest.content_security_policy = "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev";
+  
+  // Remove externally_connectable for Firefox (not needed with content script approach)
+  delete manifest.externally_connectable;
 
   return manifest;
 }

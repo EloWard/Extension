@@ -45,11 +45,6 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev"
   },
-  "externally_connectable": {
-    "matches": [
-      "https://www.eloward.com/*"
-    ]
-  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
