@@ -94,49 +94,96 @@
     
     console.log('[EloWard Extension Bridge] Auth redirect detected');
     
-    // Extract auth parameters from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const error = urlParams.get('error');
-    
-    if (code && state) {
-      console.log('[EloWard Extension Bridge] Auth parameters found, sending to extension');
-      
-      // Determine service from URL path
-      let service = 'riot'; // default
-      if (window.location.pathname.includes('/twitch/')) {
-        service = 'twitch';
-      }
-      
-      const authData = {
-        type: 'auth_callback',
-        service: service,
-        params: {
-          code: code,
-          state: state,
-          service: service
+    // Check if popup auth is handling this to avoid duplicates
+    if (typeof browser !== 'undefined' && browser.storage) {
+      browser.storage.local.get('eloward_popup_auth_active').then(data => {
+        if (data.eloward_popup_auth_active) {
+          console.log('[EloWard Extension Bridge] Popup auth active, storing callback data but skipping message');
+          // Store callback data for AuthCallbackWatcher but don't send message to background
+          storeCallbackDataOnly();
+          return;
         }
-      };
+        
+        // Process the auth redirect normally (store data AND send message)
+        processAuthRedirect();
+      });
+    } else {
+      // Fallback if browser API not available
+      processAuthRedirect();
+    }
+    
+    function storeCallbackDataOnly() {
+      console.log('[EloWard Extension Bridge] Storing callback data only for AuthCallbackWatcher');
       
-      // Send auth data to extension
-      if (window.elowardExtension && window.elowardExtension.isInstalled) {
-        console.log('[EloWard Extension Bridge] About to send auth message:', authData);
-        window.elowardExtension.sendMessage(authData, function(response) {
-          console.log('[EloWard Extension Bridge] Auth message response:', response);
-        });
-      } else {
-        console.warn('[EloWard Extension Bridge] Extension not available for auth callback');
+      // Extract auth parameters from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      const error = urlParams.get('error');
+      
+      if (code && state) {
+        console.log('[EloWard Extension Bridge] Storing auth callback data for AuthCallbackWatcher');
+        
+        // Store callback data in the keys that AuthCallbackWatcher expects
+        if (typeof browser !== 'undefined' && browser.storage) {
+          browser.storage.local.set({
+            'auth_callback': { code: code, state: state },
+            'eloward_auth_callback': { code: code, state: state },
+            'riot_auth_callback': { code: code, state: state }
+          });
+        }
+      } else if (error) {
+        console.error('[EloWard Extension Bridge] Auth error (popup mode):', error);
       }
-    } else if (error) {
-      console.error('[EloWard Extension Bridge] Auth error:', error);
+    }
+    
+    function processAuthRedirect() {
+      console.log('[EloWard Extension Bridge] Processing auth redirect...');
       
-      // Send error to extension
-      if (window.elowardExtension && window.elowardExtension.isInstalled) {
-        window.elowardExtension.sendMessage({
-          type: 'auth_error',
-          error: error
-        });
+      // Extract auth parameters from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      const error = urlParams.get('error');
+      
+      if (code && state) {
+        console.log('[EloWard Extension Bridge] Auth parameters found, sending to extension');
+        
+        // Determine service from URL path
+        let service = 'riot'; // default
+        if (window.location.pathname.includes('/twitch/')) {
+          service = 'twitch';
+        }
+        
+        const authData = {
+          type: 'auth_callback',
+          service: service,
+          params: {
+            code: code,
+            state: state,
+            service: service
+          }
+        };
+        
+        // Send auth data to extension
+        if (window.elowardExtension && window.elowardExtension.isInstalled) {
+          console.log('[EloWard Extension Bridge] About to send auth message:', authData);
+          window.elowardExtension.sendMessage(authData, function(response) {
+            console.log('[EloWard Extension Bridge] Auth message response:', response);
+          });
+        } else {
+          console.warn('[EloWard Extension Bridge] Extension not available for auth callback');
+        }
+      } else if (error) {
+        console.error('[EloWard Extension Bridge] Auth error:', error);
+        
+        // Send error to extension
+        if (window.elowardExtension && window.elowardExtension.isInstalled) {
+          window.elowardExtension.sendMessage({
+            type: 'auth_error',
+            error: error
+          });
+        }
       }
     }
   }

@@ -67,6 +67,9 @@ export const RiotAuth = {
       // Set up callback listener BEFORE opening the auth window
       const authResultPromise = this._waitForAuthCallback();
       
+      // Mark that we're handling auth to prevent extensionBridge interference  
+      await browser.storage.local.set({ 'eloward_popup_auth_active': true });
+      
       // Small delay to ensure listener is set up
       await new Promise(resolve => setTimeout(resolve, 100));
       
@@ -111,6 +114,9 @@ export const RiotAuth = {
       return userData;
     } catch (error) {
       throw error;
+    } finally {
+      // Clear the popup auth flag
+      await browser.storage.local.remove('eloward_popup_auth_active');
     }
   },
   

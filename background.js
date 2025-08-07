@@ -156,10 +156,6 @@ function handleAuthCallback(params) {
     });
   }
 
-  browser.runtime.sendMessage({
-    type: 'auth_callback',
-    params: params
-  });
 }
 
 async function initiateTokenExchange(authData, service = 'riot') {
@@ -570,11 +566,7 @@ setInterval(() => {
   });
 }, 5 * 60 * 1000);
 
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'auth_callback') {
-    handleAuthCallback(event.data.params);
-  }
-});
+// ExtensionBridge content script handles all auth redirects via browser.runtime.sendMessage
 
 browser.runtime.onInstalled.addListener((details) => {
   clearAllStoredData();
@@ -954,32 +946,4 @@ async function incrementSuccessfulLookupCounter(channelName) {
 }
 
 
-browser.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  console.log('[EloWard Background] *** EXTERNAL MESSAGE RECEIVED ***');
-  console.log('[EloWard Background] Message:', message);
-  console.log('[EloWard Background] Sender:', sender);
-  console.log('[EloWard Background] Sender URL:', sender?.url);
-  console.log('[EloWard Background] Sender origin:', sender?.origin);
-  console.log('[EloWard Background] Message type:', message?.type);
-
-  if (message.type === 'auth_callback') {
-    let params;
-    if (message.params) {
-      params = message.params;
-    } else {
-      params = {
-        code: message.code,
-        state: message.state,
-        service: message.service || 'riot'
-      };
-    }
-    
-    handleAuthCallback(params);
-    sendResponse({ success: true });
-    return true;
-  }
-  
-
-  sendResponse({ success: false, error: 'Unknown message type' });
-  return true;
-}); 
+ 
