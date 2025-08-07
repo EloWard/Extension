@@ -1,5 +1,8 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
+console.log('[EloWard Background] *** BACKGROUND SCRIPT STARTING ***');
+console.log('[EloWard Background] Loading imports...');
+
 import { RiotAuth } from './js/riotAuth.js';
 import { TwitchAuth } from './js/twitchAuth.js';
 import { PersistentStorage } from './js/persistentStorage.js';
@@ -9,6 +12,8 @@ const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
 const MAX_RANK_CACHE_SIZE = 500;
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000;
+
+console.log('[EloWard Background] Constants loaded, initializing classes...');
 
 class UserRankCache {
   constructor(maxSize = MAX_RANK_CACHE_SIZE) {
@@ -121,11 +126,13 @@ const userRankCache = new UserRankCache();
 let authWindows = {};
 
 function handleAuthCallback(params) {
+  console.log('[EloWard Background] handleAuthCallback called with params:', params);
   if (!params || !params.code) {
+    console.log('[EloWard Background] Invalid params or missing code');
     return;
   }
 
-  const promiseStorage = browser.storage.local.set({
+  chrome.storage.local.set({
     'auth_callback': params,
     'eloward_auth_callback': params
   });
@@ -133,20 +140,20 @@ function handleAuthCallback(params) {
   const isTwitchCallback = params.service === 'twitch';
 
   if (isTwitchCallback) {
-    browser.storage.local.set({
+    chrome.storage.local.set({
       'twitch_auth_callback': params
-    }).then(() => {
+    }, () => {
       initiateTokenExchange(params, 'twitch');
     });
   } else {
-    browser.storage.local.set({
+    chrome.storage.local.set({
       'riot_auth_callback': params
-    }).then(() => {
+    }, () => {
       initiateTokenExchange(params, 'riot');
     });
   }
 
-  browser.runtime.sendMessage({
+  chrome.runtime.sendMessage({
     type: 'auth_callback',
     params: params
   });
@@ -167,11 +174,9 @@ async function initiateTokenExchange(authData, service = 'riot') {
       await PersistentStorage.updateConnectedState('twitch', true);
 
       // Notify popup after all data is successfully stored
-      browser.runtime.sendMessage({
+      chrome.runtime.sendMessage({
         type: 'auth_completed',
         service: 'twitch'
-      }).catch(() => {
-        // Popup may not be open, ignore errors
       });
 
       return userInfo;
@@ -187,8 +192,6 @@ async function initiateTokenExchange(authData, service = 'riot') {
       chrome.runtime.sendMessage({
         type: 'auth_completed',
         service: 'riot'
-      }).catch(() => {
-        // Popup may not be open, ignore errors
       });
 
       return userData;
@@ -198,7 +201,16 @@ async function initiateTokenExchange(authData, service = 'riot') {
   }
 }
 
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Add comprehensive logging at the very start
+console.log('[EloWard Background] Background script loaded and ready');
+console.log('[EloWard Background] Setting up message listeners...');
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[EloWard Background] *** INTERNAL MESSAGE RECEIVED ***');
+  console.log('[EloWard Background] Message:', message);
+  console.log('[EloWard Background] Sender:', sender);
+  console.log('[EloWard Background] Message type:', message?.type);
+  console.log('[EloWard Background] Message action:', message?.action);
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
@@ -246,11 +258,15 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       
       setTimeout(() => {
-        browser.runtime.sendMessage({
+        chrome.runtime.sendMessage({
           type: 'twitch_auth_processed',
           success: true,
           timestamp: Date.now()
-        }).catch(() => {});
+        }, () => {
+          if (chrome.runtime.lastError) {
+            // Ignore messaging errors
+          }
+        });
       }, 500);
       
       return true;
@@ -264,7 +280,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'get_auth_callback') {
-    browser.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback']).then((data) => {
+    chrome.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback'], (data) => {
       const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
       sendResponse({ data: callback });
     });
@@ -272,6 +288,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'auth_callback') {
+    console.log('[EloWard Background] Processing auth_callback message:', message);
     let params;
     if (message.code) {
       // Handle direct code in message
@@ -284,10 +301,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Handle params object
       params = message.params;
     } else {
+      console.log('[EloWard Background] No auth data in message');
       sendResponse({ success: false, error: 'No auth data' });
       return true;
     }
     
+    console.log('[EloWard Background] Calling handleAuthCallback with params:', params);
     handleAuthCallback(params);
     sendResponse({ success: true });
     return true;
@@ -297,12 +316,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.url) {
       const windowId = Date.now().toString();
       
-      browser.windows.create({
+      chrome.windows.create({
         url: message.url,
         type: 'popup',
         width: 500,
         height: 700
-      }).then((window) => {
+      }, (window) => {
         authWindows[windowId] = {
           window,
           state: message.state,
@@ -318,13 +337,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'check_auth_tokens') {
-    browser.storage.local.get([
+    chrome.storage.local.get([
       'eloward_riot_access_token',
       'eloward_riot_refresh_token',
       'eloward_riot_token_expiry',
       'eloward_riot_tokens',
       'riotAuth'
-    ]).then((data) => {
+    ], (data) => {
       sendResponse({ data });
     });
     return true;
@@ -332,7 +351,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'store_tokens') {
     if (message.tokens) {
-      browser.storage.local.set({
+      chrome.storage.local.set({
         'eloward_riot_access_token': message.tokens.access_token,
         'eloward_riot_refresh_token': message.tokens.refresh_token,
         'eloward_riot_token_expiry': message.tokens.expires_at || (Date.now() + (message.tokens.expires_in * 1000)),
@@ -341,7 +360,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ...message.tokens,
           issued_at: Date.now()
         }
-      }).then(() => {
+      }, () => {
         sendResponse({ success: true });
       });
     } else {
@@ -355,7 +374,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     
-    browser.storage.local.set({
+    chrome.storage.local.set({
       'eloward_auth_state': state,
       [RiotAuth.config.storageKeys.authState]: state,
       'selectedRegion': message.region || 'na1'
@@ -556,23 +575,23 @@ self.addEventListener('message', (event) => {
   }
 });
 
-browser.runtime.onInstalled.addListener((details) => {
+chrome.runtime.onInstalled.addListener((details) => {
   clearAllStoredData();
   
-  browser.storage.local.set({
+  chrome.storage.local.set({
     selectedRegion: 'na1'
   });
   
-  browser.action.setBadgeText({ text: 'ON' });
-  browser.action.setBadgeBackgroundColor({ color: '#DC2123' });
+  chrome.action.setBadgeText({ text: 'ON' });
+  chrome.action.setBadgeBackgroundColor({ color: '#DC2123' });
   
   setTimeout(() => {
-    browser.action.setBadgeText({ text: '' });
+    chrome.action.setBadgeText({ text: '' });
   }, 5000);
   
-  browser.storage.local.get('linkedAccounts').then((data) => {
+  chrome.storage.local.get('linkedAccounts', (data) => {
     if (!data.linkedAccounts) {
-      browser.storage.local.set({ linkedAccounts: {} });
+      chrome.storage.local.set({ linkedAccounts: {} });
     }
   });
   
@@ -602,7 +621,7 @@ function clearAllStoredData() {
         'authCallbackProcessed'
       ];
       
-      browser.storage.local.remove(keysToRemove).then(() => {
+      chrome.storage.local.remove(keysToRemove, () => {
         PersistentStorage.clearAllData()
           .then(() => {
             PersistentStorage.init();
@@ -710,7 +729,9 @@ function getRankIconUrl(tier) {
 
 async function handleAuthCallbackFromRedirect(code, state) {
   try {
-    const storedData = await browser.storage.local.get(['authState']);
+    const storedData = await new Promise((resolve) => {
+      chrome.storage.local.get(['authState'], resolve);
+    });
     const expectedState = storedData.authState;
     
     let stateValid = expectedState && expectedState === state;
@@ -740,19 +761,23 @@ async function handleAuthCallbackFromRedirect(code, state) {
     
     const tokenExpiry = Date.now() + (tokenData.data.expires_in * 1000);
     
-    await browser.storage.local.set({
-      eloward_riot_access_token: tokenData.data.access_token,
-      eloward_riot_refresh_token: tokenData.data.refresh_token,
-      eloward_riot_token_expiry: tokenExpiry,
-      
-      riotAuth: {
-        ...tokenData.data,
-        issued_at: Date.now()
-      },
-      authInProgress: false
+    await new Promise((resolve) => {
+      chrome.storage.local.set({
+        eloward_riot_access_token: tokenData.data.access_token,
+        eloward_riot_refresh_token: tokenData.data.refresh_token,
+        eloward_riot_token_expiry: tokenExpiry,
+        
+        riotAuth: {
+          ...tokenData.data,
+          issued_at: Date.now()
+        },
+        authInProgress: false
+      }, resolve);
     });
     
-    await browser.storage.local.remove(['authState']);
+    await new Promise((resolve) => {
+      chrome.storage.local.remove(['authState'], resolve);
+    });
     
     try {
       browser.runtime.sendMessage({
@@ -766,8 +791,10 @@ async function handleAuthCallbackFromRedirect(code, state) {
     return { success: true, username: tokenData.data.user_info?.game_name };
   } catch (error) {
     
-    await browser.storage.local.set({
-      authInProgress: false
+    await new Promise((resolve) => {
+      chrome.storage.local.set({
+        authInProgress: false
+      }, resolve);
     });
     
     return { success: false, error: error.message };
@@ -813,9 +840,9 @@ async function getRankForLinkedAccount(linkedAccount, platform) {
 }
 
 function loadConfiguration() {
-  browser.storage.local.get(['selectedRegion']).then((data) => {
+  chrome.storage.local.get(['selectedRegion'], (data) => {
     if (!data.selectedRegion) {
-      browser.storage.local.set({ selectedRegion: 'na1' });
+      chrome.storage.local.set({ selectedRegion: 'na1' });
     }
   });
 }
@@ -876,7 +903,7 @@ async function fetchRankByTwitchUsername(twitchUsername, platform) {
 
 function handleChannelSwitch(oldChannel, newChannel) {
   userRankCache.clear();
-  browser.storage.local.remove('connected_region');
+  chrome.storage.local.remove('connected_region');
 }
 
 async function incrementDbReadCounter(channelName) {
@@ -934,7 +961,13 @@ async function incrementSuccessfulLookupCounter(channelName) {
 }
 
 
-browser.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  console.log('[EloWard Background] *** EXTERNAL MESSAGE RECEIVED ***');
+  console.log('[EloWard Background] Message:', message);
+  console.log('[EloWard Background] Sender:', sender);
+  console.log('[EloWard Background] Sender URL:', sender?.url);
+  console.log('[EloWard Background] Sender origin:', sender?.origin);
+  console.log('[EloWard Background] Message type:', message?.type);
 
   if (message.type === 'auth_callback') {
     let params;

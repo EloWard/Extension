@@ -23,8 +23,10 @@
       // Send message to the extension background script
       sendMessage: function(message, callback) {
         console.log('[EloWard Extension Bridge] Sending message:', message);
+        console.log('[EloWard Extension Bridge] Extension ID:', browser.runtime.id);
         
         if (typeof callback === 'function') {
+          console.log('[EloWard Extension Bridge] Calling browser.runtime.sendMessage...');
           browser.runtime.sendMessage(message)
             .then(response => {
               console.log('[EloWard Extension Bridge] Response received:', response);
@@ -32,10 +34,18 @@
             })
             .catch(error => {
               console.error('[EloWard Extension Bridge] Message failed:', error);
+              console.error('[EloWard Extension Bridge] Error type:', typeof error);
+              console.error('[EloWard Extension Bridge] Error name:', error.name);
+              console.error('[EloWard Extension Bridge] Error message:', error.message);
+              console.error('[EloWard Extension Bridge] Full error object:', error);
               callback({ success: false, error: error.message });
             });
         } else {
-          return browser.runtime.sendMessage(message);
+          return browser.runtime.sendMessage(message)
+            .catch(error => {
+              console.error('[EloWard Extension Bridge] Message failed (no callback):', error);
+              throw error;
+            });
         }
       },
       
@@ -111,6 +121,7 @@
       
       // Send auth data to extension
       if (window.elowardExtension && window.elowardExtension.isInstalled) {
+        console.log('[EloWard Extension Bridge] About to send auth message:', authData);
         window.elowardExtension.sendMessage(authData, function(response) {
           console.log('[EloWard Extension Bridge] Auth message response:', response);
         });
