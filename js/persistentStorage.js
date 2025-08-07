@@ -1,5 +1,8 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
+// Import webextension-polyfill for cross-browser compatibility
+import '../browser-polyfill.js';
+
 const STORAGE_KEYS = {
   RIOT_USER_DATA: 'eloward_persistent_riot_user_data',
   TWITCH_USER_DATA: 'eloward_persistent_twitch_user_data',
@@ -9,8 +12,8 @@ const STORAGE_KEYS = {
 };
 
 export const PersistentStorage = {
-  init() {
-    browser.storage.local.set({
+  async init() {
+    await browser.storage.local.set({
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
   },

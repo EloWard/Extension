@@ -1,5 +1,8 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
+// Import webextension-polyfill for cross-browser compatibility
+import '../browser-polyfill.js';
+
 import { PersistentStorage } from './persistentStorage.js';
 import { TwitchAuth } from './twitchAuth.js';
 
@@ -48,7 +51,7 @@ export const RiotAuth = {
       // Generate a unique state
       const state = this._generateRandomState();
       
-      // Store the state in both chrome.storage and localStorage for redundancy
+      // Store the state in both browser.storage and localStorage for redundancy
       await this._storeAuthState(state);
       
       // Get authentication URL from backend
@@ -56,9 +59,7 @@ export const RiotAuth = {
       
       // Clear any existing callbacks before opening the window
       try {
-        await new Promise(resolve => {
-          browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']).then(resolve);
-        });
+        await browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']);
       } catch (e) {
         // Non-fatal error, continue with authentication
       }
@@ -114,10 +115,8 @@ export const RiotAuth = {
   },
   
   async _storeAuthState(state) {
-    await new Promise(resolve => {
-      browser.storage.local.set({
-        [this.config.storageKeys.authState]: state
-      }).then(resolve);
+    await browser.storage.local.set({
+      [this.config.storageKeys.authState]: state
     });
   },
   
@@ -183,7 +182,7 @@ export const RiotAuth = {
               } else {
                 reject(new Error('Failed to open authentication window - unknown error'));
               }
-            }).catch(() => {
+            }).catch(error => {
               reject(new Error('Failed to open authentication window - popup may be blocked'));
             });
           }).catch(error => {
@@ -485,7 +484,7 @@ export const RiotAuth = {
   },
   
   /**
-   * Get value from chrome.storage.local
+   * Get value from browser.storage.local
    * @param {string} key - The key to retrieve
    * @returns {Promise<any>} The stored value
    * @private
@@ -1194,7 +1193,7 @@ export const RiotAuth = {
   },
   
   /**
-   * Store a value in chrome.storage.local
+   * Store a value in browser.storage.local
    * @param {string} key - The key to store the value under
    * @param {any} value - The value to store
    * @returns {Promise<void>}
@@ -1344,7 +1343,7 @@ class AuthCallbackWatcher {
   }
   
   /**
-   * Get callback data from chrome.storage.local
+   * Get callback data from browser.storage.local
    * @returns {Promise<Object|null>} - Callback data or null
    * @private
    */
@@ -1456,9 +1455,7 @@ class AuthCallbackWatcher {
     
     // Clean up callback data from storage if successful
     if (result && result.code) {
-      browser.storage.local.remove(this.config.callbackKeys).catch(() => {
-        // Callback data cleaned up
-      });
+      browser.storage.local.remove(this.config.callbackKeys);
     }
     
     // Resolve the promise

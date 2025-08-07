@@ -2,6 +2,8 @@
 
 // EloWard Twitch Authentication
 
+// Import webextension-polyfill for cross-browser compatibility
+import '../browser-polyfill.js';
 
 import { PersistentStorage } from './persistentStorage.js';
 
@@ -226,7 +228,7 @@ export const TwitchAuth = {
           } else {
             throw new Error('Failed to open authentication window - unknown error');
           }
-        }).catch(() => {
+        }).catch(error => {
           throw new Error('Failed to open authentication window - popup may be blocked');
         });
       }
