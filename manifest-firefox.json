@@ -8,6 +8,39 @@
     "48": "images/logo/icon48.png",
     "128": "images/logo/icon128.png"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "browser-polyfill.js",
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ]
+    },
+    {
+      "matches": [
+        "https://www.eloward.com/*"
+      ],
+      "js": [
+        "browser-polyfill.js",
+        "js/extensionBridge.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    "images/logo/*.png"
+  ],
+  "content_security_policy": "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev",
+  "externally_connectable": {
+    "matches": [
+      "https://www.eloward.com/*"
+    ]
+  },
   "browser_action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -23,26 +56,13 @@
     "https://*.unleashai.workers.dev/*",
     "https://www.eloward.com/*"
   ],
-  "content_scripts": [
-    {
-      "matches": ["*://*.twitch.tv/*"],
-      "js": ["browser-polyfill.js", "content.js"],
-      "css": ["styles.css"]
-    },
-    {
-      "matches": ["https://www.eloward.com/*"],
-      "js": ["browser-polyfill.js", "js/extensionBridge.js"],
-      "run_at": "document_start"
-    }
-  ],
   "background": {
-    "scripts": ["browser-polyfill.js", "background.js"],
+    "scripts": [
+      "browser-polyfill.js",
+      "background.js"
+    ],
     "persistent": false
   },
-  "web_accessible_resources": [
-    "images/logo/*.png"
-  ],
-  "content_security_policy": "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev",
   "applications": {
     "gecko": {
       "id": "eloward@unleashai.workers.dev"
