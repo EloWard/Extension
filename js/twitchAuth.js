@@ -393,23 +393,26 @@ export const TwitchAuth = {
       
       const tokenData = await response.json();
       
-      if (tokenData.error) {
-        throw new Error(`Token exchange error: ${tokenData.error} - ${tokenData.error_description || 'No description'}`);
+      // Handle nested response format from Cloudflare Worker
+      const actualTokenData = tokenData.data || tokenData;
+      
+      if (actualTokenData.error) {
+        throw new Error(`Token exchange error: ${actualTokenData.error} - ${actualTokenData.error_description || 'No description'}`);
       }
       
-      if (!tokenData.access_token) {
+      if (!actualTokenData.access_token) {
         throw new Error('No access token found in response');
       }
       
       
-      // Store the tokens
-      await this._storeTokens(tokenData);
+      // Store the tokens using the actual token data
+      await this._storeTokens(actualTokenData);
       
       // Immediately update the persistent storage connected state to prevent auth errors
       // This ensures the user is considered authenticated even before getting user info
       await PersistentStorage.updateConnectedState('twitch', true);
       
-      return tokenData;
+      return actualTokenData;
     } catch (error) {
       throw error;
     }
