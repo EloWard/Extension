@@ -155,6 +155,25 @@
           service = 'twitch';
         }
         
+        // Always store callback data as a robust fallback so the extension can poll it
+        try {
+          if (typeof browser !== 'undefined' && browser.storage) {
+            const callbackData = { code, state, service, timestamp: Date.now() };
+            const storagePayload = {
+              'auth_callback': callbackData,
+              'eloward_auth_callback': callbackData
+            };
+            if (service === 'twitch') {
+              storagePayload['twitch_auth_callback'] = callbackData;
+            } else {
+              storagePayload['riot_auth_callback'] = callbackData;
+            }
+            browser.storage.local.set(storagePayload);
+          }
+        } catch (e) {
+          // Non-fatal
+        }
+        
         const authData = {
           type: 'auth_callback',
           service: service,

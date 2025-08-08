@@ -575,11 +575,20 @@ browser.runtime.onInstalled.addListener((details) => {
     selectedRegion: 'na1'
   });
   
-  browser.action.setBadgeText({ text: 'ON' });
-  browser.action.setBadgeBackgroundColor({ color: '#DC2123' });
+  const actionApi = (browser && (browser.action || browser.browserAction)) || null;
+  if (actionApi) {
+    try {
+      actionApi.setBadgeText({ text: 'ON' });
+      actionApi.setBadgeBackgroundColor({ color: '#DC2123' });
+    } catch (e) {
+      // Ignore if action API is unavailable in this environment
+    }
+  }
   
   setTimeout(() => {
-    browser.action.setBadgeText({ text: '' });
+    if (actionApi) {
+      try { actionApi.setBadgeText({ text: '' }); } catch (e) {}
+    }
   }, 5000);
   
   browser.storage.local.get('linkedAccounts').then((data) => {

@@ -86,8 +86,7 @@ function generateFirefoxManifest() {
       "https://www.eloward.com/*"
     ],
     background: {
-      scripts: ["browser-polyfill.js", "background.js"],
-      persistent: false
+      page: "background.html"
     },
     applications: {
       gecko: {
