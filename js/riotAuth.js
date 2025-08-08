@@ -147,14 +147,12 @@ export const RiotAuth = {
   },
   
   async _getStoredAuthState() {
-    const browserData = await browser.storage.local.get([this.config.storageKeys.authState]);
-    
-    const state = browserData[this.config.storageKeys.authState];
-    if (state) {
-      return state;
+    try {
+      const browserData = await browser.storage.local.get([this.config.storageKeys.authState]);
+      return browserData[this.config.storageKeys.authState] || null;
+    } catch (_) {
+      return null;
     }
-    
-    return null;
   },
   
   async _getAuthUrl(region, state) {

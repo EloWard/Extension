@@ -289,13 +289,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
   
-  if (message.type === 'get_auth_callback') {
-    browser.storage.local.get(['authCallback', 'auth_callback', 'eloward_auth_callback', 'twitch_auth_callback']).then((data) => {
-      const callback = data.twitch_auth_callback || data.authCallback || data.auth_callback || data.eloward_auth_callback;
-      sendResponse({ data: callback });
-    });
-    return true;
-  }
+  // Removed legacy get_auth_callback handler (unused)
   
   if (message.type === 'auth_callback') {
     console.log('[EloWard Background] Processing auth_callback message:', message);
@@ -346,39 +340,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  if (message.type === 'check_auth_tokens') {
-    browser.storage.local.get([
-      'eloward_riot_access_token',
-      'eloward_riot_refresh_token',
-      'eloward_riot_token_expiry',
-      'eloward_riot_tokens',
-      'riotAuth'
-    ]).then((data) => {
-      sendResponse({ data });
-    });
-    return true;
-  }
-  
-  if (message.type === 'store_tokens') {
-    if (message.tokens) {
-      browser.storage.local.set({
-        'eloward_riot_access_token': message.tokens.access_token,
-        'eloward_riot_refresh_token': message.tokens.refresh_token,
-        'eloward_riot_token_expiry': message.tokens.expires_at || (Date.now() + (message.tokens.expires_in * 1000)),
-        'eloward_riot_tokens': message.tokens,
-        'riotAuth': {
-          ...message.tokens,
-          issued_at: Date.now()
-        }
-      }).then(() => {
-        sendResponse({ success: true });
-      });
-    } else {
-      sendResponse({ success: false, error: 'No tokens provided' });
-    }
-    return true;
-  }
-  
   if (message.action === 'initiate_riot_auth') {
     const state = message.state || Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0'))
@@ -419,16 +380,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  if (message.action === 'handle_auth_callback') {
-    handleAuthCallbackFromRedirect(message.code, message.state)
-      .then(result => {
-        sendResponse(result);
-      })
-      .catch(error => {
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  }
+  // Removed legacy handle_auth_callback action (unused)
   
   if (message.action === 'get_rank_icon_url') {
     const iconUrl = getRankIconUrl(message.tier);
@@ -630,7 +582,8 @@ browser.runtime.onInstalled.addListener((details) => {
       "riot_auth",
       "selectedRegion",
       "eloward_data_persistence_enabled",
-      "linkedAccounts"
+      "linkedAccounts",
+      "riotAuth"
     ]);
   } catch (_) {}
 })();
@@ -832,7 +785,6 @@ async function handleAuthCallbackFromRedirect(code, state) {
 
 self.eloward = {
   handleAuthCallback,
-  handleAuthCallbackFromRedirect,
   getRankIconUrl
 };
 
