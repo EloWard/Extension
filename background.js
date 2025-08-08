@@ -582,8 +582,7 @@ browser.runtime.onInstalled.addListener((details) => {
       "riot_auth",
       "selectedRegion",
       "eloward_data_persistence_enabled",
-      "linkedAccounts",
-      "riotAuth"
+      "linkedAccounts"
     ]);
   } catch (_) {}
 })();
