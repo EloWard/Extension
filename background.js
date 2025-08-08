@@ -127,12 +127,21 @@ class UserRankCache {
 
 const userRankCache = new UserRankCache();
 let authWindows = {};
+const processedAuthStates = new Set();
 
 function handleAuthCallback(params) {
   console.log('[EloWard Background] handleAuthCallback called with params:', params);
   if (!params || !params.code) {
     console.log('[EloWard Background] Invalid params or missing code');
     return;
+  }
+
+  // De-duplicate by state to avoid double-processing in Firefox
+  if (params.state && processedAuthStates.has(params.state)) {
+    return;
+  }
+  if (params.state) {
+    processedAuthStates.add(params.state);
   }
 
   browser.storage.local.set({
@@ -172,11 +181,13 @@ async function initiateTokenExchange(authData, service = 'riot') {
       await PersistentStorage.storeTwitchUserData(userInfo);
       await PersistentStorage.updateConnectedState('twitch', true);
 
-      // Notify popup after all data is successfully stored
-      browser.runtime.sendMessage({
-        type: 'auth_completed',
-        service: 'twitch'
-      });
+      // Notify popup after all data is successfully stored (ignore if no listeners)
+      try {
+        await browser.runtime.sendMessage({
+          type: 'auth_completed',
+          service: 'twitch'
+        });
+      } catch (_) {}
 
       return userInfo;
     } else {
@@ -187,11 +198,13 @@ async function initiateTokenExchange(authData, service = 'riot') {
       await PersistentStorage.storeRiotUserData(userData);
       await PersistentStorage.updateConnectedState('riot', true);
 
-      // Only notify popup after ALL data is successfully stored
-      browser.runtime.sendMessage({
-        type: 'auth_completed',
-        service: 'riot'
-      });
+      // Only notify popup after ALL data is successfully stored (ignore if no listeners)
+      try {
+        await browser.runtime.sendMessage({
+          type: 'auth_completed',
+          service: 'riot'
+        });
+      } catch (_) {}
 
       return userData;
     }
