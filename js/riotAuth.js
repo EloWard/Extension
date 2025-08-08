@@ -687,56 +687,14 @@ export const RiotAuth = {
       // Clear from browser.storage
       await browser.storage.local.remove(keysToRemove);
       
-      // Clear Riot browser session with logout window
+      // Open Riot logout window and let the user close it manually (no auto-close)
       try {
-        const logoutWindow = window.open(
+        window.open(
           'https://auth.riotgames.com/logout', 
           'riotLogout', 
           'width=300,height=420'
         );
-        if (logoutWindow) {
-          // Poll to detect when logout completes
-          const checkLogoutComplete = () => {
-            try {
-              // Try to access the window's location
-              const currentUrl = logoutWindow.location.href;
-              
-              // If we can access it and it's changed from logout URL, logout is complete
-              if (currentUrl && !currentUrl.includes('auth.riotgames.com/logout')) {
-                setTimeout(() => {
-                  try { 
-                    if (logoutWindow && !logoutWindow.closed) {
-                      logoutWindow.close(); 
-                    }
-                  } catch (e) {}
-                }, 1000);
-                return;
-              }
-            } catch (e) {
-              // Cross-origin error usually means we've navigated away from Riot's domain
-              // This indicates logout is complete
-              setTimeout(() => {
-                try { 
-                  if (logoutWindow && !logoutWindow.closed) {
-                    logoutWindow.close(); 
-                  }
-                } catch (e) {}
-              }, 1000);
-              return;
-            }
-            
-            // Check again if window is still open
-            if (logoutWindow && !logoutWindow.closed) {
-              setTimeout(checkLogoutComplete, 1000);
-            }
-          };
-          
-          // Start checking after initial delay
-          setTimeout(checkLogoutComplete, 2000);
-        }
-      } catch (logoutError) {
-        // Non-critical error, continue with disconnect
-      }
+      } catch (_) {}
       
       return true;
     } catch (error) {

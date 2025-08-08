@@ -716,71 +716,7 @@ function getRankIconUrl(tier) {
   return `https://eloward-cdn.unleashai.workers.dev/lol/${iconFile.replace('.png', '')}.png`;
 }
 
-async function handleAuthCallbackFromRedirect(code, state) {
-  try {
-    const storedData = await browser.storage.local.get(['authState']);
-    const expectedState = storedData.authState;
-    
-    let stateValid = expectedState && expectedState === state;
-    
-    
-    if (!stateValid) {
-      throw new Error('Security verification failed: state parameter mismatch');
-    }
-    
-    
-    const response = await fetch(`${RIOT_AUTH_URL}/auth/riot/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        code: code
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${errorData.message || response.statusText}`);
-    }
-    
-    const tokenData = await response.json();
-    
-    const tokenExpiry = Date.now() + (tokenData.data.expires_in * 1000);
-    
-    await browser.storage.local.set({
-      eloward_riot_access_token: tokenData.data.access_token,
-      eloward_riot_refresh_token: tokenData.data.refresh_token,
-      eloward_riot_token_expiry: tokenExpiry,
-      
-      riotAuth: {
-        ...tokenData.data,
-        issued_at: Date.now()
-      },
-      authInProgress: false
-    });
-    
-    await browser.storage.local.remove(['authState']);
-    
-    try {
-      browser.runtime.sendMessage({
-        action: 'auth_completed',
-        success: true
-      });
-    } catch (e) {
-      // Ignore messaging errors
-    }
-    
-    return { success: true, username: tokenData.data.user_info?.game_name };
-  } catch (error) {
-    
-    await browser.storage.local.set({
-      authInProgress: false
-    });
-    
-    return { success: false, error: error.message };
-  }
-}
+// Removed unused handleAuthCallbackFromRedirect in favor of storage + message callback flows
 
 self.eloward = {
   handleAuthCallback,
