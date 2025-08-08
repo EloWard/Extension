@@ -565,7 +565,8 @@ function getCurrentChannelName() {
 async function getCurrentGame() {
   const channelName = getCurrentChannelName();
   if (!channelName) return null;
-  
+
+  // 1) Try Twitch GQL (works in Chrome; in Firefox we added host permission)
   try {
     const response = await fetch('https://gql.twitch.tv/gql', {
       method: 'POST',
@@ -578,34 +579,43 @@ async function getCurrentGame() {
           query {
             user(login: "${channelName}") {
               stream {
-                game {
-                  id
-                  name
-                  displayName
-                }
+                game { id name displayName }
               }
             }
           }
         `
       })
     });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const game = data?.data?.user?.stream?.game;
-    
-    if (game) {
-      const gameName = game.name || game.displayName;
-      console.log(`🎮 EloWard: Game category detected - ${gameName}`);
-      return gameName;
+    if (response.ok) {
+      const data = await response.json();
+      const game = data?.data?.user?.stream?.game;
+      if (game) {
+        const gameName = game.name || game.displayName;
+        console.log(`🎮 EloWard: Game category detected - ${gameName}`);
+        return gameName;
+      }
     }
-    
-    console.log(`🎮 EloWard: Game category detected - Not streaming`);
-    return null;
-  } catch (error) {
-    return null;
-  }
+  } catch (_) {}
+
+  // 2) Fallback: inspect DOM for the category badge (works cross-browser)
+  try {
+    const selectors = [
+      '[data-a-target="stream-game-link"]', // channel page
+      'a[href*="/directory/game/"]',      // generic link
+      '[data-test-selector="game-title"]'
+    ];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      const text = el?.textContent?.trim();
+      if (text) {
+        console.log(`🎮 EloWard: Game category detected via DOM - ${text}`);
+        return text;
+      }
+    }
+  } catch (_) {}
+
+  console.log('🎮 EloWard: Game category detected - Not streaming');
+  return null;
 }
 
 function isGameSupported(game) {

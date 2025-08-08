@@ -56,6 +56,7 @@ function generateChromeManifest() {
     permissions: ["storage", "tabs"],
     host_permissions: [
       "https://www.twitch.tv/*",
+      "https://gql.twitch.tv/*",
       "https://*.unleashai.workers.dev/*",
       "https://www.eloward.com/*"
     ],
@@ -82,6 +83,7 @@ function generateFirefoxManifest() {
       "storage",
       "tabs",
       "https://www.twitch.tv/*",
+      "https://gql.twitch.tv/*",
       "https://*.unleashai.workers.dev/*",
       "https://www.eloward.com/*"
     ],

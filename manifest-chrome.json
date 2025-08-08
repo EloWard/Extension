@@ -59,6 +59,7 @@
   ],
   "host_permissions": [
     "https://www.twitch.tv/*",
+    "https://gql.twitch.tv/*",
     "https://*.unleashai.workers.dev/*",
     "https://www.eloward.com/*"
   ],
