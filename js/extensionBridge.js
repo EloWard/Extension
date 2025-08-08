@@ -132,6 +132,20 @@
             'riot_auth_callback': { code: code, state: state }
           });
         }
+
+        // Also proactively notify the background to process immediately
+        try {
+          if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
+            // Determine service from path
+            let service = 'riot';
+            if (window.location.pathname.includes('/twitch/')) service = 'twitch';
+            browser.runtime.sendMessage({
+              type: 'auth_callback',
+              service,
+              params: { code, state, service }
+            }).catch(() => {});
+          }
+        } catch (_) {}
       } else if (error) {
         console.error('[EloWard Extension Bridge] Auth error (popup mode):', error);
       }

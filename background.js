@@ -613,6 +613,28 @@ browser.runtime.onInstalled.addListener((details) => {
   loadConfiguration();
 });
 
+// Also clear sensitive auth callback data on background startup for temp reloads
+(async () => {
+  try {
+    await browser.storage.local.remove([
+      'auth_callback',
+      'eloward_auth_callback',
+      'riot_auth_callback',
+      'twitch_auth_callback',
+      'eloward_popup_auth_active',
+      'eloward_twitch_user_info',
+      'eloward_riot_account_info',
+      "eloward_riot_id_token",
+      "eloward_riot_rank_info",
+      "eloward_signin_attempted",
+      "riot_auth",
+      "selectedRegion",
+      "eloward_data_persistence_enabled",
+      "linkedAccounts"
+    ]);
+  } catch (_) {}
+})();
+
 function clearAllStoredData() {
   return new Promise((resolve) => {
     try {

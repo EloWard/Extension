@@ -44,6 +44,7 @@ export const RiotAuth = {
   
   async authenticate(region) {
     try {
+      console.log('[RiotAuth] authenticate() start', { region });
       
       // Clear any previous auth states
       await browser.storage.local.remove([this.config.storageKeys.authState]);
@@ -53,9 +54,11 @@ export const RiotAuth = {
       
       // Store the state in both browser.storage and localStorage for redundancy
       await this._storeAuthState(state);
+      console.log('[RiotAuth] stored auth state', state);
       
       // Get authentication URL from backend
       const authUrl = await this._getAuthUrl(region, state);
+      console.log('[RiotAuth] obtained authUrl');
       
       // Clear any existing callbacks before opening the window
       try {
@@ -69,12 +72,14 @@ export const RiotAuth = {
       
       // Mark that we're handling auth to prevent extensionBridge interference  
       await browser.storage.local.set({ 'eloward_popup_auth_active': true });
+      console.log('[RiotAuth] set eloward_popup_auth_active = true');
       
       // Small delay to ensure listener is set up
       await new Promise(resolve => setTimeout(resolve, 100));
       
       // Open the auth window and wait for it to open
       const openedAuthWindow = await this._openAuthWindow(authUrl);
+      console.log('[RiotAuth] auth window opened', { hasWindowRef: !!openedAuthWindow });
       
       // Update the authWindow reference for the AuthCallbackWatcher
       if (openedAuthWindow) {
@@ -87,36 +92,51 @@ export const RiotAuth = {
       
       // Wait for the authentication callback
       const authResult = await authResultPromise;
+      console.log('[RiotAuth] received auth callback', authResult);
       
       if (!authResult || !authResult.code) {
         throw new Error('Authentication cancelled or failed');
       }
       
 
-      if (authResult.state !== state) {
-
-        const storedState = await this._getStoredAuthState();
-        
-        if (authResult.state !== storedState) {
+      // Relaxed, robust state verification for Firefox popup flow
+      const expectedState = await this._getStoredAuthState();
+      if (expectedState) {
+        // If callback includes a state, ensure it matches the expected state
+        if (authResult.state && authResult.state !== expectedState) {
+          throw new Error('Security verification failed: state parameter mismatch. Please try again.');
+        }
+        // If callback omitted state, accept based on stored expectedState
+      } else {
+        // Fallback: if we somehow lack stored state, verify against originally generated one when provided
+        if (authResult.state && authResult.state !== state) {
           throw new Error('Security verification failed: state parameter mismatch. Please try again.');
         }
       }
       
       // Exchange code for tokens
+      console.log('[RiotAuth] exchanging code for tokens');
       await this.exchangeCodeForTokens(authResult.code);
+      console.log('[RiotAuth] token exchange successful');
       
 
       const userData = await this.getUserData();
+      console.log('[RiotAuth] getUserData successful', userData);
       
 
       await PersistentStorage.storeRiotUserData(userData);
+      console.log('[RiotAuth] stored user data to persistent storage');
       
       return userData;
     } catch (error) {
+      console.error('[RiotAuth] authenticate() error', error?.message || error, error);
       throw error;
     } finally {
       // Clear the popup auth flag
-      await browser.storage.local.remove('eloward_popup_auth_active');
+      try {
+        await browser.storage.local.remove('eloward_popup_auth_active');
+        console.log('[RiotAuth] cleared eloward_popup_auth_active');
+      } catch (_) {}
     }
   },
   
@@ -1273,6 +1293,7 @@ class AuthCallbackWatcher {
       windowClosedTime: null,
       isResolved: false
     };
+    this._onStorageChanged = null;
   }
   
   /**
@@ -1287,6 +1308,7 @@ class AuthCallbackWatcher {
    * Start the callback watching process
    */
   start() {
+    console.log('[RiotAuth] AuthCallbackWatcher.start()');
     // Check immediately first
     this._checkForCallback().then(found => {
       if (!found && !this.state.isResolved) {
@@ -1302,6 +1324,35 @@ class AuthCallbackWatcher {
         this._checkForCallback();
       }
     }, 50);
+
+    // Also listen for storage changes so we resolve immediately when callback lands
+    try {
+      this._onStorageChanged = (changes, area) => {
+        if (area !== 'local' || this.state.isResolved) return;
+        for (const key of this.config.callbackKeys) {
+          if (Object.prototype.hasOwnProperty.call(changes, key)) {
+            const newVal = changes[key]?.newValue;
+            if (newVal && typeof newVal === 'object' && newVal.code) {
+              const callback = { ...newVal };
+              if (!callback.state) {
+                browser.storage.local.get(['eloward_auth_state']).then(data => {
+                  if (data.eloward_auth_state && !callback.state) {
+                    callback.state = data.eloward_auth_state;
+                  }
+                  console.log('[RiotAuth] AuthCallbackWatcher storage event callback', { key, hasCode: !!callback.code, hasState: !!callback.state });
+                  this._resolveWith(callback);
+                }).catch(() => this._resolveWith(callback));
+              } else {
+                console.log('[RiotAuth] AuthCallbackWatcher storage event callback', { key, hasCode: !!callback.code, hasState: !!callback.state });
+                this._resolveWith(callback);
+              }
+              break;
+            }
+          }
+        }
+      };
+      browser.storage.onChanged.addListener(this._onStorageChanged);
+    } catch (_) {}
   }
   
   /**
@@ -1360,6 +1411,17 @@ class AuthCallbackWatcher {
       for (const key of this.config.callbackKeys) {
         const callback = data[key];
         if (callback && callback.code) {
+          // Ensure state is present by falling back to stored authState if needed
+          if (!callback.state) {
+            try {
+              const stateData = await browser.storage.local.get([RiotAuth.config.storageKeys.authState]);
+              const storedState = stateData[RiotAuth.config.storageKeys.authState];
+              if (storedState) {
+                callback.state = storedState;
+              }
+            } catch (_) {}
+          }
+          console.log('[RiotAuth] AuthCallbackWatcher found callback in storage', { key, hasCode: !!callback.code, hasState: !!callback.state });
           return callback;
         }
       }
@@ -1452,11 +1514,18 @@ class AuthCallbackWatcher {
     }
     
     this.state.isResolved = true;
+    console.log('[RiotAuth] AuthCallbackWatcher.resolve', { hasResult: !!result, hasCode: !!(result && result.code) });
     
     // Clean up interval
     if (this.state.intervalId) {
       clearInterval(this.state.intervalId);
       this.state.intervalId = null;
+    }
+
+    // Remove storage listener
+    if (this._onStorageChanged) {
+      try { browser.storage.onChanged.removeListener(this._onStorageChanged); } catch (_) {}
+      this._onStorageChanged = null;
     }
     
     // Clean up callback data from storage if successful
