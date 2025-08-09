@@ -144,25 +144,21 @@ function handleAuthCallback(params) {
     processedAuthStates.add(params.state);
   }
 
+  // Store a single ephemeral callback record for debugging/compatibility
   browser.storage.local.set({
-    'auth_callback': params,
-    'eloward_auth_callback': params
+    'auth_callback': {
+      ...params,
+      timestamp: Date.now()
+    }
   });
 
   const isTwitchCallback = params.service === 'twitch';
 
+  // Avoid creating duplicate callback keys per-service; proceed directly
   if (isTwitchCallback) {
-    browser.storage.local.set({
-      'twitch_auth_callback': params
-    }).then(() => {
-      initiateTokenExchange(params, 'twitch');
-    });
+    initiateTokenExchange(params, 'twitch');
   } else {
-    browser.storage.local.set({
-      'riot_auth_callback': params
-    }).then(() => {
-      initiateTokenExchange(params, 'riot');
-    });
+    initiateTokenExchange(params, 'riot');
   }
 
 }

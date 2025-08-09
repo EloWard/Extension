@@ -127,9 +127,7 @@
         // Store callback data in the keys that AuthCallbackWatcher expects
         if (typeof browser !== 'undefined' && browser.storage) {
           browser.storage.local.set({
-            'auth_callback': { code: code, state: state },
-            'eloward_auth_callback': { code: code, state: state },
-            'riot_auth_callback': { code: code, state: state }
+            'auth_callback': { code, state, service: window.location.pathname.includes('/twitch/') ? 'twitch' : 'riot' }
           });
         }
 
@@ -173,16 +171,7 @@
         try {
           if (typeof browser !== 'undefined' && browser.storage) {
             const callbackData = { code, state, service, timestamp: Date.now() };
-            const storagePayload = {
-              'auth_callback': callbackData,
-              'eloward_auth_callback': callbackData
-            };
-            if (service === 'twitch') {
-              storagePayload['twitch_auth_callback'] = callbackData;
-            } else {
-              storagePayload['riot_auth_callback'] = callbackData;
-            }
-            browser.storage.local.set(storagePayload);
+            browser.storage.local.set({ 'auth_callback': callbackData });
           }
         } catch (e) {
           // Non-fatal

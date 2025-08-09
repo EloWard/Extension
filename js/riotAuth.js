@@ -114,6 +114,9 @@ export const RiotAuth = {
         }
       }
       
+      // Clear any temporary callback keys written by the bridge
+      try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','riot_auth_callback']); } catch (_) {}
+
       // Exchange code for tokens
       console.log('[RiotAuth] exchanging code for tokens');
       await this.exchangeCodeForTokens(authResult.code);
@@ -293,31 +296,8 @@ export const RiotAuth = {
         expires_at: expiresAt
       };
       
-      // Store tokens in storage
+      // Store tokens only in canonical location
       await this._storeTokens(tokens);
-      
-      // Also directly store in standardized keys for better compatibility
-      // with other parts of the extension
-      const storageData = {
-        'eloward_riot_access_token': tokens.access_token,
-        'eloward_riot_refresh_token': tokens.refresh_token,
-        'eloward_riot_token_expiry': expiresAt,
-        'riotAuth': {
-          ...tokens,
-          issued_at: Date.now()
-        }
-      };
-      
-      await browser.storage.local.set(storageData);
-      
-      // Also decode and store the ID token if present
-      if (tokens.id_token) {
-        try {
-          await this._processIdToken(tokens.id_token);
-        } catch (idTokenError) {
-          // Continue even if ID token processing fails
-        }
-      }
       
       return tokens;
     } catch (error) {
@@ -342,56 +322,13 @@ export const RiotAuth = {
         throw new Error('Access token appears to be invalid');
       }
       
-      // Calculate expiry time - ensure it's a numeric value
-      const expiresIn = parseInt(tokenData.expires_in, 10) || 300; // Default to 5 minutes if invalid
-      if (isNaN(expiresIn)) {
-        // Invalid expires_in value, using default
-      }
-      
-      // Calculate expiry timestamp as milliseconds since epoch
-      const tokenExpiry = Date.now() + (expiresIn * 1000);
-              // Create structured data to store
-        const storageData = {
-          [this.config.storageKeys.accessToken]: tokenData.access_token,
-          [this.config.storageKeys.tokenExpiry]: tokenExpiry,
-          [this.config.storageKeys.tokens]: {
-            ...tokenData,
-            stored_at: Date.now(),
-          }
-        };
-        
-        // Optional: refreshToken (only if provided and valid)
-        if (tokenData.refresh_token && typeof tokenData.refresh_token === 'string' && tokenData.refresh_token.length > 20) {
-          storageData[this.config.storageKeys.refreshToken] = tokenData.refresh_token;
+      // Store canonical tokens object only
+      const storageData = {
+        [this.config.storageKeys.tokens]: {
+          ...tokenData,
+          stored_at: Date.now()
         }
-      
-      // If we have user info from the token, store that too
-      if (tokenData.user_info && typeof tokenData.user_info === 'object') {
-        storageData[this.config.storageKeys.accountInfo] = tokenData.user_info;
-      } else if (tokenData.id_token && typeof tokenData.id_token === 'string') {
-        // Try to extract user info from ID token if available
-        try {
-          const idTokenParts = tokenData.id_token.split('.');
-          if (idTokenParts.length === 3) {
-            const idTokenPayload = JSON.parse(atob(idTokenParts[1]));
-            
-            // Create a user info object matching the expected structure
-            const userInfo = {
-              puuid: idTokenPayload.sub,
-              gameName: idTokenPayload.game_name || idTokenPayload.gameName,
-              tagLine: idTokenPayload.tag_line || idTokenPayload.tagLine
-            };
-            
-            if (userInfo.puuid) {
-              storageData[this.config.storageKeys.accountInfo] = userInfo;
-            } else {
-            }
-          }
-        } catch (e) {
-        }
-      }
-      
-      // Store in browser.storage.local
+      };
       await browser.storage.local.set(storageData);
 
     } catch (error) {
@@ -415,17 +352,12 @@ export const RiotAuth = {
       }
       
       // If not connected in persistent storage, try token validation as fallback
-      let hasValidToken = false;
       try {
         const token = await this.getValidToken(ignoreInitialErrors);
-        hasValidToken = !!token;
+        return !!token;
       } catch (e) {
-        if (!ignoreInitialErrors) {
-          throw e;
-        }
+        return false;
       }
-      
-      return hasValidToken;
     } catch (error) {
       return false;
     }
@@ -437,35 +369,23 @@ export const RiotAuth = {
    */
   async getValidToken() {
     try {
-      // Get tokens from storage using centralized method
-      const { accessToken, refreshToken, tokenExpiry } = await this._getTokensFromStorage();
-      
-      if (!accessToken) {
+      const tokens = await this._getTokensObject();
+      if (!tokens?.access_token) {
         return null;
       }
       
-      // Validate token expiry
       const now = Date.now();
-      const tokenExpiryMs = typeof tokenExpiry === 'string' ? parseInt(tokenExpiry) : tokenExpiry;
-      
-      if (isNaN(tokenExpiryMs)) {
-        if (refreshToken) {
-          const refreshResult = await this.refreshToken();
-          return refreshResult?.access_token || null;
-        }
-        return null;
-      }
-      
-      const expiresInMs = tokenExpiryMs - now;
+      const tokenExpiryMs = tokens.expires_at;
+      const expiresInMs = (typeof tokenExpiryMs === 'number' ? tokenExpiryMs : parseInt(tokenExpiryMs, 10)) - now;
       const twoMinutesInMs = 2 * 60 * 1000;
       
       // Use existing token if valid for more than 2 minutes
       if (expiresInMs > twoMinutesInMs) {
-        return accessToken;
+        return tokens.access_token;
       }
       
       // Refresh if expires within 2 minutes or already expired
-      if (refreshToken) {
+      if (tokens.refresh_token) {
         try {
           const refreshResult = await this.refreshToken();
           return refreshResult?.access_token || null;
@@ -494,16 +414,13 @@ export const RiotAuth = {
    * @private
    */
   async _getTokensFromStorage() {
-    const tokenData = await browser.storage.local.get([
-      this.config.storageKeys.accessToken,
-      this.config.storageKeys.refreshToken,
-      this.config.storageKeys.tokenExpiry
-    ]);
-    
+    // Deprecated: retained for backward compatibility if needed
+    const tokenData = await browser.storage.local.get([this.config.storageKeys.tokens]);
+    const t = tokenData[this.config.storageKeys.tokens];
     return {
-      accessToken: tokenData[this.config.storageKeys.accessToken],
-      refreshToken: tokenData[this.config.storageKeys.refreshToken],
-      tokenExpiry: tokenData[this.config.storageKeys.tokenExpiry]
+      accessToken: t?.access_token || null,
+      refreshToken: t?.refresh_token || null,
+      tokenExpiry: t?.expires_at || null
     };
   },
   
@@ -529,8 +446,8 @@ export const RiotAuth = {
    * @returns {Promise<Object>} - The refreshed token data or null if refresh fails
    */
   async refreshToken() {
-    const storedData = await this._getStoredValue('riotAuth'); 
-    const refreshToken = storedData?.refresh_token;
+    const tokens = await this._getTokensObject();
+    const refreshToken = tokens?.refresh_token;
 
     if (!refreshToken) {
       throw new ReAuthenticationRequiredError("No refresh token available for refresh.");
@@ -554,19 +471,16 @@ export const RiotAuth = {
 
       const newTokens = await response.json();
       const actualTokenData = newTokens.data || newTokens;
-
       const tokensToStore = {
         access_token: actualTokenData.access_token,
-        id_token: actualTokenData.id_token || storedData?.id_token,
+        id_token: actualTokenData.id_token || tokens?.id_token,
         refresh_token: actualTokenData.refresh_token || refreshToken,
         expires_at: Date.now() + (actualTokenData.expires_in * 1000),
-        scope: actualTokenData.scope || storedData?.scope,
-        token_type: actualTokenData.token_type || storedData?.token_type,
-        issued_at: storedData?.issued_at 
+        scope: actualTokenData.scope || tokens?.scope,
+        token_type: actualTokenData.token_type || tokens?.token_type
       };
-
       await this._storeTokens(tokensToStore);
-      return tokensToStore; 
+      return tokensToStore;
 
     } catch (error) {
       if (error instanceof ReAuthenticationRequiredError) {
@@ -761,12 +675,10 @@ export const RiotAuth = {
         error = accountError;
       }
       
-      // If primary endpoint failed, try fallback to ID token info
+      // If primary endpoint failed, try fallback to ID token info from tokens
       if (!accountInfo) {
-        
-        // Try to get account info from ID token (which may be stored separately)
-        const idToken = await this._getStoredValue(this.config.storageKeys.idToken);
-        
+        const tokens = await this._getTokensObject();
+        const idToken = tokens?.id_token || null;
         if (idToken) {
           try {
             const idTokenPayload = await this._decodeIdToken(idToken);
@@ -817,8 +729,7 @@ export const RiotAuth = {
         accountInfo.tagLine = platform.toUpperCase();
       }
       
-      // Store account info in storage
-      await this._storeAccountInfo(accountInfo);
+      // Avoid duplicating account info; persistent storage will store unified user data
       
       
       return accountInfo;
@@ -1192,6 +1103,15 @@ export const RiotAuth = {
       }
     } catch (error) {
       throw error;
+    }
+  },
+
+  async _getTokensObject() {
+    try {
+      const data = await browser.storage.local.get([this.config.storageKeys.tokens]);
+      return data[this.config.storageKeys.tokens] || null;
+    } catch (e) {
+      return null;
     }
   },
   

@@ -91,6 +91,9 @@ export const TwitchAuth = {
         }
       }
       
+      // Clear any temporary callback keys written by the bridge
+      try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','twitch_auth_callback']); } catch (_) {}
+
       // Exchange the authorization code for tokens
       try {
         await this.exchangeCodeForTokens(authResult.code);
@@ -425,22 +428,14 @@ export const TwitchAuth = {
    */
   async _storeTokens(tokenData) {
     try {
-      
       const now = Date.now();
       const expiresAt = now + (tokenData.expires_in * 1000);
-      
-      // Store individual token components
-      await this._storeValue(this.config.storageKeys.accessToken, tokenData.access_token);
-      await this._storeValue(this.config.storageKeys.refreshToken, tokenData.refresh_token);
-      await this._storeValue(this.config.storageKeys.tokenExpiry, expiresAt.toString());
-      
-      // Store the complete token data as a backup
-      await this._storeValue(this.config.storageKeys.tokens, JSON.stringify({
+      const canonical = {
         ...tokenData,
-        stored_at: now,
-        expires_at: expiresAt
-      }));
-      
+        expires_at: expiresAt,
+        stored_at: now
+      };
+      await browser.storage.local.set({ [this.config.storageKeys.tokens]: canonical });
     } catch (error) {
       throw error;
     }
@@ -480,37 +475,30 @@ export const TwitchAuth = {
    */
   async getValidToken() {
     try {
-      // Get stored token data
-      const accessToken = await this._getStoredValue(this.config.storageKeys.accessToken);
-      const refreshToken = await this._getStoredValue(this.config.storageKeys.refreshToken);
-      const tokenExpiry = await this._getStoredValue(this.config.storageKeys.tokenExpiry);
-      
-      if (!accessToken) {
+      const tokens = await this.getTokensObject();
+      if (!tokens?.access_token) {
         return null;
       }
-      
-      if (!tokenExpiry) {
+
+      if (!tokens.expires_at) {
         // No expiry time, assume token is still valid
-        return accessToken;
+        return tokens.access_token;
       }
-      
-      const expiryTime = parseInt(tokenExpiry, 10);
+
+      const expiryTime = typeof tokens.expires_at === 'number' ? tokens.expires_at : parseInt(tokens.expires_at, 10);
       const now = Date.now();
-      
+
       // Check if token is expired or about to expire (within 5 minutes)
       if (now >= expiryTime - (5 * 60 * 1000)) {
-        
-        if (!refreshToken) {
+        if (!tokens.refresh_token) {
           throw new Error('No refresh token found for expired access token');
         }
-        
-        // Refresh the token
-        const newTokens = await this.refreshToken(refreshToken);
+        const newTokens = await this.refreshToken(tokens.refresh_token);
         return newTokens.access_token;
       }
-      
+
       // Token is still valid
-      return accessToken;
+      return tokens.access_token;
     } catch (error) {
       throw error;
     }
@@ -523,7 +511,6 @@ export const TwitchAuth = {
    */
   async refreshToken(refreshToken) {
     try {
-      
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`, {
         method: 'POST',
         headers: {
@@ -533,25 +520,24 @@ export const TwitchAuth = {
           refresh_token: refreshToken
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to refresh token: ${response.status} ${response.statusText}`);
       }
-      
+
       const tokenData = await response.json();
-      
+
       if (tokenData.error) {
         throw new Error(`Token refresh error: ${tokenData.error} - ${tokenData.error_description || 'No description'}`);
       }
-      
+
       if (!tokenData.access_token) {
         throw new Error('No access token found in refresh response');
       }
-      
-      
-      // Store the new tokens
+
+      // Store the new tokens canonically
       await this._storeTokens(tokenData);
-      
+
       return tokenData;
     } catch (error) {
       throw error;
@@ -645,10 +631,7 @@ export const TwitchAuth = {
       
       const userInfo = result.user_data;
       
-      // Store the user info locally for future use
-      await this._storeUserInfo(userInfo);
-      
-      // Also store in persistent storage
+      // Store in persistent storage (single source of truth)
       await PersistentStorage.storeTwitchUserData(userInfo);
       
       return userInfo;
@@ -664,7 +647,8 @@ export const TwitchAuth = {
    */
   async _storeUserInfo(userInfo) {
     try {
-      await this._storeValue(this.config.storageKeys.userInfo, JSON.stringify(userInfo));
+      // Deprecated: Prefer PersistentStorage; keep for backward compatibility if needed
+      await browser.storage.local.set({ [this.config.storageKeys.userInfo]: JSON.stringify(userInfo) });
     } catch (error) {
       throw error;
     }
@@ -692,6 +676,19 @@ export const TwitchAuth = {
    * @private
    */
   async _getStoredValue(key) {
+    // For token-related fields, prefer the canonical tokens object
+    if (
+      key === this.config.storageKeys.accessToken ||
+      key === this.config.storageKeys.refreshToken ||
+      key === this.config.storageKeys.tokenExpiry
+    ) {
+      const tokens = await this.getTokensObject();
+      if (!tokens) return null;
+      if (key === this.config.storageKeys.accessToken) return tokens.access_token || null;
+      if (key === this.config.storageKeys.refreshToken) return tokens.refresh_token || null;
+      if (key === this.config.storageKeys.tokenExpiry) return tokens.expires_at || null;
+    }
+
     // Get only from browser.storage.local for consistency
     try {
       const result = await browser.storage.local.get([key]);
@@ -717,6 +714,21 @@ export const TwitchAuth = {
       
       return null;
     } catch (error) {
+      return null;
+    }
+  },
+
+  /**
+   * Get the canonical tokens object from storage
+   * @returns {Promise<Object|null>} The canonical tokens object or null if not found
+   */
+  async getTokensObject() {
+    try {
+      const data = await browser.storage.local.get([this.config.storageKeys.tokens]);
+      const raw = data[this.config.storageKeys.tokens];
+      if (!raw) return null;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
       return null;
     }
   }
