@@ -90,7 +90,7 @@ function generateFirefoxManifest() {
     background: {
       page: "background.html"
     },
-    applications: {
+    browser_specific_settings: {
       gecko: {
         id: "eloward@unleashai.workers.dev"
       }
