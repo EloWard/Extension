@@ -14,6 +14,8 @@ const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev';
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
 const MAX_RANK_CACHE_SIZE = 500;
+const RANK_CACHE_STORAGE_KEY = 'eloward_rank_cache';
+const RANK_CACHE_UPDATED_AT_KEY = 'eloward_rank_cache_last_updated';
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000;
 
 console.log('[EloWard Background] Constants loaded, initializing classes...');
@@ -71,6 +73,8 @@ class UserRankCache {
         this.evictLFU();
       }
     }
+
+    maybePersistRankCache(this).catch(() => {});
   }
 
   clear() {
@@ -80,6 +84,8 @@ class UserRankCache {
     if (this.currentUser && currentUserEntry) {
       this.cache.set(this.currentUser, currentUserEntry);
     }
+
+    maybePersistRankCache(this).catch(() => {});
   }
 
   evictLFU() {
@@ -105,6 +111,9 @@ class UserRankCache {
     if (userToEvict) {
       this.cache.delete(userToEvict);
     }
+
+    // Persist after eviction to keep storage mirror in sync
+    maybePersistRankCache(this).catch(() => {});
   }
 
   has(username) {
@@ -212,6 +221,56 @@ async function initiateTokenExchange(authData, service = 'riot') {
 // Add comprehensive logging at the very start
 console.log('[EloWard Background] Background script loaded and ready');
 console.log('[EloWard Background] Setting up message listeners...');
+
+// Ensure persistence flag exists and restore rank cache mirror on startup
+(async () => {
+  try {
+    await PersistentStorage.init();
+    await restoreRankCacheFromStorage(userRankCache);
+  } catch (_) {}
+})();
+
+// Persist/restore helpers for the rank cache (optional, gated by persistence flag)
+async function maybePersistRankCache(cacheInstance) {
+  try {
+    const { eloward_data_persistence_enabled: persistenceEnabled } = await browser.storage.local.get(['eloward_data_persistence_enabled']);
+    if (!persistenceEnabled) return;
+
+    const payload = {};
+    for (const [username, entry] of cacheInstance.cache.entries()) {
+      payload[username] = {
+        rankData: entry.rankData,
+        frequency: entry.frequency || 0,
+        timestamp: entry.timestamp || Date.now()
+      };
+    }
+    await browser.storage.local.set({
+      [RANK_CACHE_STORAGE_KEY]: payload,
+      [RANK_CACHE_UPDATED_AT_KEY]: Date.now()
+    });
+  } catch (_) { /* ignore */ }
+}
+
+async function restoreRankCacheFromStorage(cacheInstance) {
+  try {
+    const { eloward_data_persistence_enabled: persistenceEnabled } = await browser.storage.local.get(['eloward_data_persistence_enabled']);
+    if (!persistenceEnabled) return;
+
+    const data = await browser.storage.local.get([RANK_CACHE_STORAGE_KEY]);
+    const stored = data[RANK_CACHE_STORAGE_KEY];
+    if (!stored || typeof stored !== 'object') return;
+
+    for (const [username, entry] of Object.entries(stored)) {
+      if (entry && entry.rankData) {
+        cacheInstance.cache.set(username.toLowerCase(), {
+          rankData: entry.rankData,
+          frequency: entry.frequency || 1,
+          timestamp: entry.timestamp || Date.now()
+        });
+      }
+    }
+  } catch (_) { /* ignore */ }
+}
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[EloWard Background] *** INTERNAL MESSAGE RECEIVED ***');
@@ -577,7 +636,6 @@ browser.runtime.onInstalled.addListener((details) => {
       "eloward_signin_attempted",
       "riot_auth",
       "selectedRegion",
-      "eloward_data_persistence_enabled",
       "linkedAccounts"
     ]);
   } catch (_) {}
