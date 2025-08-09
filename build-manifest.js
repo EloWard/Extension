@@ -11,7 +11,7 @@ const path = require('path');
 // Base manifest configuration
 const baseManifest = {
   name: "EloWard",
-  version: "1.1.9",
+  version: "1.1.10",
   description: "Injects real-time League of Legends rank badges into Twitch chat so you can seamlessly display your rank on any channel",
   icons: {
     "16": "images/logo/icon16.png",
