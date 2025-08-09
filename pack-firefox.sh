@@ -18,7 +18,7 @@ export COPYFILE_DISABLE=1
 echo "[pack-firefox] Creating clean zip for AMO..."
 zip -r -X -9 "$ZIP_NAME" . \
   -x "./$ZIP_NAME" \
-  -x "pack-firefox.sh" \
+  -x "pack*.sh" \
   -x "__MACOSX/*" \
   -x "*.DS_Store" \
   -x "*.AppleDouble" \
