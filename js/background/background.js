@@ -4,11 +4,11 @@ console.log('[EloWard Background] *** BACKGROUND SCRIPT STARTING ***');
 console.log('[EloWard Background] Loading imports...');
 
 // Import webextension-polyfill for cross-browser compatibility
-import './browser-polyfill.js';
+import '../../vendor/browser-polyfill.js';
 
-import { RiotAuth } from './js/riotAuth.js';
-import { TwitchAuth } from './js/twitchAuth.js';
-import { PersistentStorage } from './js/persistentStorage.js';
+import { RiotAuth } from '../auth/riotAuth.js';
+import { TwitchAuth } from '../auth/twitchAuth.js';
+import { PersistentStorage } from '../core/persistentStorage.js';
 
 const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev';
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';

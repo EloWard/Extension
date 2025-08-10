@@ -3,9 +3,9 @@
 // EloWard Twitch Authentication
 
 // Import webextension-polyfill for cross-browser compatibility
-import '../browser-polyfill.js';
+import '../../vendor/browser-polyfill.js';
 
-import { PersistentStorage } from './persistentStorage.js';
+import { PersistentStorage } from '../core/persistentStorage.js';
 
 /**
  * Twitch Authentication Module

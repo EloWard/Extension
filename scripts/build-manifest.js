@@ -8,6 +8,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const ROOT_DIR = path.join(__dirname, '..');
+
 // Base manifest configuration
 const baseManifest = {
   name: "EloWard",
@@ -21,12 +23,12 @@ const baseManifest = {
   content_scripts: [
     {
       matches: ["*://*.twitch.tv/*"],
-      js: ["browser-polyfill.js", "content.js"],
-      css: ["styles.css"]
+      js: ["vendor/browser-polyfill.js", "js/content/content.js"],
+      css: ["css/content.css"]
     },
     {
       matches: ["https://www.eloward.com/*"],
-      js: ["browser-polyfill.js", "js/extensionBridge.js"],
+      js: ["vendor/browser-polyfill.js", "js/core/extensionBridge.js"],
       run_at: "document_start"
     }
   ],
@@ -61,7 +63,7 @@ function generateChromeManifest() {
       "https://www.eloward.com/*"
     ],
     background: {
-      service_worker: "background.js",
+      service_worker: "js/background/background.js",
       type: "module"
     }
   };
@@ -132,7 +134,7 @@ function main() {
   }
   
   // Write the manifest
-  const manifestPath = path.join(__dirname, filename);
+  const manifestPath = path.join(ROOT_DIR, filename);
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   
   console.log(`✅ Generated ${filename} for ${target}`);

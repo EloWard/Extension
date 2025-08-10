@@ -2,7 +2,7 @@
 
 import { RiotAuth } from './riotAuth.js';
 import { TwitchAuth } from './twitchAuth.js';
-import { PersistentStorage } from './persistentStorage.js';
+import { PersistentStorage } from './core/persistentStorage.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 

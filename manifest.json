@@ -14,11 +14,11 @@
         "*://*.twitch.tv/*"
       ],
       "js": [
-        "browser-polyfill.js",
-        "content.js"
+        "vendor/browser-polyfill.js",
+        "js/content/content.js"
       ],
       "css": [
-        "styles.css"
+        "css/content.css"
       ]
     },
     {
@@ -26,8 +26,8 @@
         "https://www.eloward.com/*"
       ],
       "js": [
-        "browser-polyfill.js",
-        "js/extensionBridge.js"
+        "vendor/browser-polyfill.js",
+        "js/core/extensionBridge.js"
       ],
       "run_at": "document_start"
     }
@@ -64,7 +64,7 @@
     "https://www.eloward.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "js/background/background.js",
     "type": "module"
   }
 }

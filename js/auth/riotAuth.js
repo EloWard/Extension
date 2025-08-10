@@ -1,10 +1,10 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
 // Import webextension-polyfill for cross-browser compatibility
-import '../browser-polyfill.js';
+import '../../vendor/browser-polyfill.js';
 
-import { PersistentStorage } from './persistentStorage.js';
-import { TwitchAuth } from './twitchAuth.js';
+import { PersistentStorage } from './core/persistentStorage.js';
+import { TwitchAuth } from './auth/twitchAuth.js';
 
 class ReAuthenticationRequiredError extends Error {
   constructor(message = "User re-authentication is required.") {
