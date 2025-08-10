@@ -550,23 +550,30 @@ export const TwitchAuth = {
    */
   async disconnect() {
     try {
-      
-      // Clear persistent user data
+      // 1) Clear persistent user data and connected state (single source of truth)
       await PersistentStorage.clearServiceData('twitch');
-      
-      // Clear auth data from browser.storage
-      let keysToRemove = [
-        this.config.storageKeys.accessToken,
-        this.config.storageKeys.refreshToken,
-        this.config.storageKeys.tokenExpiry,
+
+      // 2) Remove any tokens and cached user info so next connect is a full OAuth
+      const keysToRemove = [
+        this.config.storageKeys.tokens,            // canonical tokens object
+        this.config.storageKeys.userInfo,          // deprecated user info cache
+        this.config.storageKeys.accessToken,       // legacy
+        this.config.storageKeys.refreshToken,      // legacy
+        this.config.storageKeys.tokenExpiry,       // legacy
         this.config.storageKeys.authState,
+        'auth_callback',
         'twitch_auth',
         'twitch_auth_callback',
         'eloward_auth_callback'
       ];
-      
-      await browser.storage.local.remove(keysToRemove);
-      
+
+      try {
+        await browser.storage.local.remove(keysToRemove);
+      } catch (_) {}
+
+      // 3) Explicitly mark service disconnected to avoid isAuthenticated short-circuit
+      try { await PersistentStorage.updateConnectedState('twitch', false); } catch (_) {}
+
       return true;
     } catch (error) {
       return false;
