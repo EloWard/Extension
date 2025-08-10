@@ -53,6 +53,48 @@ document.addEventListener('DOMContentLoaded', () => {
     connectRiotBtn.classList.remove('btn-signin');
   }
 
+  // Push latest local user's rank into background cache so it's fresh for chat injection
+  async function updateBackgroundCacheForLocalUser(userData) {
+    try {
+      const twitchInfo = await PersistentStorage.getTwitchUserData();
+      const twitchUsername = twitchInfo?.login?.toLowerCase();
+      if (!twitchUsername || !userData) return;
+
+      // Derive rank data from userData
+      let tier = 'UNRANKED';
+      let division = '';
+      let leaguePoints = null;
+      if (userData.soloQueueRank) {
+        tier = userData.soloQueueRank.tier?.toUpperCase() || 'UNRANKED';
+        division = userData.soloQueueRank.rank || '';
+        leaguePoints = userData.soloQueueRank.leaguePoints ?? null;
+      } else if (userData.rankInfo) {
+        tier = userData.rankInfo.tier?.toUpperCase() || 'UNRANKED';
+        division = userData.rankInfo.rank || '';
+        leaguePoints = userData.rankInfo.leaguePoints ?? null;
+      }
+
+      const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
+      const region = selectedRegion || 'na1';
+
+      const rankData = {
+        tier,
+        division,
+        leaguePoints,
+        summonerName: userData.riotId,
+        region
+      };
+
+      try {
+        await browser.runtime.sendMessage({
+          action: 'set_rank_data',
+          username: twitchUsername,
+          rankData
+        });
+      } catch (_) {}
+    } catch (_) {}
+  }
+
 
   async function isFirstTimeUser() {
     try {
@@ -514,6 +556,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update UI with the user data
         updateUserInterface(userData);
         
+        // Ensure background cache for local user is up-to-date
+        updateBackgroundCacheForLocalUser(userData);
+        
         // Store the connected region in storage and ensure the region selector reflects the current region
         await browser.storage.local.set({ selectedRegion: region });
               } catch (error) {
@@ -609,6 +654,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     updateUserInterface(userData);
     await PersistentStorage.storeRiotUserData(userData);
+    // Ensure background cache for local user is up-to-date after refresh
+    updateBackgroundCacheForLocalUser(userData);
     
     // Backend storage is now handled by getUserData() - no duplicate call needed
   }

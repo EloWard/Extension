@@ -574,6 +574,15 @@ export const TwitchAuth = {
       // 3) Explicitly mark service disconnected to avoid isAuthenticated short-circuit
       try { await PersistentStorage.updateConnectedState('twitch', false); } catch (_) {}
 
+      // 4) Open Twitch logout page to allow the user to explicitly log out of Twitch (manual close)
+      try {
+        window.open(
+          'https://www.twitch.tv/logout',
+          'twitchLogout',
+          'width=300,height=420'
+        );
+      } catch (_) {}
+
       return true;
     } catch (error) {
       return false;

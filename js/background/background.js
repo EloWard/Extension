@@ -13,7 +13,7 @@ import { PersistentStorage } from '../core/persistentStorage.js';
 const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev';
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
-const MAX_RANK_CACHE_SIZE = 500;
+const MAX_RANK_CACHE_SIZE = 1000;
 const RANK_CACHE_STORAGE_KEY = 'eloward_rank_cache';
 const RANK_CACHE_UPDATED_AT_KEY = 'eloward_rank_cache_last_updated';
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000;

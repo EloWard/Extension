@@ -986,35 +986,41 @@ function handleCurrentUserMessages(messageData) {
   chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
     const riotData = data.eloward_persistent_riot_user_data;
     
-    if (riotData?.rankInfo) {
-      const userRankData = {
-        tier: riotData.rankInfo.tier,
-        division: riotData.rankInfo.rank,
-        leaguePoints: riotData.rankInfo.leaguePoints,
-        summonerName: riotData.riotId,
-        region: riotData.region
-      };
-      
-      messageData.forEach(({ usernameElement }) => {
-        addBadgeToMessage(usernameElement, userRankData);
-      });
-      
+    const userRankData = riotData?.rankInfo ? {
+      tier: riotData.rankInfo.tier,
+      division: riotData.rankInfo.rank,
+      leaguePoints: riotData.rankInfo.leaguePoints,
+      summonerName: riotData.riotId,
+      region: riotData.region
+    } : (riotData ? {
+      tier: 'UNRANKED',
+      division: '',
+      leaguePoints: null,
+      summonerName: riotData.riotId,
+      region: riotData.region
+    } : null);
+
+    if (!userRankData) return;
+
+    messageData.forEach(({ usernameElement }) => {
+      addBadgeToMessage(usernameElement, userRankData);
+    });
+
+    chrome.runtime.sendMessage({
+      action: 'set_rank_data',
+      username: extensionState.currentUser,
+      rankData: userRankData
+    });
+    
+    if (extensionState.channelName) {
       chrome.runtime.sendMessage({
-        action: 'set_rank_data',
-        username: extensionState.currentUser,
-        rankData: userRankData
+        action: 'increment_db_reads',
+        channel: extensionState.channelName
       });
-      
-      if (extensionState.channelName) {
-        chrome.runtime.sendMessage({
-          action: 'increment_db_reads',
-          channel: extensionState.channelName
-        });
-        chrome.runtime.sendMessage({
-          action: 'increment_successful_lookups',
-          channel: extensionState.channelName
-        });
-      }
+      chrome.runtime.sendMessage({
+        action: 'increment_successful_lookups',
+        channel: extensionState.channelName
+      });
     }
   });
 }
@@ -1089,35 +1095,41 @@ function processNewMessage(messageNode) {
       chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
         const riotData = data.eloward_persistent_riot_user_data;
         
-        if (riotData?.rankInfo) {
-          const userRankData = {
-            tier: riotData.rankInfo.tier,
-            division: riotData.rankInfo.rank,
-            leaguePoints: riotData.rankInfo.leaguePoints,
-            summonerName: riotData.riotId,
-            region: riotData.region
-          };
-          
+        const userRankData = riotData?.rankInfo ? {
+          tier: riotData.rankInfo.tier,
+          division: riotData.rankInfo.rank,
+          leaguePoints: riotData.rankInfo.leaguePoints,
+          summonerName: riotData.riotId,
+          region: riotData.region
+        } : (riotData ? {
+          tier: 'UNRANKED',
+          division: '',
+          leaguePoints: null,
+          summonerName: riotData.riotId,
+          region: riotData.region
+        } : null);
+
+        if (!userRankData) return;
+
+        chrome.runtime.sendMessage({
+          action: 'set_rank_data',
+          username: username,
+          rankData: userRankData
+        });
+        
+        if (extensionState.channelName) {
           chrome.runtime.sendMessage({
-            action: 'set_rank_data',
-            username: username,
-            rankData: userRankData
+            action: 'increment_db_reads',
+            channel: extensionState.channelName
           });
           
-          if (extensionState.channelName) {
-            chrome.runtime.sendMessage({
-              action: 'increment_db_reads',
-              channel: extensionState.channelName
-            });
-            
-            chrome.runtime.sendMessage({
-              action: 'increment_successful_lookups',
-              channel: extensionState.channelName
-            });
-          }
-          
-          addBadgeToMessage(usernameElement, userRankData);
+          chrome.runtime.sendMessage({
+            action: 'increment_successful_lookups',
+            channel: extensionState.channelName
+          });
         }
+        
+        addBadgeToMessage(usernameElement, userRankData);
       });
       return;
     }
