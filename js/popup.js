@@ -365,10 +365,12 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Check persistent storage for Twitch data (even if not "connected" due to expired tokens)
       const storedTwitchData = await PersistentStorage.getTwitchUserData();
-      if (storedTwitchData) {
+      const renderedTwitchFromStorage = !!storedTwitchData;
+      if (renderedTwitchFromStorage) {
         // Show user data regardless of connection status (data preserved)
         twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
         twitchConnectionStatus.classList.add('connected');
+        twitchConnectionStatus.classList.remove('error');
         connectTwitchBtn.textContent = 'Disconnect';
       }
       
@@ -376,46 +378,33 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
         
-        let isTwitchConnected = false;
         if (isTwitchAuthenticated) {
-          // User is authenticated with Twitch, update UI
-          const userData = await TwitchAuth.getUserInfo();
-          const displayName = userData?.display_name || userData?.login || 'Connected';
-          twitchConnectionStatus.textContent = displayName;
-          twitchConnectionStatus.classList.add('connected');
-          twitchConnectionStatus.classList.remove('error');
-          connectTwitchBtn.textContent = 'Disconnect';
-          
-                  // Update persistent storage with latest data
-        try {
-          if (userData) {
-            await PersistentStorage.storeTwitchUserData(userData);
+          // If we didn't render from storage yet, populate from storage-first API
+          if (!renderedTwitchFromStorage) {
+            const userData = await TwitchAuth.getUserInfo(); // storage-first
+            const displayName = userData?.display_name || userData?.login || 'Connected';
+            twitchConnectionStatus.textContent = displayName;
+            twitchConnectionStatus.classList.add('connected');
+            twitchConnectionStatus.classList.remove('error');
+            connectTwitchBtn.textContent = 'Disconnect';
+            try { if (userData) await PersistentStorage.storeTwitchUserData(userData); } catch (_) {}
           }
-        } catch (error) {
-          // Storage update failed
-        }
-          isTwitchConnected = true; // Mark as connected based on live check
-        } else if (!persistentConnectedState.twitch) {
-          // Only update UI if we haven't already displayed data from persistent storage
+        } else if (!persistentConnectedState.twitch && !renderedTwitchFromStorage) {
+          // Only show Not Connected if we haven't already displayed cached data
           twitchConnectionStatus.textContent = 'Not Connected';
           twitchConnectionStatus.classList.remove('connected', 'error');
           connectTwitchBtn.textContent = 'Connect';
-          isTwitchConnected = false; // Mark as not connected based on live check failure
         }
         
-        // Enable/disable Riot controls based on actual Twitch UI status
         updateRiotControlsBasedOnTwitchStatus();
-        
-              } catch (twitchError) {
-          if (!persistentConnectedState.twitch) {
-            // Only update UI if we haven't already displayed data from persistent storage
-            twitchConnectionStatus.textContent = 'Not Connected';
-            twitchConnectionStatus.classList.remove('connected', 'error');
-            connectTwitchBtn.textContent = 'Connect';
-            // Update Riot controls based on the new Twitch status
-            updateRiotControlsBasedOnTwitchStatus();
-          }
+      } catch (_) {
+        if (!persistentConnectedState.twitch && !renderedTwitchFromStorage) {
+          twitchConnectionStatus.textContent = 'Not Connected';
+          twitchConnectionStatus.classList.remove('connected', 'error');
+          connectTwitchBtn.textContent = 'Connect';
+          updateRiotControlsBasedOnTwitchStatus();
         }
+      }
       
     } catch (error) {
       showNotConnectedUI();
@@ -624,11 +613,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // Backend storage is now handled by getUserData() - no duplicate call needed
   }
 
-  function displayRank(rankData) {
+  // Simple cache for the current user's rank badge image by tier, stored as a data URL
+  async function getCachedBadgeDataUrl(tierKey) {
+    try {
+      const key = `eloward_cached_badge_image_${tierKey}`;
+      const res = await browser.storage.local.get([key]);
+      return res[key] || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function cacheBadgeImage(tierKey, imageUrl) {
+    try {
+      const response = await fetch(imageUrl, { cache: 'force-cache' });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      // Convert to data URL for instant subsequent loads
+      const dataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+      const key = `eloward_cached_badge_image_${tierKey}`;
+      await browser.storage.local.set({ [key]: dataUrl });
+    } catch (_) {
+      // ignore cache errors
+    }
+  }
+
+  async function prefetchAndCacheBadgeImage(tierKey, imageUrl) {
+    const existing = await getCachedBadgeDataUrl(tierKey);
+    if (!existing) {
+      cacheBadgeImage(tierKey, imageUrl);
+    }
+  }
+
+  async function displayRank(rankData) {
     if (!rankData) {
       currentRank.textContent = 'Unranked';
-      // Enhanced image URL path to ensure proper loading with transparent background
-      rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
+      const unrankedKey = 'unranked';
+      const unrankedUrl = `https://eloward-cdn.unleashai.workers.dev/lol/unranked.png`;
+      try {
+        const cachedUnranked = await getCachedBadgeDataUrl(unrankedKey);
+        if (cachedUnranked) {
+          rankBadgePreview.style.backgroundImage = `url('${cachedUnranked}')`;
+        } else {
+          rankBadgePreview.style.backgroundImage = `url('${unrankedUrl}')`;
+          prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl);
+        }
+      } catch (_) {
+        rankBadgePreview.style.backgroundImage = `url('${unrankedUrl}')`;
+        prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl);
+      }
       // Apply custom positioning for unranked badge
       rankBadgePreview.style.transform = 'translateY(-3px)';
       return;
@@ -653,10 +690,22 @@ document.addEventListener('DOMContentLoaded', () => {
     currentRank.textContent = rankText;
     
     // Determine the rank badge image path
-    let rankImageFileName = formattedTier.toLowerCase();
-    
-    // Set the rank badge image
-    rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}.png')`;
+    const rankImageFileName = formattedTier.toLowerCase();
+    const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}.png`;
+
+    // Try cached image first for instant render; fall back to network and prefetch for next time
+    try {
+      const cached = await getCachedBadgeDataUrl(rankImageFileName);
+      if (cached) {
+        rankBadgePreview.style.backgroundImage = `url('${cached}')`;
+      } else {
+        rankBadgePreview.style.backgroundImage = `url('${imageUrl}')`;
+        prefetchAndCacheBadgeImage(rankImageFileName, imageUrl);
+      }
+    } catch (_) {
+      rankBadgePreview.style.backgroundImage = `url('${imageUrl}')`;
+      prefetchAndCacheBadgeImage(rankImageFileName, imageUrl);
+    }
     
     // Apply different positioning based on rank
     const higherRanks = ['master', 'grandmaster', 'challenger'];
