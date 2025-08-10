@@ -29,8 +29,12 @@ zip -r -X -9 "${OLDPWD}/${ZIP_NAME}" . \
   -x ".git/*" \
   -x ".github" \
   -x ".github/*" \
+  -x "scripts/*" \
+  -x "scripts/*/*" \
   -x "node_modules" \
-  -x "node_modules/*"
+  -x "node_modules/*" \
+  -x "manifest-chrome.json" \
+  -x "manifest-firefox.json"
 popd >/dev/null
 
 echo "[pack-firefox] Done → $ZIP_NAME"
