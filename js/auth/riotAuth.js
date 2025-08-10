@@ -18,6 +18,8 @@ const defaultConfig = {
   proxyBaseUrl: 'https://eloward-riotauth.unleashai.workers.dev',
   clientId: '38a4b902-7186-44ac-8183-89ba1ac56cf3',
   redirectUri: 'https://www.eloward.com/riot/auth/redirect',
+  // Force the login prompt so we don't silently reuse a prior Riot session
+  forcePromptLogin: true,
   endpoints: {
     authInit: '/auth/init',
     authToken: '/auth/token',
@@ -173,7 +175,23 @@ export const RiotAuth = {
         throw new Error('No authorization URL returned from backend');
       }
       
-      return data.authorizationUrl;
+      // Ensure prompt=login and max_age=0 are present to force re-auth
+      try {
+        const authUrl = new URL(data.authorizationUrl);
+        if (this.config.forcePromptLogin) {
+          // Only set if not already supplied by backend
+          if (!authUrl.searchParams.get('prompt')) {
+            authUrl.searchParams.set('prompt', 'login');
+          }
+          if (!authUrl.searchParams.get('max_age')) {
+            authUrl.searchParams.set('max_age', '0');
+          }
+        }
+        return authUrl.toString();
+      } catch (_) {
+        // If URL parsing fails, fall back to the provided URL
+        return data.authorizationUrl;
+      }
     } catch (error) {
       throw new Error('Failed to initialize authentication');
     }
@@ -543,43 +561,6 @@ export const RiotAuth = {
    */
   async disconnect() {
     try {
-      
-      // Get Twitch username before clearing data (needed for database deletion)
-      let twitchUsername = null;
-      try {
-        const persistentTwitchData = await PersistentStorage.getTwitchUserData();
-        twitchUsername = persistentTwitchData?.login;
-        
-        // Fallback to other storage locations if not found in persistent storage
-        if (!twitchUsername) {
-          const storageData = await browser.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername']);
-          twitchUsername = storageData.eloward_persistent_twitch_user_data?.login || storageData.twitchUsername;
-        }
-      } catch (error) {
-      }
-      
-      // Delete rank data from database
-      try {
-        let riotToken = null;
-        try {
-          riotToken = await this.getValidToken();
-        } catch {
-          try {
-            const refreshResult = await this.refreshToken();
-            riotToken = refreshResult?.access_token;
-          } catch {}
-        }
-        
-        if (riotToken) {
-          const region = await this._getStoredValue('selectedRegion') || 'na1';
-          await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ riot_token: riotToken, region: region })
-          });
-        }
-      } catch {}
-      
       // Clear persistent user data
       await PersistentStorage.clearServiceData('riot');
       
@@ -601,15 +582,7 @@ export const RiotAuth = {
       // Clear from browser.storage
       await browser.storage.local.remove(keysToRemove);
       
-      // Open Riot logout window and let the user close it manually (no auto-close)
-      try {
-        window.open(
-          'https://auth.riotgames.com/logout', 
-          'riotLogout', 
-          'width=300,height=420'
-        );
-      } catch (_) {}
-      
+      // Rely on prompt=login on next connect; no logout popup / backend calls
       return true;
     } catch (error) {
       return false;
