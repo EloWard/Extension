@@ -1,7 +1,7 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
 // Import webextension-polyfill for cross-browser compatibility
-import '../browser-polyfill.js';
+import '../../vendor/browser-polyfill.js';
 
 const STORAGE_KEYS = {
   RIOT_USER_DATA: 'eloward_persistent_riot_user_data',

@@ -3,8 +3,8 @@
 // Import webextension-polyfill for cross-browser compatibility
 import '../../vendor/browser-polyfill.js';
 
-import { PersistentStorage } from './core/persistentStorage.js';
-import { TwitchAuth } from './auth/twitchAuth.js';
+import { PersistentStorage } from '../core/persistentStorage.js';
+import { TwitchAuth } from './twitchAuth.js';
 
 class ReAuthenticationRequiredError extends Error {
   constructor(message = "User re-authentication is required.") {

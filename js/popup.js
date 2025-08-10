@@ -1,7 +1,7 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
-import { RiotAuth } from './riotAuth.js';
-import { TwitchAuth } from './twitchAuth.js';
+import { RiotAuth } from './auth/riotAuth.js';
+import { TwitchAuth } from './auth/twitchAuth.js';
 import { PersistentStorage } from './core/persistentStorage.js';
 
 document.addEventListener('DOMContentLoaded', () => {
