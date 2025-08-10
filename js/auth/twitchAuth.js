@@ -21,6 +21,8 @@ const defaultConfig = {
   redirectUri: 'https://www.eloward.com/ext/twitch/auth/redirect',
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
+  // Force the consent/login prompt to avoid silently reusing a prior session
+  forceVerify: true,
   endpoints: {
     authInit: '/auth/twitch/init',
     authToken: '/auth/twitch/token',
@@ -176,7 +178,8 @@ export const TwitchAuth = {
         body: JSON.stringify({
           state,
           scopes: this.config.scopes,
-          redirect_uri: this.config.redirectUri
+          redirect_uri: this.config.redirectUri,
+          force_verify: !!this.config.forceVerify
         })
       });
       
@@ -191,7 +194,14 @@ export const TwitchAuth = {
       if (!data || !data.authUrl) {
         throw new Error('Auth URL not found in response');
       }
-      
+      // Ensure force_verify is present even if backend ignores the flag
+      try {
+        const url = new URL(data.authUrl);
+        if (this.config.forceVerify && url.searchParams.get('force_verify') !== 'true') {
+          url.searchParams.set('force_verify', 'true');
+          return url.toString();
+        }
+      } catch (_) { /* ignore URL parse errors */ }
       return data.authUrl;
     } catch (error) {
       throw error;
@@ -574,15 +584,7 @@ export const TwitchAuth = {
       // 3) Explicitly mark service disconnected to avoid isAuthenticated short-circuit
       try { await PersistentStorage.updateConnectedState('twitch', false); } catch (_) {}
 
-      // 4) Open Twitch logout page to allow the user to explicitly log out of Twitch (manual close)
-      try {
-        window.open(
-          'https://www.twitch.tv/logout',
-          'twitchLogout',
-          'width=300,height=420'
-        );
-      } catch (_) {}
-
+      // Rely on force_verify to prompt re-login on next connect; no logout popup/revocation
       return true;
     } catch (error) {
       return false;
