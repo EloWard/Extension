@@ -161,7 +161,7 @@
 
 .eloward-rank-badge img[alt="DIAMOND"],
 .seventv-chat-badge.eloward-rank-badge img[alt="DIAMOND"] {
-  transform: translate(-50%, -50%) scale(1.12) translate(-1.5px, 3.25px) !important;
+  transform: translate(-50%, -50%) scale(1.13) translate(-1.5px, 3.25px) !important;
 }
 
 /* Standard mode DIAMOND margins */
