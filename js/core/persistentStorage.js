@@ -6,7 +6,6 @@ import '../../vendor/browser-polyfill.js';
 const STORAGE_KEYS = {
   RIOT_USER_DATA: 'eloward_persistent_riot_user_data',
   TWITCH_USER_DATA: 'eloward_persistent_twitch_user_data',
-  LAST_UPDATED: 'eloward_persistent_last_updated',
   CONNECTED_STATE: 'eloward_persistent_connected_state',
   DATA_PERSISTENCE_ENABLED: 'eloward_data_persistence_enabled'
 };
@@ -42,7 +41,6 @@ export const PersistentStorage = {
     
     await browser.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,
-      [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
     
@@ -66,7 +64,6 @@ export const PersistentStorage = {
     
     await browser.storage.local.set({
       [STORAGE_KEYS.TWITCH_USER_DATA]: persistentData,
-      [STORAGE_KEYS.LAST_UPDATED]: new Date().toISOString(),
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
     
@@ -113,7 +110,6 @@ export const PersistentStorage = {
     await browser.storage.local.remove([
       STORAGE_KEYS.RIOT_USER_DATA,
       STORAGE_KEYS.TWITCH_USER_DATA,
-      STORAGE_KEYS.LAST_UPDATED,
       STORAGE_KEYS.CONNECTED_STATE
     ]);
   },

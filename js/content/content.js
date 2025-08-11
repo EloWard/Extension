@@ -729,6 +729,13 @@ function initializeExtension() {
           if (!extensionState.observerInitialized) {
             initializeObserver();
           }
+          try {
+            chrome.runtime.sendMessage({ action: 'auto_refresh_rank' }, (resp) => {
+              if (resp?.refreshed) {
+                console.log('EloWard: Rank auto-refreshed on activation');
+              }
+            });
+          } catch (_) {}
         } else {
           console.log(`🚀 EloWard: Extension not active - channel ${extensionState.channelName} not subscribed`);
         }

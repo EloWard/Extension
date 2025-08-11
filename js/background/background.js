@@ -17,6 +17,7 @@ const MAX_RANK_CACHE_SIZE = 1000;
 const RANK_CACHE_STORAGE_KEY = 'eloward_rank_cache';
 const RANK_CACHE_UPDATED_AT_KEY = 'eloward_rank_cache_last_updated';
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000;
+const RANK_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 console.log('[EloWard Background] Constants loaded, initializing classes...');
 
@@ -551,6 +552,70 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       allRanks[username] = entry.rankData;
     }
     sendResponse({ ranks: allRanks });
+    return true;
+  }
+
+  if (message.action === 'auto_refresh_rank') {
+    (async () => {
+      try {
+        const now = Date.now();
+        const { eloward_last_rank_refresh_at: lastRefreshAt } = await browser.storage.local.get(['eloward_last_rank_refresh_at']);
+
+        const shouldRefresh = !lastRefreshAt || (now - Number(lastRefreshAt) >= RANK_REFRESH_INTERVAL_MS);
+
+        // Verify Riot is authenticated before attempting refresh
+        let canRefresh = false;
+        try { canRefresh = await RiotAuth.isAuthenticated(true); } catch (_) { canRefresh = false; }
+
+        if (shouldRefresh && canRefresh) {
+          console.log('[EloWard Background] Auto rank refresh: starting');
+          try {
+            const accountInfo = await RiotAuth.getAccountInfo();
+            if (!accountInfo || !accountInfo.puuid) throw new Error('Missing account info');
+
+            await RiotAuth.getRankInfo(accountInfo.puuid);
+            const userData = await RiotAuth.getUserData(true);
+            await PersistentStorage.storeRiotUserData(userData);
+
+            // Update background cache entry for local user (if we know Twitch username)
+            try {
+              const twitchData = await PersistentStorage.getTwitchUserData();
+              const twitchUsername = twitchData?.login?.toLowerCase();
+              const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
+              const region = selectedRegion || 'na1';
+              if (twitchUsername && userData) {
+                const solo = userData.soloQueueRank || null;
+                const rankData = solo ? {
+                  tier: solo.tier,
+                  division: solo.rank,
+                  leaguePoints: solo.leaguePoints,
+                  summonerName: userData.riotId,
+                  region
+                } : {
+                  tier: 'UNRANKED',
+                  division: '',
+                  leaguePoints: null,
+                  summonerName: userData.riotId,
+                  region
+                };
+                userRankCache.set(twitchUsername, rankData);
+              }
+            } catch (_) { /* ignore cache update errors */ }
+
+            await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
+            console.log('[EloWard Background] Auto rank refresh: completed');
+            sendResponse({ success: true, refreshed: true });
+          } catch (e) {
+            console.log('[EloWard Background] Auto rank refresh: failed', e?.message || e);
+            sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
+          }
+        } else {
+          sendResponse({ success: true, refreshed: false });
+        }
+      } catch (e) {
+        sendResponse({ success: false, refreshed: false, error: e?.message || 'unexpected' });
+      }
+    })();
     return true;
   }
 

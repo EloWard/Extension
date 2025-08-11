@@ -598,6 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Attempt to refresh rank data
       await performRankRefresh();
+      try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
       
     } catch (error) {
       // Check if it's the specific re-authentication error
