@@ -589,12 +589,39 @@ setInterval(() => {
 // ExtensionBridge content script handles all auth redirects via browser.runtime.sendMessage
 
 browser.runtime.onInstalled.addListener((details) => {
-  clearAllStoredData();
-  
-  browser.storage.local.set({
-    selectedRegion: 'na1'
-  });
-  
+  // Do NOT clear tokens or persistent user data on update; only remove ephemeral/legacy keys
+  const clearEphemeralAndLegacyKeys = async () => {
+    try {
+      await browser.storage.local.remove([
+        // Ephemeral auth callback/flags
+        'auth_callback',
+        'eloward_auth_callback',
+        'riot_auth_callback',
+        'twitch_auth_callback',
+        'eloward_popup_auth_active',
+        // Legacy/duplicate caches and old keys
+        'eloward_twitch_user_info',
+        'eloward_riot_account_info',
+        'eloward_riot_id_token',
+        'eloward_riot_rank_info',
+        'eloward_signin_attempted',
+        'riot_auth',
+        'twitch_auth'
+      ]);
+    } catch (_) {}
+  };
+
+  if (details.reason === 'install') {
+    // Fresh install: clear ephemeral/legacy keys (no tokens yet anyway)
+    clearEphemeralAndLegacyKeys();
+    
+    // Ensure defaults
+    browser.storage.local.set({ selectedRegion: 'na1' });
+  } else if (details.reason === 'update') {
+    // Update: keep tokens and persistent data; just clean ephemera/legacy
+    clearEphemeralAndLegacyKeys();
+  }
+
   const actionApi = (browser && (browser.action || browser.browserAction)) || null;
   if (actionApi) {
     try {
