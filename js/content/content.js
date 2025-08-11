@@ -730,9 +730,16 @@ function initializeExtension() {
             initializeObserver();
           }
           try {
-            chrome.runtime.sendMessage({ action: 'auto_refresh_rank' }, (resp) => {
-              if (resp?.refreshed) {
-                console.log('EloWard: Rank auto-refreshed on activation');
+            // Only auto-refresh if Riot appears connected or we have stored Riot data
+            chrome.storage.local.get(['eloward_persistent_connected_state','eloward_persistent_riot_user_data'], (data) => {
+              const connected = !!data?.eloward_persistent_connected_state?.riot;
+              const hasRiotData = !!data?.eloward_persistent_riot_user_data?.puuid;
+              if (connected || hasRiotData) {
+                chrome.runtime.sendMessage({ action: 'auto_refresh_rank' }, (resp) => {
+                  if (resp?.refreshed) {
+                    console.log('EloWard: Rank auto-refreshed on activation');
+                  }
+                });
               }
             });
           } catch (_) {}

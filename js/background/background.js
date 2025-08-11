@@ -563,11 +563,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const shouldRefresh = !lastRefreshAt || (now - Number(lastRefreshAt) >= RANK_REFRESH_INTERVAL_MS);
 
-        // Verify Riot is authenticated before attempting refresh
+        // Verify Riot is authenticated and we have stored riot data before attempting refresh
         let canRefresh = false;
         try { canRefresh = await RiotAuth.isAuthenticated(true); } catch (_) { canRefresh = false; }
+        let hasStoredRiot = false;
+        try {
+          const riotStored = await browser.storage.local.get(['eloward_persistent_riot_user_data']);
+          hasStoredRiot = !!riotStored?.eloward_persistent_riot_user_data?.puuid;
+        } catch (_) { hasStoredRiot = false; }
 
-        if (shouldRefresh && canRefresh) {
+        if (shouldRefresh && canRefresh && hasStoredRiot) {
           console.log('[EloWard Background] Auto rank refresh: starting');
           try {
             const accountInfo = await RiotAuth.getAccountInfo();
