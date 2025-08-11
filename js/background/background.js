@@ -635,7 +635,6 @@ browser.runtime.onInstalled.addListener((details) => {
       "eloward_riot_rank_info",
       "eloward_signin_attempted",
       "riot_auth",
-      "selectedRegion",
       "linkedAccounts"
     ]);
   } catch (_) {}
