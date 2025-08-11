@@ -36,7 +36,10 @@ const SELECTORS = {
     message: [
       '.chat-line__message',
       '.chat-line',
-      '[data-a-target="chat-line-message"]'
+      '[data-a-target="chat-line-message"]',
+      // VOD chat message containers
+      '.vod-message',
+      '.video-chat__message'
     ]
   },
   seventv: {
@@ -359,7 +362,7 @@ function fallbackInitialization() {
 }
 
 function clearRankCache() {
-  chrome.runtime.sendMessage({ action: 'clear_rank_cache' });
+  try { browser.runtime.sendMessage({ action: 'clear_rank_cache' }); } catch (_) {}
   processedMessages.clear();
 }
 
@@ -600,9 +603,16 @@ async function getCurrentGame() {
   // 2) Fallback: inspect DOM for the category badge (works cross-browser)
   try {
     const selectors = [
-      '[data-a-target="stream-game-link"]', // channel page
+      '[data-a-target="stream-game-link"]', // live channel page
       'a[href*="/directory/game/"]',      // generic link
-      '[data-test-selector="game-title"]'
+      '[data-test-selector="game-title"]',
+      // VOD page category link
+      'a[data-a-target="video-info-game-boxart-link"]',
+      // VOD page category text
+      'a[data-a-target="video-info-game-boxart-link"] p',
+      // VOD metadata section
+      '#live-channel-stream-information a[href*="/directory/category/"]',
+      '#live-channel-stream-information [data-test-selector="game-title"]'
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
@@ -713,6 +723,7 @@ function initializeExtension() {
     
     setupGameChangeObserver();
     
+    // If Twitch API says not streaming and DOM says LoL (or any supported game), still activate for VODs
     if (!isGameSupported(extensionState.currentGame)) {
       console.log(`🚀 EloWard: Extension not active - unsupported game: ${extensionState.currentGame || 'none'}`);
       extensionState.initializationInProgress = false;
@@ -810,7 +821,12 @@ function findChatContainer() {
     '[data-test-selector="chat-scrollable-area__message-container"]',
     '.chat-room__content .simplebar-content',
     '.ffz-chat-container',
-    '.seventv-chat-container'
+    '.seventv-chat-container',
+    // VOD chat containers
+    '.vod-message',
+    '.video-chat__message',
+    'div.vod-message__header',
+    'li .vod-message'
   ];
   
   for (const selector of selectors) {

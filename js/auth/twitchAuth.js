@@ -663,14 +663,7 @@ export const TwitchAuth = {
    * @param {Object} userInfo - The user information to store
    * @private
    */
-  async _storeUserInfo(userInfo) {
-    try {
-      // Deprecated: Prefer PersistentStorage; keep for backward compatibility if needed
-      await browser.storage.local.set({ [this.config.storageKeys.userInfo]: JSON.stringify(userInfo) });
-    } catch (error) {
-      throw error;
-    }
-  },
+  // Removed: deprecated local userInfo cache (unused)
   
   /**
    * Store a value in browser.storage.local

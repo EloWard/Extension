@@ -431,16 +431,7 @@ export const RiotAuth = {
    * @returns {Promise<Object>} - Object with accessToken, refreshToken, tokenExpiry
    * @private
    */
-  async _getTokensFromStorage() {
-    // Deprecated: retained for backward compatibility if needed
-    const tokenData = await browser.storage.local.get([this.config.storageKeys.tokens]);
-    const t = tokenData[this.config.storageKeys.tokens];
-    return {
-      accessToken: t?.access_token || null,
-      refreshToken: t?.refresh_token || null,
-      tokenExpiry: t?.expires_at || null
-    };
-  },
+  // Removed: legacy token accessor (unused)
   
   /**
    * Get value from browser.storage.local
@@ -472,7 +463,7 @@ export const RiotAuth = {
     }
 
     try {
-      const response = await fetch(`${this.config.proxyBaseUrl}/auth/riot/token/refresh`, {
+      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

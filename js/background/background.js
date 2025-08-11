@@ -1,7 +1,6 @@
 /* Copyright 2024 EloWard - Apache 2.0 + Commons Clause License */
 
-console.log('[EloWard Background] *** BACKGROUND SCRIPT STARTING ***');
-console.log('[EloWard Background] Loading imports...');
+// Reduce verbose logging in production
 
 // Import webextension-polyfill for cross-browser compatibility
 import '../../vendor/browser-polyfill.js';
@@ -19,7 +18,7 @@ const RANK_CACHE_UPDATED_AT_KEY = 'eloward_rank_cache_last_updated';
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000;
 const RANK_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
-console.log('[EloWard Background] Constants loaded, initializing classes...');
+ 
 
 class UserRankCache {
   constructor(maxSize = MAX_RANK_CACHE_SIZE) {
@@ -140,7 +139,7 @@ let authWindows = {};
 const processedAuthStates = new Set();
 
 function handleAuthCallback(params) {
-  console.log('[EloWard Background] handleAuthCallback called with params:', params);
+  
   if (!params || !params.code) {
     console.log('[EloWard Background] Invalid params or missing code');
     return;
@@ -274,11 +273,7 @@ async function restoreRankCacheFromStorage(cacheInstance) {
 }
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('[EloWard Background] *** INTERNAL MESSAGE RECEIVED ***');
-  console.log('[EloWard Background] Message:', message);
-  console.log('[EloWard Background] Sender:', sender);
-  console.log('[EloWard Background] Message type:', message?.type);
-  console.log('[EloWard Background] Message action:', message?.action);
+  
   if (message.action === 'increment_db_reads' && message.channel) {
     incrementDbReadCounter(message.channel)
       .then(success => sendResponse({ success }))
@@ -348,7 +343,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Removed legacy get_auth_callback handler (unused)
   
   if (message.type === 'auth_callback') {
-    console.log('[EloWard Background] Processing auth_callback message:', message);
+    
     let params;
     if (message.code) {
       // Handle direct code in message
@@ -366,7 +361,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    console.log('[EloWard Background] Calling handleAuthCallback with params:', params);
+    
     handleAuthCallback(params);
     sendResponse({ success: true });
     return true;

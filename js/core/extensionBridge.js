@@ -8,12 +8,12 @@
 (function() {
   'use strict';
   
-  console.log('[EloWard Extension Bridge] Initializing...');
+  // Reduce noisy logs in production
   
   // Make extension available to the website via window object
   if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.id) {
     // Extension is loaded and browser API is available
-    console.log('[EloWard Extension Bridge] Extension detected with ID:', browser.runtime.id);
+    
     
     // Expose extension messaging to the website
     window.elowardExtension = {
@@ -22,30 +22,22 @@
       
       // Send message to the extension background script
       sendMessage: function(message, callback) {
-        console.log('[EloWard Extension Bridge] Sending message:', message);
-        console.log('[EloWard Extension Bridge] Extension ID:', browser.runtime.id);
+        
         
         if (typeof callback === 'function') {
-          console.log('[EloWard Extension Bridge] Calling browser.runtime.sendMessage...');
+          
           browser.runtime.sendMessage(message)
             .then(response => {
-              console.log('[EloWard Extension Bridge] Response received:', response);
+                
               callback(response);
             })
             .catch(error => {
-              console.error('[EloWard Extension Bridge] Message failed:', error);
-              console.error('[EloWard Extension Bridge] Error type:', typeof error);
-              console.error('[EloWard Extension Bridge] Error name:', error.name);
-              console.error('[EloWard Extension Bridge] Error message:', error.message);
-              console.error('[EloWard Extension Bridge] Full error object:', error);
+               
               callback({ success: false, error: error.message });
             });
         } else {
           return browser.runtime.sendMessage(message)
-            .catch(error => {
-              console.error('[EloWard Extension Bridge] Message failed (no callback):', error);
-              throw error;
-            });
+           .catch(() => {});
         }
       },
       
@@ -66,7 +58,7 @@
       }
     }));
     
-    console.log('[EloWard Extension Bridge] Bridge established successfully');
+    
     
   } else {
     console.log('[EloWard Extension Bridge] Extension not detected or browser API unavailable');
@@ -92,13 +84,13 @@
       window.location.pathname.includes('/riot/auth/redirect') ||
       window.location.pathname.includes('/twitch/auth/redirect')) {
     
-    console.log('[EloWard Extension Bridge] Auth redirect detected');
+    
     
     // Check if popup auth is handling this to avoid duplicates
     if (typeof browser !== 'undefined' && browser.storage) {
       browser.storage.local.get('eloward_popup_auth_active').then(data => {
         if (data.eloward_popup_auth_active) {
-          console.log('[EloWard Extension Bridge] Popup auth active, storing callback data but skipping message');
+           
           // Store callback data for AuthCallbackWatcher but don't send message to background
           storeCallbackDataOnly();
           return;
@@ -113,7 +105,7 @@
     }
     
     function storeCallbackDataOnly() {
-      console.log('[EloWard Extension Bridge] Storing callback data only for AuthCallbackWatcher');
+       
       
       // Extract auth parameters from URL
       const urlParams = new URLSearchParams(window.location.search);
@@ -122,7 +114,7 @@
       const error = urlParams.get('error');
       
       if (code && state) {
-        console.log('[EloWard Extension Bridge] Storing auth callback data for AuthCallbackWatcher');
+         
         
         // Store callback data in the keys that AuthCallbackWatcher expects
         if (typeof browser !== 'undefined' && browser.storage) {
@@ -189,7 +181,7 @@
         
         // Send auth data to extension
         if (window.elowardExtension && window.elowardExtension.isInstalled) {
-          console.log('[EloWard Extension Bridge] About to send auth message:', authData);
+           
           window.elowardExtension.sendMessage(authData, function(response) {
             console.log('[EloWard Extension Bridge] Auth message response:', response);
           });

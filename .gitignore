@@ -1,2 +1,7 @@
 *.zip
 .claude
+*.crx
+*.xpi
+.DS_Store
+**/.DS_Store
+dist/

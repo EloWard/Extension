@@ -48,9 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateRiotButtonText(text) {
     connectRiotBtn.textContent = text;
-    
-
-    connectRiotBtn.classList.remove('btn-signin');
   }
 
   // Push latest local user's rank into background cache so it's fresh for chat injection
