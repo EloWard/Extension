@@ -138,8 +138,7 @@ const userRankCache = new UserRankCache();
 let authWindows = {};
 const processedAuthStates = new Set();
 
-function handleAuthCallback(params) {
-  
+async function handleAuthCallback(params) {
   if (!params || !params.code) {
     console.log('[EloWard Background] Invalid params or missing code');
     return;
@@ -163,13 +162,32 @@ function handleAuthCallback(params) {
 
   const isTwitchCallback = params.service === 'twitch';
 
-  // Avoid creating duplicate callback keys per-service; proceed directly
-  if (isTwitchCallback) {
-    initiateTokenExchange(params, 'twitch');
-  } else {
-    initiateTokenExchange(params, 'riot');
+  // If popup-driven Riot auth flow is active, let the popup handle token exchange to avoid duplication
+  if (!isTwitchCallback) {
+    try {
+      const { eloward_popup_auth_active } = await browser.storage.local.get(['eloward_popup_auth_active']);
+      if (eloward_popup_auth_active) {
+        // Popup flow will perform the token exchange; skip background exchange.
+        return;
+      }
+    } catch (_) {
+      // If we can't read the flag, continue safely.
+    }
   }
 
+  // Perform token exchange and ensure we catch errors to avoid uncaught promise rejections
+  initiateTokenExchange(params, isTwitchCallback ? 'twitch' : 'riot')
+    .then(() => { /* success already notifies popup */ })
+    .catch((err) => {
+      // Optionally notify popup/UI of failure without throwing
+      try {
+        browser.runtime.sendMessage({
+          type: 'auth_failed',
+          service: isTwitchCallback ? 'twitch' : 'riot',
+          error: err?.message || 'Authentication failed'
+        });
+      } catch (_) { /* ignore messaging errors */ }
+    });
 }
 
 async function initiateTokenExchange(authData, service = 'riot') {
