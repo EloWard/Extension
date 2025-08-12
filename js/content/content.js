@@ -16,7 +16,9 @@ const extensionState = {
   initializationComplete: false,
   lastInitAttempt: 0,
   fallbackInitialized: false,
-  chatMode: 'standard'
+  chatMode: 'standard',
+  isVod: false,
+  lastPathname: ''
 };
 
 const channelState = {
@@ -803,6 +805,8 @@ function initializeExtension() {
   extensionState.currentInitializationId = initializationId;
   extensionState.initializationInProgress = true;
   extensionState.channelName = currentChannel;
+  extensionState.isVod = isVodPage();
+  extensionState.lastPathname = window.location.pathname;
   
   
   chrome.runtime.sendMessage({
@@ -814,6 +818,7 @@ function initializeExtension() {
   setTimeout(async () => {
     if (extensionState.currentInitializationId !== initializationId) return;
     
+    // Always re-detect game/category here (e.g., when transitioning into VOD from a live channel page)
     const detectedGame = await getCurrentGame();
     extensionState.currentGame = detectedGame;
     
@@ -871,6 +876,7 @@ function setupUrlChangeObserver() {
   
   const urlObserver = new MutationObserver(function() {
     const currentChannel = getCurrentChannelName();
+    const currentPathname = window.location.pathname;
     
     if (window.location.pathname.includes('oauth2') || 
         window.location.pathname.includes('auth/') ||
@@ -879,18 +885,25 @@ function setupUrlChangeObserver() {
       return;
     }
     
-    if (currentChannel && currentChannel !== extensionState.channelName) {
+    const isVodNow = isVodPage();
+    const wasVodBefore = extensionState.isVod;
+    const pathChanged = extensionState.lastPathname !== currentPathname;
+    
+    if (currentChannel && (currentChannel !== extensionState.channelName || isVodNow !== wasVodBefore || pathChanged)) {
       if (extensionState.channelName) {
         cleanupChannel(extensionState.channelName);
       }
       
       extensionState.channelName = currentChannel;
+      extensionState.isVod = isVodNow;
+      extensionState.lastPathname = currentPathname;
       extensionState.initializationComplete = false;
       clearRankCache();
       
       setTimeout(() => {
         const verifyChannel = getCurrentChannelName();
         if (verifyChannel === currentChannel) {
+          // If we just entered a VOD page from a channel page, force a fresh init
           initializeExtension();
         }
       }, 500);
