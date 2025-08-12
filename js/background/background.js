@@ -628,6 +628,15 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
           }
         } else {
+          // Non-intrusive reason logging to help diagnose skips
+          try {
+            console.log('[EloWard Background] Auto rank refresh: skipped', {
+              shouldRefresh,
+              canRefresh,
+              hasStoredRiot,
+              minutesSinceLast: lastRefreshAt ? Math.round((now - Number(lastRefreshAt)) / 60000) : null
+            });
+          } catch (_) { /* ignore logging errors */ }
           sendResponse({ success: true, refreshed: false });
         }
       } catch (e) {

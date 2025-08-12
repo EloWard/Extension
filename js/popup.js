@@ -582,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Refresh rank function to update player rank information
   async function refreshRank() {
     try {
+      console.log('[EloWard Popup] Manual rank refresh: requested');
       // First check if the user is authenticated
       const isAuthenticated = await RiotAuth.isAuthenticated();
       if (!isAuthenticated) {
@@ -596,8 +597,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // Attempt to refresh rank data
       await performRankRefresh();
       try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
+      console.log('[EloWard Popup] Manual rank refresh: successful');
       
     } catch (error) {
+      console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
       // Check if it's the specific re-authentication error
       if (error.name === "ReAuthenticationRequiredError") {
         try {
@@ -607,6 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
           
           // After successful silent re-auth, automatically retry the rank refresh
           await performRankRefresh();
+          console.log('[EloWard Popup] Manual rank refresh after silent re-auth: successful');
         } catch (authError) {
           // If silent re-auth fails, show error but don't break connection
           showAuthError('Authentication failed. Please try refreshing again.');
@@ -649,6 +653,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedRegion = regionSelect.value;
     const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
     const userData = await RiotAuth.getUserData(true);
+    try {
+      const solo = (userData && userData.soloQueueRank) ? `${userData.soloQueueRank.tier} ${userData.soloQueueRank.rank || ''}`.trim() : 'UNRANKED';
+      console.log('[EloWard Popup] performRankRefresh summary', {
+        puuid: accountInfo.puuid,
+        region: selectedRegion,
+        entries: Array.isArray(rankEntries) ? rankEntries.length : 0,
+        soloQueue: solo
+      });
+    } catch (_) { /* ignore logging errors */ }
     
     updateUserInterface(userData);
     await PersistentStorage.storeRiotUserData(userData);
