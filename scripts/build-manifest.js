@@ -138,12 +138,6 @@ function main() {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   
   console.log(`✅ Generated ${filename} for ${target}`);
-  
-  // Also create a backup of the specific version
-  const backupPath = path.join(__dirname, `manifest-${target}.json`);
-  fs.writeFileSync(backupPath, JSON.stringify(manifest, null, 2));
-  
-  console.log(`💾 Backup saved as manifest-${target}.json`);
 }
 
 if (require.main === module) {
