@@ -552,9 +552,42 @@ export const RiotAuth = {
    */
   async disconnect() {
     try {
+      // Attempt backend disconnect first to remove rank data in DB
+      try {
+        const tokens = await this._getTokensObject();
+        const region = (await this._getStoredValue('selectedRegion')) || 'na1';
+        const accessToken = tokens?.access_token || null;
+
+        if (accessToken && region) {
+          // Try once with current token
+          let response = await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ riot_token: accessToken, region })
+          });
+
+          // If token is expired/invalid, refresh and retry once
+          if ((response.status === 401 || response.status === 403) && tokens?.refresh_token) {
+            try {
+              const refreshed = await this.refreshToken();
+              response = await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ riot_token: refreshed.access_token, region })
+              });
+            } catch (_) {
+              // Ignore refresh errors; proceed to local cleanup
+            }
+          }
+          // We don't throw on non-OK here; local cleanup still proceeds
+        }
+      } catch (_) {
+        // Swallow backend errors; ensure local cleanup still happens
+      }
+
       // Clear persistent user data
       await PersistentStorage.clearServiceData('riot');
-      
+
       // Clear all the tokens and session data
       let keysToRemove = [
         this.config.storageKeys.accessToken,
@@ -569,11 +602,10 @@ export const RiotAuth = {
         'riot_auth_callback',
         'eloward_auth_callback'
       ];
-      
+
       // Clear from browser.storage
       await browser.storage.local.remove(keysToRemove);
-      
-      // Rely on prompt=login on next connect; no logout popup / backend calls
+
       return true;
     } catch (error) {
       return false;
