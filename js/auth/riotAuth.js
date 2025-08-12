@@ -125,10 +125,27 @@ export const RiotAuth = {
       // Clear any temporary callback keys written by the bridge
       try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','riot_auth_callback']); } catch (_) {}
 
-      // Exchange code for tokens
+      // Exchange code for tokens (handle duplicate exchange race with background)
       console.log('[RiotAuth] exchanging code for tokens');
-      await this.exchangeCodeForTokens(authResult.code);
-      console.log('[RiotAuth] token exchange successful');
+      try {
+        await this.exchangeCodeForTokens(authResult.code);
+        console.log('[RiotAuth] token exchange successful');
+      } catch (exchangeError) {
+        // If another context (background) already consumed the one-time code,
+        // tokens may already be present. Wait briefly and check storage.
+        try {
+          await new Promise(r => setTimeout(r, 250));
+          const tokens = await this._getTokensObject();
+          if (tokens && tokens.access_token) {
+            console.log('[RiotAuth] token exchange bypassed: tokens already present');
+            // proceed as success
+          } else {
+            throw exchangeError;
+          }
+        } catch (_) {
+          throw exchangeError;
+        }
+      }
       
 
       const userData = await this.getUserData();
