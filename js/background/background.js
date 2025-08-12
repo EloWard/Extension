@@ -699,9 +699,6 @@ browser.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     // Fresh install: clear ephemeral/legacy keys (no tokens yet anyway)
     clearEphemeralAndLegacyKeys();
-    
-    // Ensure defaults
-    browser.storage.local.set({ selectedRegion: 'na1' });
   } else if (details.reason === 'update') {
     // Update: keep tokens and persistent data; just clean ephemera/legacy
     clearEphemeralAndLegacyKeys();
@@ -729,7 +726,7 @@ browser.runtime.onInstalled.addListener((details) => {
     }
   });
   
-  loadConfiguration();
+  // No default region on install/update
 });
 
 // Also clear sensitive auth callback data on background startup for temp reloads
@@ -923,11 +920,7 @@ async function getRankForLinkedAccount(linkedAccount, platform) {
 }
 
 function loadConfiguration() {
-  browser.storage.local.get(['selectedRegion']).then((data) => {
-    if (!data.selectedRegion) {
-      browser.storage.local.set({ selectedRegion: 'na1' });
-    }
-  });
+  // Intentionally no-op: do not set default region
 }
 
 async function fetchRankFromDatabase(twitchUsername) {

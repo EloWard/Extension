@@ -684,7 +684,10 @@ export const RiotAuth = {
       
       // Determine regional route based on platform/region
       const storedRegion = await this._getStoredValue('selectedRegion');
-      const platform = storedRegion || 'na1';
+      const platform = storedRegion; // require explicit selection
+      if (!platform) {
+        throw new Error('No region selected');
+      }
       const regionalRoute = this._getRegionalRouteFromPlatform(platform);
       
 
@@ -865,7 +868,10 @@ export const RiotAuth = {
       }
       
       // Get the region from storage
-      const region = await this._getStoredValue('selectedRegion') || 'na1';
+      const region = await this._getStoredValue('selectedRegion');
+      if (!region) {
+        throw new Error('No region selected');
+      }
       
       // Get access token
       const accessToken = await this.getValidToken();

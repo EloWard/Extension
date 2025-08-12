@@ -24,12 +24,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-  function setRiotControlsDisabled(isDisabled) {
+  function setRiotControlsDisabled(isDisabled, reason = '') {
     connectRiotBtn.disabled = isDisabled;
-    regionSelect.disabled = isDisabled;
-    
+    // Keep region selector enabled so they can choose
+    regionSelect.disabled = false;
     if (isDisabled) {
-      connectRiotBtn.setAttribute('data-tooltip', 'Connect Twitch account first');
+      const tooltip = reason === 'no_twitch'
+        ? 'Connect Twitch account first'
+        : reason === 'no_region'
+          ? 'Select your region first'
+          : 'Complete prerequisites first';
+      connectRiotBtn.setAttribute('data-tooltip', tooltip);
       connectRiotBtn.classList.add('has-tooltip');
     } else {
       connectRiotBtn.removeAttribute('data-tooltip');
@@ -41,8 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateRiotControlsBasedOnTwitchStatus() {
     const isTwitchConnected = twitchConnectionStatus.classList.contains('connected') && 
                               twitchConnectionStatus.textContent !== 'Not Connected';
-    
-    setRiotControlsDisabled(!isTwitchConnected);
+    const hasRegionSelected = !!regionSelect.value;
+    if (!isTwitchConnected) {
+      setRiotControlsDisabled(true, 'no_twitch');
+      return;
+    }
+    if (!hasRegionSelected) {
+      setRiotControlsDisabled(true, 'no_region');
+      return;
+    }
+    setRiotControlsDisabled(false);
   }
 
 
@@ -72,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
-      const region = selectedRegion || 'na1';
+      const region = selectedRegion || '';
 
       const rankData = {
         tier,
@@ -113,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAccountSectionState();
 
 
-  setRiotControlsDisabled(true);
+  setRiotControlsDisabled(true, 'no_twitch');
 
 
   checkAuthStatus();
@@ -549,6 +562,12 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Get selected region
       const region = regionSelect.value;
+      if (!region) {
+        updateRiotButtonText('Connect');
+        connectRiotBtn.disabled = false;
+        setRiotControlsDisabled(true, 'no_region');
+        return;
+      }
       
       try {
         // Use the Riot RSO authentication module
@@ -585,7 +604,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleRegionChange() {
     const selectedRegion = regionSelect.value;
-    browser.storage.local.set({ selectedRegion });
+    if (selectedRegion) {
+      browser.storage.local.set({ selectedRegion });
+    } else {
+      browser.storage.local.remove('selectedRegion');
+    }
+    updateRiotControlsBasedOnTwitchStatus();
   }
 
   // Refresh rank function to update player rank information
@@ -882,6 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set the region selector value
     if (result.selectedRegion) {
       regionSelect.value = result.selectedRegion;
+    } else {
+      regionSelect.value = '';
     }
+    updateRiotControlsBasedOnTwitchStatus();
   });
 }); 
