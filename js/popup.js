@@ -284,6 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateRiotButtonText('Disconnect');
         connectRiotBtn.disabled = false;
         refreshRankBtn.classList.remove('hidden'); // Show refresh button
+        // Hide region selector once Riot is connected
+        try { regionSelect.classList.add('hidden'); } catch (_) {}
         
         let rankInfo = null;
         
@@ -479,6 +481,9 @@ document.addEventListener('DOMContentLoaded', () => {
     rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
     rankBadgePreview.style.transform = 'translateY(-3px)';
     
+    // Ensure region selector is visible when not connected
+    try { regionSelect.classList.remove('hidden'); } catch (_) {}
+
     // Update Riot controls based on current Twitch status
     updateRiotControlsBasedOnTwitchStatus();
   }
@@ -515,6 +520,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
             rankBadgePreview.style.transform = 'translateY(-3px)';
             refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
+            // Show region selector again after disconnect
+            try { regionSelect.classList.remove('hidden'); } catch (_) {}
           } catch (error) {
             
             // Show normal not connected state instead of error
@@ -558,6 +565,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Store the connected region in storage and ensure the region selector reflects the current region
         await browser.storage.local.set({ selectedRegion: region });
+          // Hide region selector after successful connection
+          try { regionSelect.classList.add('hidden'); } catch (_) {}
               } catch (error) {
           
           // Show normal not connected state
