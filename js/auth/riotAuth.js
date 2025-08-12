@@ -47,6 +47,12 @@ export const RiotAuth = {
   async authenticate(region) {
     try {
       console.log('[RiotAuth] authenticate() start', { region });
+      // Persist chosen platform routing value early so subsequent calls use it
+      try {
+        if (region) {
+          await browser.storage.local.set({ selectedRegion: region });
+        }
+      } catch (_) {}
       
       // Clear any previous auth states
       await browser.storage.local.remove([this.config.storageKeys.authState]);
@@ -506,6 +512,12 @@ export const RiotAuth = {
    */
   async performSilentReauth(region) {
     try {
+      // Ensure selected region is stored prior to re-auth
+      try {
+        if (region) {
+          await browser.storage.local.set({ selectedRegion: region });
+        }
+      } catch (_) {}
       // Clear any existing callbacks to ensure clean auth flow
       await browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']);
       
@@ -694,7 +706,7 @@ export const RiotAuth = {
               // Try fallback endpoint if primary failed
         if (!accountInfo) {
           try {
-            const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account?region=${regionalRoute}`;
+            const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account/${regionalRoute}`;
             
             const response = await fetch(altRequestUrl, {
               method: 'GET',
@@ -795,7 +807,8 @@ export const RiotAuth = {
       'ru': 'europe',
       'kr': 'asia',
       'jp1': 'asia',
-      'oc1': 'sea',
+      'oc1': 'americas',
+      'me1': 'europe',
       'ph2': 'sea',
       'sg2': 'sea',
       'th2': 'sea',
@@ -913,7 +926,8 @@ export const RiotAuth = {
       'ru': 'europe',
       'kr': 'asia',
       'jp1': 'asia',
-      'oc1': 'sea',
+      'oc1': 'americas',
+      'me1': 'europe',
       'ph2': 'sea',
       'sg2': 'sea',
       'th2': 'sea',

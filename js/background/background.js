@@ -485,30 +485,23 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    const platform = "na1";
-    
-    fetchRankByTwitchUsername(username, platform)
-      .then(rankData => {
-        if (rankData) {
-          userRankCache.set(username, rankData);
-          
-          if (channelName && rankData?.tier) {
-            incrementSuccessfulLookupCounter(channelName).catch(() => {});
+    // Use the user's selectedRegion (platform routing value) instead of hard-coding NA1
+    browser.storage.local.get(['selectedRegion']).then((data) => {
+      const platform = data?.selectedRegion || 'na1';
+      return fetchRankByTwitchUsername(username, platform)
+        .then(rankData => {
+          if (rankData) {
+            userRankCache.set(username, rankData);
+            if (channelName && rankData?.tier) {
+              incrementSuccessfulLookupCounter(channelName).catch(() => {});
+            }
           }
-        }
-        
-        sendResponse({
-          success: true,
-          rankData: rankData,
-          source: 'api'
+          sendResponse({ success: true, rankData, source: 'api' });
+        })
+        .catch(error => {
+          sendResponse({ success: false, error: error.message || 'Error fetching rank data' });
         });
-      })
-      .catch(error => {
-        sendResponse({ 
-          success: false, 
-          error: error.message || 'Error fetching rank data' 
-        });
-      });
+    });
     
     return true;
   }
@@ -837,38 +830,40 @@ function checkChannelActive(channelName, skipCache = false) {
 }
 
 function getRankByPuuid(token, puuid, platform) {
+  // Use the worker's path-param route: /riot/league/:platform/:puuid
   return new Promise((resolve, reject) => {
-    fetch(`${RIOT_AUTH_URL}/riot/league/entries?platform=${platform}&puuid=${puuid}`, {
+    fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${puuid}`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
     })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`League request failed: ${response.status} ${response.statusText}`);
-      }
-      return response.json();
-    })
-    .then(leagueEntries => {
-      const soloQueueEntry = leagueEntries.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-      
-      if (soloQueueEntry) {
-        const rankData = {
-          tier: soloQueueEntry.tier,
-          division: soloQueueEntry.rank,
-          leaguePoints: soloQueueEntry.leaguePoints,
-          wins: soloQueueEntry.wins,
-          losses: soloQueueEntry.losses
-        };
-        
-        resolve(rankData);
-      } else {
-        resolve(null);
-      }
-    })
-    .catch(error => {
-      reject(error);
-    });
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`League request failed: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(leagueEntryOrEntries => {
+        // Worker returns either the solo queue entry or the full array
+        const entry = Array.isArray(leagueEntryOrEntries)
+          ? leagueEntryOrEntries.find(e => e.queueType === 'RANKED_SOLO_5x5')
+          : leagueEntryOrEntries;
+
+        if (entry && entry.queueType === 'RANKED_SOLO_5x5') {
+          resolve({
+            tier: entry.tier,
+            division: entry.rank,
+            leaguePoints: entry.leaguePoints,
+            wins: entry.wins,
+            losses: entry.losses
+          });
+        } else {
+          resolve(null);
+        }
+      })
+      .catch(error => {
+        reject(error);
+      });
   });
 }
 
