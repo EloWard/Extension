@@ -566,7 +566,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } catch (_) { hasStoredRiot = false; }
 
         if (shouldRefresh && canRefresh && hasStoredRiot) {
-          console.log('[EloWard Background] Auto rank refresh: starting');
+          console.log('[EloWard Background] rank: refreshing');
           try {
             const accountInfo = await RiotAuth.getAccountInfo();
             if (!accountInfo || !accountInfo.puuid) throw new Error('Missing account info');
@@ -601,10 +601,15 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } catch (_) { /* ignore cache update errors */ }
 
             await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
-            console.log('[EloWard Background] Auto rank refresh: completed');
+            console.log('[EloWard Background] rank: refreshed');
             sendResponse({ success: true, refreshed: true });
           } catch (e) {
-            console.log('[EloWard Background] Auto rank refresh: failed', e?.message || e);
+            console.warn('[EloWard Background] rank: refresh failed', e?.message || e);
+            // If authentication failed (e.g., refresh token invalid), mark Riot disconnected and clear persistent data
+            try {
+              await PersistentStorage.updateConnectedState('riot', false);
+              await PersistentStorage.clearServiceData('riot');
+            } catch (_) {}
             sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
           }
         } else {

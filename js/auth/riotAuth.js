@@ -428,9 +428,12 @@ export const RiotAuth = {
       // Refresh if expires within 2 minutes or already expired
       if (tokens.refresh_token) {
         try {
+          console.log('[RiotAuth] token: refreshing');
           const refreshResult = await this.refreshToken();
+          console.log('[RiotAuth] token: refreshed');
           return refreshResult?.access_token || null;
         } catch (refreshError) {
+          console.warn('[RiotAuth] token: refresh failed', refreshError?.message || refreshError);
           throw refreshError;
         }
       }
@@ -486,6 +489,7 @@ export const RiotAuth = {
     }
 
     try {
+      console.log('[RiotAuth] token: refreshing');
       const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`, {
         method: 'POST',
         headers: {
@@ -498,6 +502,7 @@ export const RiotAuth = {
       });
 
       if (!response.ok) {
+        console.warn('[RiotAuth] token: refresh endpoint returned', response.status);
         throw new ReAuthenticationRequiredError(`Token refresh failed with status ${response.status}`);
       }
 
@@ -512,6 +517,7 @@ export const RiotAuth = {
         token_type: actualTokenData.token_type || tokens?.token_type
       };
       await this._storeTokens(tokensToStore);
+      console.log('[RiotAuth] token: refreshed');
       return tokensToStore;
 
     } catch (error) {
@@ -535,40 +541,50 @@ export const RiotAuth = {
           await browser.storage.local.set({ selectedRegion: region });
         }
       } catch (_) {}
-      // Clear any existing callbacks to ensure clean auth flow
+
+      // Prefer silent refresh-token flow (no UI)
+      try {
+        const refreshed = await this.refreshToken();
+        if (refreshed && refreshed.access_token) {
+          const userData = await this.getUserData(true);
+          await PersistentStorage.storeRiotUserData(userData);
+          return userData;
+        }
+      } catch (e) {
+        // Fall through to interactive non-forced re-auth if refresh token invalid/missing
+        if (!(e instanceof ReAuthenticationRequiredError)) {
+          throw e;
+        }
+      }
+
+      // Interactive fallback without forcing login prompt (leverages existing Riot session)
       await browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']);
-      
-      // Generate a unique state for this silent auth
       const state = this._generateRandomState();
       await this._storeAuthState(state);
-      
-      // Get authentication URL from backend
-      const authUrl = await this._getAuthUrl(region, state);
-      
-      // Open auth window for silent re-authentication
-      this._openAuthWindow(authUrl);
-      
-      // Wait for the authentication callback
-      const authResult = await this._waitForAuthCallback();
-      
-      if (!authResult || !authResult.code) {
-        throw new Error('Silent re-authentication cancelled or failed');
+
+      const originalForce = this.config.forcePromptLogin;
+      this.config.forcePromptLogin = false; // do not force prompt during silent fallback
+      let authUrl;
+      try {
+        authUrl = await this._getAuthUrl(region, state);
+      } finally {
+        // restore original setting
+        this.config.forcePromptLogin = originalForce;
       }
-      
-      // Verify state
+
+      // Open (non-forced) auth window and await callback
+      this._openAuthWindow(authUrl);
+      const authResult = await this._waitForAuthCallback();
+      if (!authResult || !authResult.code) {
+        throw new ReAuthenticationRequiredError('Interactive re-auth cancelled or failed');
+      }
       if (authResult.state !== state) {
         throw new Error('Silent re-authentication security verification failed');
       }
-      
-      // Exchange code for tokens
+
       await this.exchangeCodeForTokens(authResult.code);
-      
-      // Get fresh user data
       const userData = await this.getUserData();
-      
-      // Update persistent storage
       await PersistentStorage.storeRiotUserData(userData);
-      
       return userData;
     } catch (error) {
       throw error;
