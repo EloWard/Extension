@@ -162,19 +162,6 @@ async function handleAuthCallback(params) {
 
   const isTwitchCallback = params.service === 'twitch';
 
-  // If popup-driven Riot auth flow is active, let the popup handle token exchange to avoid duplication
-  if (!isTwitchCallback) {
-    try {
-      const { eloward_popup_auth_active } = await browser.storage.local.get(['eloward_popup_auth_active']);
-      if (eloward_popup_auth_active) {
-        // Popup flow will perform the token exchange; skip background exchange.
-        return;
-      }
-    } catch (_) {
-      // If we can't read the flag, continue safely.
-    }
-  }
-
   // Perform token exchange and ensure we catch errors to avoid uncaught promise rejections
   initiateTokenExchange(params, isTwitchCallback ? 'twitch' : 'riot')
     .then(() => { /* success already notifies popup */ })
