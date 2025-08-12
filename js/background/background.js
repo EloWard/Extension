@@ -622,6 +622,14 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'set_rank_data') {
     if (message.username && message.rankData) {
       userRankCache.set(message.username, message.rankData);
+      // Broadcast update so content scripts can immediately apply badges
+      try {
+        browser.runtime.sendMessage({
+          type: 'rank_data_updated',
+          username: message.username.toLowerCase(),
+          rankData: message.rankData
+        }).catch(() => {});
+      } catch (_) {}
       sendResponse({ success: true });
     } else {
       sendResponse({ success: false, error: 'Missing username or rank data' });

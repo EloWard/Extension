@@ -3,6 +3,94 @@
 document.body.setAttribute('data-eloward-chrome-ext', 'active');
 document.documentElement.setAttribute('data-eloward-chrome-ext', 'active');
 
+// Fast badge rendering: preconnect + image cache for all rank badges
+const CDN_BASE = 'https://eloward-cdn.unleashai.workers.dev';
+const RANK_TIERS = [
+  'iron','bronze','silver','gold','platinum','emerald','diamond','master','grandmaster','challenger','unranked'
+];
+
+function injectPreconnectLinks() {
+  try {
+    const head = document.head || document.getElementsByTagName('head')[0];
+    if (!head) return;
+    const existing = head.querySelector('link[data-eloward-preconnect="cdn"]');
+    if (!existing) {
+      const dnsPrefetch = document.createElement('link');
+      dnsPrefetch.setAttribute('rel', 'dns-prefetch');
+      dnsPrefetch.setAttribute('href', CDN_BASE);
+      dnsPrefetch.setAttribute('data-eloward-preconnect', 'cdn');
+      head.appendChild(dnsPrefetch);
+
+      const preconnect = document.createElement('link');
+      preconnect.setAttribute('rel', 'preconnect');
+      preconnect.setAttribute('href', CDN_BASE);
+      preconnect.setAttribute('crossorigin', 'anonymous');
+      preconnect.setAttribute('data-eloward-preconnect', 'cdn');
+      head.appendChild(preconnect);
+    }
+  } catch (_) {}
+}
+
+const ImageCache = (() => {
+  const tierToBlobUrl = new Map();
+  const inFlight = new Map();
+
+  async function preloadTier(tierLower) {
+    const key = String(tierLower || '').toLowerCase();
+    if (!key) return null;
+    if (tierToBlobUrl.has(key)) return tierToBlobUrl.get(key);
+    if (inFlight.has(key)) return inFlight.get(key);
+
+    const url = `${CDN_BASE}/lol/${key}.png`;
+    const p = (async () => {
+      try {
+        const resp = await fetch(url, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
+        if (!resp.ok) throw new Error(String(resp.status));
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        tierToBlobUrl.set(key, blobUrl);
+        return blobUrl;
+      } catch (_) {
+        // Fallback to CDN URL on failure
+        tierToBlobUrl.set(key, url);
+        return url;
+      } finally {
+        inFlight.delete(key);
+      }
+    })();
+    inFlight.set(key, p);
+    return p;
+  }
+
+  async function init() {
+    injectPreconnectLinks();
+    try {
+      await Promise.all(RANK_TIERS.map(preloadTier));
+    } catch (_) {}
+  }
+
+  function getSrcSync(tier) {
+    const key = String(tier || 'unranked').toLowerCase();
+    return tierToBlobUrl.get(key) || `${CDN_BASE}/lol/${key}.png`;
+  }
+
+  function revokeAll() {
+    try {
+      for (const url of tierToBlobUrl.values()) {
+        if (url && url.startsWith('blob:')) {
+          try { URL.revokeObjectURL(url); } catch (_) {}
+        }
+      }
+      tierToBlobUrl.clear();
+    } catch (_) {}
+  }
+
+  return { init, getSrcSync, preloadTier, revokeAll };
+})();
+
+// Kick off preloads immediately
+ImageCache.init();
+
 const extensionState = {
   isChannelActive: false,
   channelName: '',
@@ -207,7 +295,11 @@ function createBadgeElement(rankData) {
   img.className = 'eloward-badge-img';
   img.width = 24;
   img.height = 24;
-  img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
+  // Use cached blob URL if available; falls back to CDN URL
+  img.decoding = 'async';
+  try { img.fetchPriority = 'high'; } catch (_) {}
+  img.loading = 'eager';
+  img.src = ImageCache.getSrcSync(rankData.tier);
   
   badge.appendChild(img);
   badge.addEventListener('mouseenter', showTooltip);
@@ -1412,7 +1504,12 @@ function addBadgeToMessage(usernameElement, rankData) {
     const messageContainer = usernameElement.closest(currentSelectors.message.join(', ')) || usernameElement.closest('.dtSdDz, .vod-message, .seventv-user-message') || usernameElement.parentElement;
     
     if (!messageContainer) return;
-    if (messageContainer.querySelector('.eloward-rank-badge')) return;
+    // If a badge already exists, update it instead of returning
+    const existing = messageContainer.querySelector('.eloward-rank-badge');
+    if (existing) {
+      updateBadgeElement(existing, rankData);
+      return;
+    }
     
     // Prefer chat-mode specific placement (works for live and VOD)
     switch (extensionState.chatMode) {
@@ -1458,8 +1555,12 @@ function addBadgeToVodMessage(messageContainer, usernameElement, rankData) {
       vodRow.insertBefore(badgeHost, usernameElement);
     }
     
-    // Avoid duplicates
-    if (badgeHost.querySelector('.eloward-rank-badge')) return;
+    // Update existing badge if present
+    const existing = badgeHost.querySelector('.eloward-rank-badge');
+    if (existing) {
+      updateBadgeElement(existing, rankData);
+      return;
+    }
     
     const badge = createBadgeElement(rankData);
     // Match live stream markup: wrap in a container div for consistent spacing
@@ -1498,7 +1599,11 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
     badgeListWasEmpty = existingBadges.length === 0;
   }
 
-  if (badgeList.querySelector('.eloward-rank-badge')) return;
+  const existing = badgeList.querySelector('.eloward-rank-badge');
+  if (existing) {
+    updateBadgeElement(existing, rankData);
+    return;
+  }
   
   const badge = document.createElement('div');
   badge.className = 'seventv-chat-badge eloward-rank-badge';
@@ -1523,7 +1628,10 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
   img.className = 'eloward-badge-img';
   img.width = 24;
   img.height = 24;
-  img.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
+  img.decoding = 'async';
+  try { img.fetchPriority = 'high'; } catch (_) {}
+  img.loading = 'eager';
+  img.src = ImageCache.getSrcSync(rankData.tier);
   
   badge.appendChild(img);
   badge.addEventListener('mouseenter', (e) => showSevenTVTooltip(e, rankData));
@@ -1545,7 +1653,9 @@ function showSevenTVTooltip(event, rankData) {
   
   const tooltipBadge = document.createElement('img');
   tooltipBadge.className = 'eloward-7tv-tooltip-badge';
-  tooltipBadge.src = `https://eloward-cdn.unleashai.workers.dev/lol/${rankData.tier.toLowerCase()}.png`;
+  tooltipBadge.decoding = 'async';
+  tooltipBadge.loading = 'eager';
+  tooltipBadge.src = ImageCache.getSrcSync(rankData.tier);
   tooltipBadge.alt = 'Rank Badge';
   
   const tooltipText = document.createElement('div');
@@ -1599,7 +1709,13 @@ function addBadgeToFFZMessage(messageContainer, usernameElement, rankData) {
     console.warn('EloWard: Could not find or create badge container for FFZ message');
     return;
   }
-  
+  // Update if present
+  const existing = badgeContainer.querySelector('.eloward-rank-badge');
+  if (existing) {
+    updateBadgeElement(existing, rankData);
+    return;
+  }
+
   const badge = createBadgeElement(rankData);
   badge.classList.add('ffz-badge');
   
@@ -1705,6 +1821,27 @@ function findBadgeContainer(messageContainer) {
   badgeContainer.className = 'chat-line__message--badges';
   messageContainer.insertBefore(badgeContainer, messageContainer.firstChild);
   return badgeContainer;
+}
+
+function updateBadgeElement(badgeElement, rankData) {
+  try {
+    if (!badgeElement) return;
+    badgeElement.dataset.rankText = formatRankText(rankData);
+    badgeElement.dataset.rank = rankData.tier.toLowerCase();
+    badgeElement.dataset.division = rankData.division || '';
+    badgeElement.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? String(rankData.leaguePoints) : '';
+    badgeElement.dataset.username = rankData.summonerName || '';
+    badgeElement.dataset.region = rankData.region || '';
+
+    const img = badgeElement.querySelector('img');
+    if (img) {
+      img.alt = rankData.tier;
+      try { img.decoding = 'async'; } catch (_) {}
+      try { img.fetchPriority = 'high'; } catch (_) {}
+      try { img.loading = 'eager'; } catch (_) {}
+      img.src = ImageCache.getSrcSync(rankData.tier);
+    }
+  } catch (_) {}
 }
 
 
@@ -1818,11 +1955,23 @@ window.addEventListener('popstate', function() {
   }
 });
 
+// Listen for immediate rank cache updates from background (especially local user)
+try {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message && message.type === 'rank_data_updated' && message.username && message.rankData) {
+      try {
+        applyRankToAllUserMessagesInChat(message.username, message.rankData);
+      } catch (_) {}
+    }
+  });
+} catch (_) {}
+
 window.addEventListener('beforeunload', function() {
   if (extensionState.channelName) {
     cleanupChannel(extensionState.channelName);
   }
   clearRankCache();
+  try { ImageCache.revokeAll(); } catch (_) {}
 });
 
  
