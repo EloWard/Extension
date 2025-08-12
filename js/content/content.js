@@ -36,7 +36,10 @@ const SELECTORS = {
     message: [
       '.chat-line__message',
       '.chat-line',
-      '[data-a-target="chat-line-message"]'
+      '[data-a-target="chat-line-message"]',
+      // VOD chat replay fallbacks
+      '.video-chat__message',
+      '[data-test-selector*="chat-message"]'
     ]
   },
   seventv: {
@@ -48,7 +51,10 @@ const SELECTORS = {
     message: [
       '.seventv-message',
       '.chat-line__message',
-      '.chat-line'
+      '.chat-line',
+      // VOD chat replay fallbacks
+      '.video-chat__message',
+      '[data-test-selector*="chat-message"]'
     ]
   },
   ffz: {
@@ -61,10 +67,65 @@ const SELECTORS = {
       '.ffz-message-line',
       '.ffz-chat-line',
       '.chat-line__message',
-      '.chat-line'
+      '.chat-line',
+      // VOD chat replay fallbacks
+      '.video-chat__message',
+      '[data-test-selector*="chat-message"]'
     ]
   }
 };
+function isVodPage() {
+  return /^\/videos\/(\d+)/.test(window.location.pathname);
+}
+
+function getVodStreamerLoginFromDom() {
+  try {
+    // Primary: header h1 link (VOD page header)
+    const headerLinkWithTitle = Array.from(document.querySelectorAll('a[href^="/"] h1.tw-title'))
+      .map(h1 => h1.closest('a'))
+      .find(Boolean);
+    if (headerLinkWithTitle) {
+      const href = headerLinkWithTitle.getAttribute('href') || '';
+      const parts = href.split('/').filter(Boolean);
+      if (parts[0]) return parts[0].toLowerCase();
+    }
+
+    // Fallback: explicit channel link
+    const channelLink = document.querySelector('a[data-test-selector="ChannelLink"], a[data-a-target="preview-card-channel-link"]');
+    if (channelLink) {
+      const href = channelLink.getAttribute('href') || '';
+      const parts = href.split('/').filter(Boolean);
+      if (parts[0]) return parts[0].toLowerCase();
+      const text = (channelLink.textContent || '').trim();
+      if (text) return text.toLowerCase();
+    }
+
+    // Fallback: avatar link in metadata area
+    const avatarAnchor = document.querySelector('.tw-avatar')?.closest('a[href^="/"]');
+    if (avatarAnchor) {
+      const href = avatarAnchor.getAttribute('href') || '';
+      const parts = href.split('/').filter(Boolean);
+      if (parts[0]) return parts[0].toLowerCase();
+    }
+  } catch (_) {}
+  return null;
+}
+
+function getVodGameFromDom() {
+  try {
+    // Primary VOD selector
+    const vodGame = document.querySelector('a[data-a-target="video-info-game-boxart-link"] p');
+    const text = vodGame?.textContent?.trim();
+    if (text) return text;
+
+    // Fallbacks present in carousels or metadata
+    const previewGameLink = document.querySelector('a[data-test-selector="preview-card-game-link"], a[data-a-target="preview-card-game-link"]');
+    const text2 = previewGameLink?.textContent?.trim();
+    if (text2) return text2;
+  } catch (_) {}
+  return null;
+}
+
 
 const SUPPORTED_GAMES = { 'League of Legends': true };
 
@@ -521,6 +582,13 @@ async function checkChannelActive(channelName, forceCheck = false, signal = null
 
 function getCurrentChannelName() {
   const pathname = window.location.pathname;
+  // VOD: derive streamer login from DOM
+  if (isVodPage()) {
+    const login = getVodStreamerLoginFromDom();
+    if (login) return login;
+    // If not yet available, return null so initializer/fallback retries
+    return null;
+  }
   
   // Handle popout chat: /popout/[channel]/chat
   const popoutMatch = pathname.match(/^\/popout\/([^/]+)\/chat/);
@@ -564,6 +632,14 @@ function getCurrentChannelName() {
 
 async function getCurrentGame() {
   const channelName = getCurrentChannelName();
+  // For VOD, we scrape from DOM without requiring channelName
+  if (isVodPage()) {
+    const scraped = getVodGameFromDom();
+    if (scraped) {
+      console.log(`🎮 EloWard (VOD): Game category detected - ${scraped}`);
+      return scraped;
+    }
+  }
   if (!channelName) return null;
 
   // 1) Try Twitch GQL (works in Chrome; in Firefox we added host permission)
@@ -597,12 +673,14 @@ async function getCurrentGame() {
     }
   } catch (_) {}
 
-  // 2) Fallback: inspect DOM for the category badge (works cross-browser)
+  // 2) Fallback: inspect DOM for the category badge (works cross-browser and VOD)
   try {
     const selectors = [
       '[data-a-target="stream-game-link"]', // channel page
       'a[href*="/directory/game/"]',      // generic link
-      '[data-test-selector="game-title"]'
+      '[data-test-selector="game-title"]',
+      // VOD specific
+      'a[data-a-target="video-info-game-boxart-link"] p'
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
@@ -698,6 +776,9 @@ function initializeExtension() {
   extensionState.currentInitializationId = initializationId;
   extensionState.initializationInProgress = true;
   extensionState.channelName = currentChannel;
+  if (isVodPage()) {
+    console.log(`📼 EloWard: VOD mode active for ${extensionState.channelName}`);
+  }
   
   chrome.runtime.sendMessage({
     action: 'channel_switched',
@@ -788,8 +869,7 @@ function setupUrlChangeObserver() {
           initializeExtension();
         }
       }, 500);
-    }
-    else if (!currentChannel && extensionState.channelName) {
+    } else if (!currentChannel && extensionState.channelName) {
       cleanupChannel(extensionState.channelName);
       extensionState.channelName = null;
       extensionState.initializationComplete = false;
