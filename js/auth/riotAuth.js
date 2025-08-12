@@ -23,7 +23,7 @@ const defaultConfig = {
   endpoints: {
     authInit: '/auth/init',
     authToken: '/auth/token',
-    authRefresh: '/auth/token/refresh',
+    authRefresh: '/auth/riot/token/refresh',
     accountInfo: '/riot/account',
     leagueEntries: '/riot/league/entries'
   },
