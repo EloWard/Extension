@@ -50,6 +50,8 @@ const SELECTORS = {
     ],
     message: [
       '.seventv-message',
+      // 7TV VOD message containers
+      '.seventv-user-message',
       '.chat-line__message',
       '.chat-line',
       // VOD chat replay fallbacks
@@ -130,7 +132,35 @@ function getVodGameFromDom() {
 const SUPPORTED_GAMES = { 'League of Legends': true };
 
 let processedMessages = new Set();
+let pendingBadgeTargets = new Map();
 let tooltipElement = null;
+
+function findVodUsernameInfo(messageNode) {
+  try {
+    const container = messageNode.closest('.dtSdDz, .vod-message, li, [class*="vod-message"]') || messageNode.parentElement || messageNode;
+    const innerCandidate = container.querySelector(
+      'a.video-chat__message-author [data-test-selector="message-username"],\
+       a.video-chat__message-author [data-a-target="chat-message-username"],\
+       a.video-chat__message-author .chat-author__display-name'
+    );
+    if (innerCandidate) {
+      const name = (innerCandidate.getAttribute && innerCandidate.getAttribute('data-a-user')) || innerCandidate.textContent || '';
+      if (name.trim()) return { el: innerCandidate, name: name.trim() };
+    }
+    const authorAnchor = container.querySelector('a.video-chat__message-author');
+    if (authorAnchor) {
+      const span = authorAnchor.querySelector('[data-test-selector="message-username"], [data-a-target="chat-message-username"], .chat-author__display-name');
+      const el = span || authorAnchor;
+      const name = (el.getAttribute && el.getAttribute('data-a-user')) || el.textContent || '';
+      if (name.trim()) return { el, name: name.trim() };
+    }
+    const a = container.querySelector('a[href^="/"]');
+    if (a && a.textContent && a.textContent.trim()) {
+      return { el: a, name: a.textContent.trim() };
+    }
+  } catch (_) {}
+  return { el: null, name: '' };
+}
 
 const REGION_MAPPING = {
   'na1': 'na', 'euw1': 'euw', 'eun1': 'eune', 'kr': 'kr', 'br1': 'br',
@@ -635,10 +665,7 @@ async function getCurrentGame() {
   // For VOD, we scrape from DOM without requiring channelName
   if (isVodPage()) {
     const scraped = getVodGameFromDom();
-    if (scraped) {
-      console.log(`🎮 EloWard (VOD): Game category detected - ${scraped}`);
-      return scraped;
-    }
+    if (scraped) return scraped;
   }
   if (!channelName) return null;
 
@@ -776,9 +803,7 @@ function initializeExtension() {
   extensionState.currentInitializationId = initializationId;
   extensionState.initializationInProgress = true;
   extensionState.channelName = currentChannel;
-  if (isVodPage()) {
-    console.log(`📼 EloWard: VOD mode active for ${extensionState.channelName}`);
-  }
+  
   
   chrome.runtime.sendMessage({
     action: 'channel_switched',
@@ -881,6 +906,7 @@ function setupUrlChangeObserver() {
 }
 
 function findChatContainer() {
+  
   const selectors = [
     '.chat-scrollable-area__message-container',
     '[data-a-target="chat-scroller"]',
@@ -890,7 +916,13 @@ function findChatContainer() {
     '[data-test-selector="chat-scrollable-area__message-container"]',
     '.chat-room__content .simplebar-content',
     '.ffz-chat-container',
-    '.seventv-chat-container'
+    '.seventv-chat-container',
+    // VOD-specific candidates
+    '[data-test-selector="video-chat__message-list"]',
+    '.video-chat__message-list',
+    '.video-chat__message-list-wrapper',
+    '[data-a-target="video-chat"] .simplebar-content',
+    '[data-a-target="video-chat"] [role="log"]'
   ];
   
   for (const selector of selectors) {
@@ -898,11 +930,12 @@ function findChatContainer() {
     if (container) return container;
   }
   
-  const anyMessage = document.querySelector('.chat-line__message, .chat-line, [data-a-target="chat-line-message"]');
+  const anyMessage = document.querySelector('.chat-line__message, .chat-line, [data-a-target="chat-line-message"], .video-chat__message, [data-test-selector*="chat-message"]');
   if (anyMessage) {
-    const container = anyMessage.closest('[role="log"]') || anyMessage.parentElement;
+    const container = anyMessage.closest('[role="log"], [class*="scroll"], [data-a-target="video-chat"]') || anyMessage.parentElement;
     if (container) return container;
   }
+  
   
   return null;
 }
@@ -934,6 +967,8 @@ function setupChatObserver(chatContainer) {
   const currentSelectors = SELECTORS[extensionState.chatMode];
   const messageSelectors = currentSelectors.message;
   
+  
+
 
   processExistingMessages(chatContainer, messageSelectors);
   
@@ -943,17 +978,38 @@ function setupChatObserver(chatContainer) {
     try {
       for (const mutation of mutations) {
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          
           for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
+              // VOD chat can render message wrapper (dtSdDz) where the actual message is inside .video-chat__message
+              if (isVodPage() && (node.matches && node.matches('.dtSdDz, .vod-message, .seventv-user-message, .seventv-chat-vod-message-patched'))) {
+                // Collect inner messages for both standard VOD and 7TV VOD
+                const innerMsgs = node.querySelectorAll('.video-chat__message, .seventv-user-message');
+                const author = node.querySelector('a.video-chat__message-author');
+                if (author || innerMsgs.length) {
+                  const messages = innerMsgs.length ? innerMsgs : node.querySelectorAll(messageSelectors.join(', '));
+                  if (messages && messages.length) {
+                    
+                    messages.forEach(m => {
+                      // Ensure we re-evaluate username on VOD for wrappers
+                      processNewMessage(m);
+                    });
+                    continue;
+                  }
+                }
+              }
               const isMessage = messageSelectors.some(selector => 
                 node.matches && node.matches(selector)
               );
               
               if (isMessage) {
+                
                 processNewMessage(node);
               } else {
                 const messages = node.querySelectorAll(messageSelectors.join(', '));
+                
                 for (const message of messages) {
+                  
                   processNewMessage(message);
                 }
               }
@@ -961,14 +1017,14 @@ function setupChatObserver(chatContainer) {
           }
         }
       }
-    } catch (error) {
-      // Silent error handling for production
-    }
+    } catch (error) {}
   });
   
   chatObserver.observe(chatContainer, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'style']
   });
   
   window._eloward_chat_observer = chatObserver;
@@ -988,6 +1044,7 @@ function processExistingMessages(chatContainer, messageSelectors) {
     const currentSelectors = SELECTORS[extensionState.chatMode];
     const usernameSelectors = currentSelectors.username;
     
+    
 
     const userMessageMap = new Map();
     
@@ -1000,16 +1057,23 @@ function processExistingMessages(chatContainer, messageSelectors) {
         usernameElement = message.querySelector(selector);
         if (usernameElement) break;
       }
+      if (!usernameElement && isVodPage()) {
+        const info = findVodUsernameInfo(message);
+        if (info.el) usernameElement = info.el;
+      }
       
       if (!usernameElement) continue;
       
-      const username = usernameElement.textContent?.trim().toLowerCase();
+      const username = (((usernameElement.getAttribute && usernameElement.getAttribute('data-a-user')) || usernameElement.textContent) || '').trim().toLowerCase();
       if (!username) continue;
       
       // Skip if already has badge
       if (message.querySelector('.eloward-rank-badge')) continue;
       
       processedMessages.add(message);
+      // Track pending badge target for immediate application on fetch
+      if (!pendingBadgeTargets.has(username)) pendingBadgeTargets.set(username, new Set());
+      pendingBadgeTargets.get(username).add(usernameElement);
       
       if (!userMessageMap.has(username)) {
         userMessageMap.set(username, []);
@@ -1033,7 +1097,7 @@ function processExistingMessages(chatContainer, messageSelectors) {
 
 function processUsernamesBatch(userMessageMap) {
   try {
-
+    
     chrome.runtime.sendMessage({ action: 'get_all_cached_ranks' }, (response) => {
       const cachedRanks = response?.ranks || {};
       const usersNeedingFetch = new Set();
@@ -1066,7 +1130,7 @@ function processUsernamesBatch(userMessageMap) {
         }
       }
       
-
+      
       if (usersNeedingFetch.size > 0) {
         fetchRanksForUsers(usersNeedingFetch, userMessageMap);
       }
@@ -1180,10 +1244,32 @@ function processNewMessage(messageNode) {
       if (usernameElement) break;
     }
     
-    if (!usernameElement) return;
+    if (!usernameElement) {
+      // VOD-specific: try robust fallbacks via container author anchor
+      if (isVodPage()) {
+        // 7TV VOD: username sits under .seventv-chat-user-username
+        if (extensionState.chatMode === 'seventv') {
+          usernameElement = messageNode.querySelector('.seventv-chat-user-username');
+        }
+        // Generic VOD fallback
+        const info = !usernameElement ? findVodUsernameInfo(messageNode) : { el: usernameElement };
+        if (info.el) usernameElement = info.el;
+        if (!usernameElement) {
+          console.log('📼 EloWard (VOD): New message without username element', messageNode);
+          return;
+        }
+      } else {
+        return;
+      }
+    }
     
-    const username = usernameElement.textContent?.trim().toLowerCase();
-    if (!username) return;
+    const username = (((usernameElement.getAttribute && usernameElement.getAttribute('data-a-user')) || usernameElement.textContent) || '').trim().toLowerCase();
+    if (!username) {
+      if (isVodPage()) {
+        console.log('📼 EloWard (VOD): New message username empty', usernameElement);
+      }
+      return;
+    }
     
     if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
       chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
@@ -1228,6 +1314,9 @@ function processNewMessage(messageNode) {
       return;
     }
     
+    // Register this username element as a pending target for when rank data arrives
+    if (!pendingBadgeTargets.has(username)) pendingBadgeTargets.set(username, new Set());
+    pendingBadgeTargets.get(username).add(usernameElement);
     fetchRankFromBackground(username);
   } catch (error) {
     console.error('EloWard: Error processing message:', error);
@@ -1265,27 +1354,34 @@ function fetchRankFromBackground(username) {
 
 function applyRankToAllUserMessagesInChat(username, rankData) {
   try {
+    // 1) Apply to any pending specific username elements queued during observation
+    const targets = pendingBadgeTargets.get(username);
+    if (targets && targets.size) {
+      targets.forEach((el) => {
+        if (el && el.isConnected) addBadgeToMessage(el, rankData);
+      });
+      pendingBadgeTargets.delete(username);
+    }
+    
+    // 2) Also sweep the visible chat for this username (covers initial scan and missed nodes)
     const currentSelectors = SELECTORS[extensionState.chatMode];
     const messageSelectors = currentSelectors.message;
     const usernameSelectors = currentSelectors.username;
-    
-    // Find all messages in the current chat
     const allMessages = document.querySelectorAll(messageSelectors.join(', '));
     
     allMessages.forEach(messageElement => {
-      // Skip if already has badge
       if (messageElement.querySelector('.eloward-rank-badge')) return;
-      
-      // Find username element
       let usernameElement = null;
       for (const selector of usernameSelectors) {
         usernameElement = messageElement.querySelector(selector);
         if (usernameElement) break;
       }
-      
+      if (!usernameElement && isVodPage()) {
+        const info = findVodUsernameInfo(messageElement);
+        if (info.el) usernameElement = info.el;
+      }
       if (!usernameElement) return;
-      
-      const messageUsername = usernameElement.textContent?.trim().toLowerCase();
+      const messageUsername = (((usernameElement.getAttribute && usernameElement.getAttribute('data-a-user')) || usernameElement.textContent) || '').trim().toLowerCase();
       if (messageUsername === username) {
         addBadgeToMessage(usernameElement, rankData);
       }
@@ -1300,33 +1396,77 @@ function addBadgeToMessage(usernameElement, rankData) {
   
   try {
     const currentSelectors = SELECTORS[extensionState.chatMode];
-    const messageContainer = usernameElement.closest(currentSelectors.message.join(', '));
+    const messageContainer = usernameElement.closest(currentSelectors.message.join(', ')) || usernameElement.closest('.dtSdDz, .vod-message, .seventv-user-message') || usernameElement.parentElement;
     
     if (!messageContainer) return;
     if (messageContainer.querySelector('.eloward-rank-badge')) return;
     
+    // Prefer chat-mode specific placement (works for live and VOD)
     switch (extensionState.chatMode) {
       case 'seventv':
         addBadgeToSevenTVMessage(messageContainer, usernameElement, rankData);
-        break;
+        return;
       case 'ffz':
         addBadgeToFFZMessage(messageContainer, usernameElement, rankData);
-        break;
+        return;
       default:
-        addBadgeToStandardMessage(messageContainer, rankData);
         break;
+    }
+    
+    // Standard Twitch chat
+    if (isVodPage()) {
+      addBadgeToVodMessage(messageContainer, usernameElement, rankData);
+    } else {
+      addBadgeToStandardMessage(messageContainer, rankData);
     }
   } catch (error) {
     console.error('EloWard: Error adding badge:', error);
   }
 }
 
+function addBadgeToVodMessage(messageContainer, usernameElement, rankData) {
+  try {
+    // Find the VOD row container that holds badges + author + message
+    const vodRow = usernameElement.closest('.dtSdDz') || usernameElement.closest('.vod-message') || messageContainer;
+    if (!vodRow) return;
+    
+    // Prefer the first span before the author anchor as a badge host (matches live layout spacing)
+    let badgeHost = null;
+    const siblings = Array.from(vodRow.childNodes);
+    for (const node of siblings) {
+      if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SPAN') {
+        badgeHost = node; break;
+      }
+      if (node === usernameElement) break;
+    }
+    if (!badgeHost) {
+      badgeHost = document.createElement('span');
+      badgeHost.className = 'eloward-badges-host';
+      vodRow.insertBefore(badgeHost, usernameElement);
+    }
+    
+    // Avoid duplicates
+    if (badgeHost.querySelector('.eloward-rank-badge')) return;
+    
+    const badge = createBadgeElement(rankData);
+    // Match live stream markup: wrap in a container div for consistent spacing
+    const badgeWrapper = document.createElement('div');
+    badgeWrapper.className = 'InjectLayout-sc-1i43xsx-0 dvtAVE';
+    badgeWrapper.appendChild(badge);
+    badgeHost.appendChild(badgeWrapper);
+  } catch (e) {
+    console.warn('EloWard (VOD): Failed to add badge', e);
+  }
+}
+
 function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) {
-  let badgeList = messageContainer.querySelector('.seventv-chat-user-badge-list');
+  // Anchor at the top-level 7TV message wrapper to avoid matching mention tokens
+  const userWrapper = messageContainer.closest('.seventv-user-message') || messageContainer.closest('.seventv-chat-vod-message-patched') || messageContainer;
+  const chatUser = userWrapper.querySelector('.seventv-chat-user');
+  let badgeList = chatUser ? chatUser.querySelector('.seventv-chat-user-badge-list') : null;
   let badgeListWasEmpty = false;
   
   if (!badgeList) {
-    const chatUser = messageContainer.querySelector('.seventv-chat-user');
     if (!chatUser) return;
     
     badgeList = document.createElement('span');
@@ -1349,6 +1489,8 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
   
   const badge = document.createElement('div');
   badge.className = 'seventv-chat-badge eloward-rank-badge';
+  // Ensure rightmost position regardless of flex ordering
+  try { badge.style.order = '9999'; } catch (_) {}
   
   // If this is the only badge, adjust positioning to align with username
   if (badgeListWasEmpty) {
