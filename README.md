@@ -1,6 +1,6 @@
-# EloWard Chrome Extension
+# EloWard Browser Extension
 
-A Chrome extension that displays League of Legends rank badges in Twitch chat for connected users.
+A browser extension that displays League of Legends rank badges in Twitch chat for connected users.
 
 ## Features
 
@@ -21,14 +21,17 @@ EloWard is open-source for **transparency and security**. Since we handle sensit
 
 ## Installation
 
-### From Chrome Web Store (Recommended)
-1. Visit the [EloWard Website](https://www.eloward.com/) for links, detailed setup instructions, and dashboard/settings
+### From Web Stores (Recommended)
+1. Visit the [EloWard Website](https://www.eloward.com/) for store links, setup instructions, and dashboard/settings
 
 ### From Source (For Developers)
 1. Clone this repository
-2. Open `chrome://extensions/`
-3. Enable "Developer mode"
-4. Click "Load unpacked" and select the `EloWardApp` folder
+2. Generate a manifest for your target browser:
+   - Chrome: `node scripts/build-manifest.js chrome`
+   - Firefox: `node scripts/build-manifest.js firefox`
+3. Load the extension:
+   - Chrome: open `chrome://extensions/`, enable Developer mode, click "Load unpacked", select `EloWardApp`
+   - Firefox: open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on...", select `EloWardApp/manifest.json`
 
 ## Setup
 
@@ -79,13 +82,13 @@ Security is our top priority. See [SECURITY.md](SECURITY.md) for:
 
 ```
 EloWardApp/
-├── background.js          # Background service worker
-├── content.js            # Chat integration and badge injection
-├── popup.html/js         # Extension popup UI
+├── background.js                 # Background (service worker on Chrome, page on Firefox)
+├── content.js                   # Chat integration and badge injection
+├── popup.html/js                # Extension popup UI
 ├── js/
-│   ├── riotAuth.js      # Riot Games OAuth handling
-│   ├── twitchAuth.js    # Twitch OAuth handling
-│   └── persistentStorage.js # Local data management
+│   ├── auth/riotAuth.js         # Riot Games OAuth handling
+│   ├── auth/twitchAuth.js       # Twitch OAuth handling
+│   └── core/persistentStorage.js# Local data management
 ├── css/                 # Styling for popup and badges
 └── manifest.json        # Extension configuration
 ```
@@ -93,7 +96,7 @@ EloWardApp/
 ## Privacy
 
 - **No server-side storage** - All data stays in your browser
-- **Direct API communication** - Authentication happens directly with Twitch/Riot
+- **Secure OAuth via proxy** - Authentication flows via secure Cloudflare Workers; client secrets aren’t exposed in the extension
 - **Minimal permissions** - Only requests necessary Chrome extension permissions
 - **Local caching** - Rank data cached locally for performance
 
@@ -107,13 +110,13 @@ EloWardApp/
 ## Development
 
 ### Prerequisites
-- Chrome or Chromium browser
-- Basic knowledge of JavaScript and Chrome Extension APIs
+- Chrome or Firefox
+- Basic knowledge of browser extension APIs
 
 ### Local Development
 1. Clone the repository
-2. Make changes to the code
-3. Reload the extension in `chrome://extensions/`
+2. Build the manifest for your target (see above)
+3. Load the extension (Chrome or Firefox)
 4. Test in Twitch chat
 
 ### Testing

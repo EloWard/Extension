@@ -7,8 +7,8 @@ EloWard is open-source specifically to allow users to verify that their account 
 ## What Data We Handle
 
 ### Authentication Data
-- **Twitch OAuth tokens** - Stored locally in Chrome extension storage
-- **Riot Games OAuth tokens** - Stored locally in Chrome extension storage  
+- **Twitch OAuth tokens** - Stored locally in extension storage (per browser)
+- **Riot Games OAuth tokens** - Stored locally in extension storage  
 - **Account information** - Usernames, display names, PUIDs (stored locally)
 
 ### Rank Data
@@ -18,9 +18,9 @@ EloWard is open-source specifically to allow users to verify that their account 
 ## How We Protect Your Data
 
 ### Local Storage Only
-- All sensitive data is stored in your browser's local extension storage
+- All sensitive data is stored in your browser’s extension storage
 - No passwords or tokens are transmitted to our servers
-- Authentication happens directly with Twitch/Riot APIs
+- OAuth tokens are exchanged via secure Cloudflare Workers that hide client secrets
 
 ### Secure Communication
 - All API calls use HTTPS

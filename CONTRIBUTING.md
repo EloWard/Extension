@@ -1,6 +1,6 @@
 # Contributing to EloWard
 
-We welcome contributions from the community! This guide outlines how to contribute to the EloWard Chrome extension.
+We welcome contributions from the community! This guide outlines how to contribute to the EloWard browser extension.
 
 ## Licensing
 
@@ -28,10 +28,12 @@ By submitting a contribution, you:
 ## Development Setup
 
 1. Clone the repository
-2. Load the extension in Chrome Developer Mode:
-   - Open `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked" and select the `EloWardApp` folder
+2. Generate a manifest for your target browser (one-time before loading):
+   - Chrome (MV3): `node scripts/build-manifest.js chrome`
+   - Firefox (MV2): `node scripts/build-manifest.js firefox`
+3. Load the extension:
+   - Chrome: open `chrome://extensions/`, enable Developer mode, click "Load unpacked", select the `EloWardApp` folder
+   - Firefox: open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on...", select `EloWardApp/manifest.json`
 
 ## Contribution Process
 
@@ -70,6 +72,15 @@ Since EloWard handles user authentication:
 - **Accessibility improvements** for screen readers
 - **Browser compatibility** testing
 - **Localization** for international users
+
+## Build & Packaging
+
+- Auto-generate the manifest for each target:
+  - Chrome: `node scripts/build-manifest.js chrome`
+  - Firefox: `node scripts/build-manifest.js firefox`
+- Optional release zips:
+  - Chrome: `scripts/pack-chrome.sh`
+  - Firefox: `scripts/pack-firefox.sh`
 
 ## Questions?
 
