@@ -610,7 +610,8 @@ async function initializeChannel(channelName, initializationId) {
 }
 
 function initializeStorage() {
-  chrome.storage.local.get(null, (allData) => {
+  // Read only the keys we actually need to determine current user
+  chrome.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername'], (allData) => {
     extensionState.currentUser = findCurrentUser(allData);
     
     if (extensionState.currentUser) {
@@ -871,7 +872,7 @@ function setupGameChangeObserver() {
   }
   
   const gameObserver = new MutationObserver(checkGameChange);
-  const streamInfoTarget = document.querySelector('[data-a-target="stream-info-card"]');
+  const streamInfoTarget = document.querySelector('[data-a-target="stream-info-card"], [data-test-selector="stream-info-card"]');
   
   if (streamInfoTarget) {
     gameObserver.observe(streamInfoTarget, { 
@@ -998,7 +999,7 @@ function setupUrlChangeObserver() {
           // If we just entered a VOD page from a channel page, force a fresh init
           initializeExtension();
         }
-      }, 500);
+      }, 750);
     } else if (!currentChannel && extensionState.channelName) {
       cleanupChannel(extensionState.channelName);
       extensionState.channelName = null;
@@ -1145,7 +1146,7 @@ function setupChatObserver(chatContainer) {
 
 function processExistingMessages(chatContainer, messageSelectors) {
   try {
-    const existingMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
+  const existingMessages = chatContainer.querySelectorAll(messageSelectors.join(', '));
     const currentSelectors = SELECTORS[extensionState.chatMode];
     const usernameSelectors = currentSelectors.username;
     
