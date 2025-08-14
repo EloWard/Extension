@@ -996,6 +996,7 @@ function setupUrlChangeObserver() {
       extensionState.isVod = isVodNow;
       extensionState.lastPathname = currentPathname;
       extensionState.initializationComplete = false;
+      try { chrome.runtime.sendMessage({ action: 'prune_unranked_rank_cache' }); } catch (_) {}
       
       setTimeout(() => {
         const verifyChannel = getCurrentChannelName();

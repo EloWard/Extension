@@ -547,6 +547,22 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false; // synchronous response
   }
 
+  if (message.action === 'prune_unranked_rank_cache') {
+    try {
+      for (const [username, entry] of Array.from(userRankCache.cache.entries())) {
+        const tier = entry?.rankData?.tier;
+        if (!tier || String(tier).toUpperCase() === 'UNRANKED') {
+          userRankCache.cache.delete(username);
+        }
+      }
+      maybePersistRankCache(userRankCache).catch(() => {});
+      sendResponse({ success: true });
+    } catch (e) {
+      sendResponse({ success: false, error: e?.message || 'prune failed' });
+    }
+    return false; // synchronous
+  }
+
   if (message.action === 'auto_refresh_rank') {
     (async () => {
       try {
