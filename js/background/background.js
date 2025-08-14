@@ -52,7 +52,7 @@ class UserRankCache {
   }
 
   set(username, rankData) {
-    if (!username) return;
+    if (!username || !rankData) return;
 
     const normalizedUsername = username.toLowerCase();
     let entry = this.cache.get(normalizedUsername);
@@ -452,30 +452,37 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    // Serve from cache regardless of positive or negative entry
-    if (userRankCache.has(username)) {
-      const cachedRankData = userRankCache.get(username);
+    if (channelName) {
+      incrementDbReadCounter(channelName).catch(() => {});
+    }
+    
+    const cachedRankData = userRankCache.get(username);
+    if (cachedRankData) {
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(() => {});
       }
-      sendResponse({ success: true, rankData: cachedRankData, source: 'cache' });
+      
+      sendResponse({
+        success: true,
+        rankData: cachedRankData,
+        source: 'cache'
+      });
+      
       return true;
     }
     
     // Use the user's selectedRegion (platform routing value) instead of hard-coding NA1
     browser.storage.local.get(['selectedRegion']).then((data) => {
       const platform = data?.selectedRegion || 'na1';
-      if (channelName) {
-        incrementDbReadCounter(channelName).catch(() => {});
-      }
       return fetchRankByTwitchUsername(username, platform)
         .then(rankData => {
-          // Cache both positive and negative results
-          userRankCache.set(username, rankData || null);
-          if (channelName && rankData?.tier) {
-            incrementSuccessfulLookupCounter(channelName).catch(() => {});
+          if (rankData) {
+            userRankCache.set(username, rankData);
+            if (channelName && rankData?.tier) {
+              incrementSuccessfulLookupCounter(channelName).catch(() => {});
+            }
           }
-          sendResponse({ success: true, rankData: rankData || null, source: 'api' });
+          sendResponse({ success: true, rankData, source: 'api' });
         })
         .catch(error => {
           sendResponse({ success: false, error: error.message || 'Error fetching rank data' });
@@ -538,22 +545,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     sendResponse({ ranks: allRanks });
     return false; // synchronous response
-  }
-
-  if (message.action === 'prune_negative_rank_cache') {
-    try {
-      for (const [username, entry] of Array.from(userRankCache.cache.entries())) {
-        // Remove only entries with no rank linked (negative cache), keep positive and UNRANKED
-        if (!entry || entry.rankData == null) {
-          userRankCache.cache.delete(username);
-        }
-      }
-      maybePersistRankCache(userRankCache).catch(() => {});
-      sendResponse({ success: true });
-    } catch (e) {
-      sendResponse({ success: false, error: e?.message || 'prune failed' });
-    }
-    return false; // synchronous
   }
 
   if (message.action === 'auto_refresh_rank') {
