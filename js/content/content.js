@@ -1908,7 +1908,10 @@ function showTooltip(event) {
     lp = Number(lp).toString();
   }
   
-  tooltipElement.innerHTML = '';
+  // Clear previous tooltip content safely
+  while (tooltipElement.firstChild) {
+    tooltipElement.removeChild(tooltipElement.firstChild);
+  }
   
   const tooltipBadge = document.createElement('img');
   tooltipBadge.className = 'eloward-tooltip-badge';
@@ -1922,12 +1925,15 @@ function showTooltip(event) {
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-tooltip-text';
   tooltipText.style.textAlign = 'center';
-  const lines = [];
   if (displayRegion) {
-    lines.push(`<div class="eloward-region-line">${displayRegion}</div>`);
+    const regionDiv = document.createElement('div');
+    regionDiv.className = 'eloward-region-line';
+    regionDiv.textContent = displayRegion;
+    tooltipText.appendChild(regionDiv);
   }
+  const rankDiv = document.createElement('div');
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
-    lines.push('Unranked');
+    rankDiv.textContent = 'Unranked';
   } else {
     let formattedTier = rankTier.toLowerCase();
     formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
@@ -1938,9 +1944,9 @@ function showTooltip(event) {
     if (lp !== undefined && lp !== null && lp !== '') {
       rankText += ' - ' + lp + ' LP';
     }
-    lines.push(`<div>${rankText}</div>`);
+    rankDiv.textContent = rankText;
   }
-  tooltipText.innerHTML = lines.join('');
+  tooltipText.appendChild(rankDiv);
   
   tooltipElement.appendChild(tooltipText);
   
