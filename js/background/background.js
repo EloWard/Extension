@@ -52,7 +52,7 @@ class UserRankCache {
   }
 
   set(username, rankData) {
-    if (!username || !rankData) return;
+    if (!username) return;
 
     const normalizedUsername = username.toLowerCase();
     let entry = this.cache.get(normalizedUsername);
@@ -452,37 +452,30 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    if (channelName) {
-      incrementDbReadCounter(channelName).catch(() => {});
-    }
-    
-    const cachedRankData = userRankCache.get(username);
-    if (cachedRankData) {
+    // Serve from cache regardless of positive or negative entry
+    if (userRankCache.has(username)) {
+      const cachedRankData = userRankCache.get(username);
       if (channelName && cachedRankData?.tier) {
         incrementSuccessfulLookupCounter(channelName).catch(() => {});
       }
-      
-      sendResponse({
-        success: true,
-        rankData: cachedRankData,
-        source: 'cache'
-      });
-      
+      sendResponse({ success: true, rankData: cachedRankData, source: 'cache' });
       return true;
     }
     
     // Use the user's selectedRegion (platform routing value) instead of hard-coding NA1
     browser.storage.local.get(['selectedRegion']).then((data) => {
       const platform = data?.selectedRegion || 'na1';
+      if (channelName) {
+        incrementDbReadCounter(channelName).catch(() => {});
+      }
       return fetchRankByTwitchUsername(username, platform)
         .then(rankData => {
-          if (rankData) {
-            userRankCache.set(username, rankData);
-            if (channelName && rankData?.tier) {
-              incrementSuccessfulLookupCounter(channelName).catch(() => {});
-            }
+          // Cache both positive and negative results
+          userRankCache.set(username, rankData || null);
+          if (channelName && rankData?.tier) {
+            incrementSuccessfulLookupCounter(channelName).catch(() => {});
           }
-          sendResponse({ success: true, rankData, source: 'api' });
+          sendResponse({ success: true, rankData: rankData || null, source: 'api' });
         })
         .catch(error => {
           sendResponse({ success: false, error: error.message || 'Error fetching rank data' });
@@ -547,6 +540,22 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false; // synchronous response
   }
 
+  if (message.action === 'prune_negative_rank_cache') {
+    try {
+      for (const [username, entry] of Array.from(userRankCache.cache.entries())) {
+        // Remove only entries with no rank linked (negative cache), keep positive and UNRANKED
+        if (!entry || entry.rankData == null) {
+          userRankCache.cache.delete(username);
+        }
+      }
+      maybePersistRankCache(userRankCache).catch(() => {});
+      sendResponse({ success: true });
+    } catch (e) {
+      sendResponse({ success: false, error: e?.message || 'prune failed' });
+    }
+    return false; // synchronous
+  }
+
   if (message.action === 'auto_refresh_rank') {
     (async () => {
       try {
@@ -604,12 +613,60 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: true, refreshed: true });
           } catch (e) {
             console.warn('[EloWard Background] rank: refresh failed', e?.message || e);
-            // If authentication failed (e.g., refresh token invalid), mark Riot disconnected and clear persistent data
+            // Attempt silent re-auth only; do not trigger popup or clear persistent user data
             try {
-              await PersistentStorage.updateConnectedState('riot', false);
-              await PersistentStorage.clearServiceData('riot');
-            } catch (_) {}
-            sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
+              const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
+              const region = selectedRegion || 'na1';
+              let userDataAfterReauth = null;
+              try {
+                userDataAfterReauth = await RiotAuth.performSilentReauth(region);
+              } catch (_) {
+                // Silent reauth failed; gracefully skip without altering stored data
+                sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
+                return;
+              }
+
+              try {
+                const accountInfo2 = await RiotAuth.getAccountInfo();
+                if (!accountInfo2 || !accountInfo2.puuid) throw new Error('Missing account info after reauth');
+                await RiotAuth.getRankInfo(accountInfo2.puuid);
+                const userData2 = userDataAfterReauth || await RiotAuth.getUserData(true);
+                await PersistentStorage.storeRiotUserData(userData2);
+
+                try {
+                  const twitchData2 = await PersistentStorage.getTwitchUserData();
+                  const twitchUsername2 = twitchData2?.login?.toLowerCase();
+                  const { selectedRegion: sr2 } = await browser.storage.local.get(['selectedRegion']);
+                  const region2 = sr2 || 'na1';
+                  if (twitchUsername2 && userData2) {
+                    const solo2 = userData2.soloQueueRank || null;
+                    const rankData2 = solo2 ? {
+                      tier: solo2.tier,
+                      division: solo2.rank,
+                      leaguePoints: solo2.leaguePoints,
+                      summonerName: userData2.riotId,
+                      region: region2
+                    } : {
+                      tier: 'UNRANKED',
+                      division: '',
+                      leaguePoints: null,
+                      summonerName: userData2.riotId,
+                      region: region2
+                    };
+                    userRankCache.set(twitchUsername2, rankData2);
+                  }
+                } catch (_) {}
+
+                await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
+                console.log('[EloWard Background] rank: refreshed (after silent reauth)');
+                sendResponse({ success: true, refreshed: true, reauthenticated: true });
+              } catch (postReauthErr) {
+                sendResponse({ success: false, refreshed: false, error: postReauthErr?.message || 'post reauth refresh failed' });
+              }
+            } catch (outerErr) {
+              // Final fallback: do nothing destructive; keep UI data intact
+              sendResponse({ success: false, refreshed: false, error: outerErr?.message || e?.message || 'refresh failed' });
+            }
           }
         } else {
           // Non-intrusive reason logging to help diagnose skips

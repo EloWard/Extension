@@ -630,49 +630,73 @@ document.addEventListener('DOMContentLoaded', () => {
   async function refreshRank() {
     try {
       console.log('[EloWard Popup] Manual rank refresh: requested');
-      // First check if the user is authenticated
-      const isAuthenticated = await RiotAuth.isAuthenticated();
-      if (!isAuthenticated) {
-        showAuthError('Please connect your account first');
-        return;
-      }
-      
       // Show a loading state on the button (add a rotating animation class)
       refreshRankBtn.classList.add('refreshing');
       refreshRankBtn.disabled = true; // Disable button while refreshing
       
-      // Attempt to refresh rank data
-      await performRankRefresh();
-      try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
-      console.log('[EloWard Popup] Manual rank refresh: successful');
-      
-    } catch (error) {
-      console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
-      // Check if it's the specific re-authentication error
-      if (error.name === "ReAuthenticationRequiredError") {
+      // Determine region (from selector or storage)
+      let region = regionSelect.value;
+      if (!region) {
         try {
-          // Perform silent re-authentication to get fresh tokens
-          const region = regionSelect.value;
-          await RiotAuth.performSilentReauth(region);
-          
-          // After successful silent re-auth, automatically retry the rank refresh
-          await performRankRefresh();
-          console.log('[EloWard Popup] Manual rank refresh after silent re-auth: successful');
-        } catch (authError) {
-          // If silent re-auth fails, clear Riot persistent state so UI doesn't show connected
+          const res = await browser.storage.local.get(['selectedRegion']);
+          region = res?.selectedRegion || '';
+        } catch (_) {}
+      }
+      if (!region) {
+        showAuthError('Select a region to refresh rank.');
+        return;
+      }
+      
+      const tryPerform = async () => {
+        await performRankRefresh();
+        try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
+        console.log('[EloWard Popup] Manual rank refresh: successful');
+      };
+      
+      let isAuthenticated = false;
+      try { isAuthenticated = await RiotAuth.isAuthenticated(); } catch (_) { isAuthenticated = false; }
+      
+      if (isAuthenticated) {
+        try {
+          await tryPerform();
+          return;
+        } catch (error) {
+          if (error?.name !== 'ReAuthenticationRequiredError') {
+            throw error;
+          }
+          // fall through to re-auth flows
+        }
+      }
+      
+      // Re-auth flows: silent first, then interactive popup
+      try {
+        await RiotAuth.performSilentReauth(region);
+        await tryPerform();
+        console.log('[EloWard Popup] Manual rank refresh after silent re-auth: successful');
+        return;
+      } catch (silentErr) {
+        try {
+          await RiotAuth.authenticate(region);
+          const userData = await RiotAuth.getUserData();
+          try { await PersistentStorage.storeRiotUserData(userData); } catch (_) {}
+          updateUserInterface(userData);
+          updateBackgroundCacheForLocalUser(userData);
+          await tryPerform();
+          console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
+          return;
+        } catch (interactiveErr) {
           try {
             await PersistentStorage.updateConnectedState('riot', false);
             await PersistentStorage.clearServiceData('riot');
           } catch (_) {}
           showAuthError('Authentication failed. Please reconnect your Riot account.');
+          return;
         }
-        return; // Exit the catch block
       }
-      
-      // Handle other errors (e.g., network issues, data not found)
-      
+    } catch (error) {
+      console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
       // Show "Unranked" if there's a rank lookup error or no data found for this region
-      if (error.message && (
+      if (error?.message && (
           error.message.includes('not found') || 
           error.message.includes('not available') || 
           error.message.includes('no rank data')
@@ -680,9 +704,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentRank.textContent = 'Unranked';
         rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
-      } else {
-        // For other errors, don't show error to user - keep original text
-        // Keep the original rank text, no user-visible error
       }
     } finally {
       // Remove loading state
