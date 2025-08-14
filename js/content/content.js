@@ -558,10 +558,6 @@ function fallbackInitialization() {
   tryFallbackSetup();
 }
 
-function clearRankCache() {
-  try { browser.runtime.sendMessage({ action: 'clear_rank_cache' }); } catch (_) {}
-  processedMessages.clear();
-}
 
 function cleanupChannel(channelName) {
   cleanupChatObserver();
@@ -917,12 +913,6 @@ function initializeExtension() {
   extensionState.lastPathname = window.location.pathname;
   
   
-  chrome.runtime.sendMessage({
-    action: 'channel_switched',
-    oldChannel: channelState.currentChannel,
-    newChannel: currentChannel
-  });
-  
   setTimeout(async () => {
     if (extensionState.currentInitializationId !== initializationId) return;
     
@@ -1006,7 +996,6 @@ function setupUrlChangeObserver() {
       extensionState.isVod = isVodNow;
       extensionState.lastPathname = currentPathname;
       extensionState.initializationComplete = false;
-      clearRankCache();
       
       setTimeout(() => {
         const verifyChannel = getCurrentChannelName();
@@ -1998,7 +1987,7 @@ window.addEventListener('beforeunload', function() {
   if (extensionState.channelName) {
     cleanupChannel(extensionState.channelName);
   }
-  clearRankCache();
+  // Do not clear rank cache on unload; background manages session resets
   try { ImageCache.revokeAll(); } catch (_) {}
 });
 

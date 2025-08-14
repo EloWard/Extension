@@ -227,11 +227,11 @@ async function initiateTokenExchange(authData, service = 'riot') {
 console.log('[EloWard Background] Background script loaded and ready');
 console.log('[EloWard Background] Setting up message listeners...');
 
-// Ensure persistence flag exists and restore rank cache mirror on startup
+// Initialize storage; do not restore rank cache across sessions
 (async () => {
   try {
     await PersistentStorage.init();
-    await restoreRankCacheFromStorage(userRankCache);
+    // Do not restore rank cache across sessions; start with a fresh cache each session
   } catch (_) {}
 })();
 
@@ -648,12 +648,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  if (message.action === 'channel_switched') {
-    handleChannelSwitch(message.oldChannel, message.newChannel);
-    sendResponse({ success: true });
-    return false; // synchronous response
-  }
-  
   sendResponse({ error: 'Unknown action', action: message.action });
   return false; // synchronous response
 });
@@ -738,7 +732,9 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_riot_id_token',
         'eloward_riot_rank_info',
         'eloward_signin_attempted',
-        'riot_auth'
+        'riot_auth',
+        RANK_CACHE_STORAGE_KEY,
+        RANK_CACHE_UPDATED_AT_KEY
       ]);
     } catch (_) {}
   })();
@@ -969,12 +965,6 @@ async function fetchRankByTwitchUsername(twitchUsername, platform) {
   }
 }
 
-
-
-function handleChannelSwitch(oldChannel, newChannel) {
-  userRankCache.clear();
-  browser.storage.local.remove('connected_region');
-}
 
 async function incrementDbReadCounter(channelName) {
   if (!channelName) {
