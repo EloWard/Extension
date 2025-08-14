@@ -105,8 +105,6 @@
     }
     
     function storeCallbackDataOnly() {
-       
-      
       // Extract auth parameters from URL
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
@@ -123,7 +121,7 @@
           });
         }
 
-        // Also proactively notify the background to process immediately
+        // Also proactively notify the background to process immediately as a fallback
         try {
           if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
             // Determine service from path
@@ -179,15 +177,16 @@
           }
         };
         
-        // Send auth data to extension
-        if (window.elowardExtension && window.elowardExtension.isInstalled) {
-           
-          window.elowardExtension.sendMessage(authData, function(response) {
-            console.log('[EloWard Extension Bridge] Auth message response:', response);
-          });
-        } else {
-          console.warn('[EloWard Extension Bridge] Extension not available for auth callback');
-        }
+        // Send auth data to extension (always) — Firefox may ignore opener postMessage
+        try {
+          if (window.elowardExtension && window.elowardExtension.isInstalled) {
+            window.elowardExtension.sendMessage(authData, function(response) {
+              console.log('[EloWard Extension Bridge] Auth message response:', response);
+            });
+          } else if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
+            browser.runtime.sendMessage(authData).catch(() => {});
+          }
+        } catch (_) {}
       } else if (error) {
         console.error('[EloWard Extension Bridge] Auth error:', error);
         

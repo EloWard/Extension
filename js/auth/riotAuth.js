@@ -812,20 +812,6 @@ export const RiotAuth = {
   },
   
   /**
-   * Store account info in storage
-   * @param {Object} accountInfo - Account info to store
-   * @private
-   */
-  async _storeAccountInfo(accountInfo) {
-    try {
-      await browser.storage.local.set({
-        [this.config.storageKeys.accountInfo]: accountInfo
-      });
-    } catch (e) {
-    }
-  },
-  
-  /**
    * Get the regional route from a platform ID
    * @param {string} platform - Platform ID (e.g., 'na1')
    * @returns {string} - Regional route (e.g., 'americas')
@@ -953,29 +939,7 @@ export const RiotAuth = {
    * @returns {string} - Platform region (e.g. 'americas')
    * @private
    */
-  _getPlatformRegion(region) {
-    const PLATFORM_ROUTING = {
-      'na1': 'americas',
-      'br1': 'americas',
-      'la1': 'americas',
-      'la2': 'americas',
-      'euw1': 'europe',
-      'eun1': 'europe',
-      'tr1': 'europe',
-      'ru': 'europe',
-      'kr': 'asia',
-      'jp1': 'asia',
-      'oc1': 'americas',
-      'me1': 'europe',
-      'ph2': 'sea',
-      'sg2': 'sea',
-      'th2': 'sea',
-      'tw2': 'sea',
-      'vn2': 'sea'
-    };
-    
-    return PLATFORM_ROUTING[region] || 'americas';
-  },
+  
   
   /**
    * Get user's data (account and rank)
@@ -1088,51 +1052,7 @@ export const RiotAuth = {
    * @returns {Promise<Object>} - The extracted user info
    * @private
    */
-  async _processIdToken(idToken) {
-    if (!idToken) {
-      throw new Error('No ID token provided');
-    }
-    
-    
-    // Store the raw ID token directly using browser.storage
-    await browser.storage.local.set({ [this.config.storageKeys.idToken]: idToken });
-    
-    // Decode the ID token (it's a JWT)
-    const parts = idToken.split('.');
-    
-    if (parts.length !== 3) {
-      throw new Error('Invalid ID token format - not a valid JWT');
-    }
-    
-    // Base64 decode the payload (second part)
-    try {
-      // Replace URL-safe base64 characters and add padding if needed
-      let payload = parts[1];
-      payload = payload.replace(/-/g, '+').replace(/_/g, '/');
-      
-      // Add padding if needed
-      while (payload.length % 4) {
-        payload += '=';
-      }
-      
-      // Decode the base64 string
-      const jsonStr = atob(payload);
-      const decodedPayload = JSON.parse(jsonStr);
-      
-      // Extract account info from the ID token
-      const accountInfo = {
-        puuid: decodedPayload.sub,
-        gameName: decodedPayload.game_name || null,
-        tagLine: decodedPayload.tag_line || null
-      };
-      
-      await this._storeValue(this.config.storageKeys.accountInfo, accountInfo);
-      
-      return accountInfo;
-    } catch (error) {
-      throw new Error(`Failed to process ID token: ${error.message}`);
-    }
-  },
+  
   
   /**
    * Store a value in browser.storage.local

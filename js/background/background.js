@@ -335,13 +335,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }, 500);
       
-      return true;
+      return false; // response sent synchronously
     } catch (error) {
       sendResponse({ 
         success: false, 
         error: error.message || 'Unknown error processing Twitch auth callback'
       });
-      return true;
+      return false;
     }
   }
   
@@ -366,10 +366,9 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    
     handleAuthCallback(params);
     sendResponse({ success: true });
-    return true;
+    return false; // response sent synchronously
   }
   
   if (message.type === 'open_auth_window') {
@@ -441,7 +440,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'get_rank_icon_url') {
     const iconUrl = getRankIconUrl(message.tier);
     sendResponse({ iconUrl: iconUrl });
-    return true;
+    return false; // synchronous response
   }
   
   if (message.action === 'fetch_rank_for_username') {
@@ -530,13 +529,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'set_current_user') {
     userRankCache.setCurrentUser(message.username);
     sendResponse({ success: true });
-    return true;
+    return false; // synchronous response
   }
   
   if (message.action === 'clear_rank_cache') {
     userRankCache.clear();
     sendResponse({ success: true });
-    return true;
+    return false; // synchronous response
   }
   
   if (message.action === 'get_all_cached_ranks') {
@@ -545,7 +544,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       allRanks[username] = entry.rankData;
     }
     sendResponse({ ranks: allRanks });
-    return true;
+    return false; // synchronous response
   }
 
   if (message.action === 'auto_refresh_rank') {
@@ -652,11 +651,11 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'channel_switched') {
     handleChannelSwitch(message.oldChannel, message.newChannel);
     sendResponse({ success: true });
-    return true;
+    return false; // synchronous response
   }
   
   sendResponse({ error: 'Unknown action', action: message.action });
-  return true;
+  return false; // synchronous response
 });
 
 setInterval(() => {
@@ -720,34 +719,29 @@ browser.runtime.onInstalled.addListener((details) => {
     }
   }, 5000);
   
-  browser.storage.local.get('linkedAccounts').then((data) => {
-    if (!data.linkedAccounts) {
-      browser.storage.local.set({ linkedAccounts: {} });
-    }
-  });
+  // Removed legacy 'linkedAccounts' initialization; linking is derived from persistent storage
   
   // No default region on install/update
 });
 
-// Also clear sensitive auth callback data on background startup for temp reloads
-(async () => {
-  try {
-    await browser.storage.local.remove([
-      'auth_callback',
-      'eloward_auth_callback',
-      'riot_auth_callback',
-      'twitch_auth_callback',
-      'eloward_popup_auth_active',
-      'eloward_twitch_user_info',
-      'eloward_riot_account_info',
-      "eloward_riot_id_token",
-      "eloward_riot_rank_info",
-      "eloward_signin_attempted",
-      "riot_auth",
-      "linkedAccounts"
-    ]);
-  } catch (_) {}
-})();
+  // Also clear sensitive auth callback data on background startup for temp reloads (keep persistent tokens)
+  (async () => {
+    try {
+      await browser.storage.local.remove([
+        'auth_callback',
+        'eloward_auth_callback',
+        'riot_auth_callback',
+        'twitch_auth_callback',
+        'eloward_popup_auth_active',
+        'eloward_twitch_user_info',
+        'eloward_riot_account_info',
+        'eloward_riot_id_token',
+        'eloward_riot_rank_info',
+        'eloward_signin_attempted',
+        'riot_auth'
+      ]);
+    } catch (_) {}
+  })();
 
 function clearAllStoredData() {
   return new Promise((resolve) => {

@@ -483,10 +483,24 @@ document.addEventListener('DOMContentLoaded', () => {
     rankBadgePreview.style.backgroundImage = 'none';
     refreshRankBtn.classList.add('hidden'); // Hide refresh button
     
-    // Reset Twitch connection UI
-    twitchConnectionStatus.textContent = 'Not Connected';
-    twitchConnectionStatus.classList.remove('connected', 'error');
-    connectTwitchBtn.textContent = 'Connect';
+    // Show stored Twitch identity if available, else not connected
+    try {
+      const twitchStored = await PersistentStorage.getTwitchUserData();
+      if (twitchStored) {
+        twitchConnectionStatus.textContent = twitchStored.display_name || twitchStored.login || 'Connected';
+        twitchConnectionStatus.classList.add('connected');
+        twitchConnectionStatus.classList.remove('error');
+        connectTwitchBtn.textContent = 'Disconnect';
+      } else {
+        twitchConnectionStatus.textContent = 'Not Connected';
+        twitchConnectionStatus.classList.remove('connected', 'error');
+        connectTwitchBtn.textContent = 'Connect';
+      }
+    } catch (_) {
+      twitchConnectionStatus.textContent = 'Not Connected';
+      twitchConnectionStatus.classList.remove('connected', 'error');
+      connectTwitchBtn.textContent = 'Connect';
+    }
     connectTwitchBtn.disabled = false;
     
     // Reset rank display and show unranked graphic

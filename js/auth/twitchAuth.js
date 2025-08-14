@@ -73,6 +73,11 @@ export const TwitchAuth = {
         // Non-fatal error, continue with authentication
       }
       
+      // Mark that we're handling auth in popup to avoid duplicate background processing
+      try { await browser.storage.local.set({ 'eloward_popup_auth_active': true }); } catch (_) {}
+      // Small delay to ensure listeners see the flag
+      try { await new Promise(r => setTimeout(r, 50)); } catch (_) {}
+
       // Open the auth window
       this._openAuthWindow(authUrl);
       
@@ -111,15 +116,33 @@ export const TwitchAuth = {
           await PersistentStorage.storeTwitchUserData(userInfo);
           
           return userInfo;
-                  } catch (userInfoError) {
-            // Ensure we still consider the user authenticated
-            await PersistentStorage.updateConnectedState('twitch', true);
-            
-            // Return minimal user object if full info unavailable
-            return { authenticated: true };
-          }
+        } catch (userInfoError) {
+          // Ensure we still consider the user authenticated
+          await PersistentStorage.updateConnectedState('twitch', true);
+          
+          // Return minimal user object if full info unavailable
+          return { authenticated: true };
+        }
       } catch (tokenError) {
-        // Make sure the authentication state is cleared on token exchange failure
+        // If another context already exchanged the code, tokens may already be present.
+        try {
+          await new Promise(r => setTimeout(r, 250));
+          const tokens = await this.getTokensObject();
+          if (tokens && tokens.access_token) {
+            // Proceed as success using existing tokens
+            try {
+              const userInfo = await this.getUserInfo();
+              if (userInfo) {
+                await PersistentStorage.storeTwitchUserData(userInfo);
+                return userInfo;
+              }
+            } catch (_) {
+              await PersistentStorage.updateConnectedState('twitch', true);
+              return { authenticated: true };
+            }
+          }
+        } catch (_) {}
+        // If no tokens present, propagate original error
         await PersistentStorage.updateConnectedState('twitch', false);
         throw tokenError;
       }
@@ -130,6 +153,9 @@ export const TwitchAuth = {
       } catch (storageError) {
       }
       throw error;
+    } finally {
+      // Clear popup auth flag regardless of outcome
+      try { await browser.storage.local.remove('eloward_popup_auth_active'); } catch (_) {}
     }
   },
   
@@ -262,122 +288,97 @@ export const TwitchAuth = {
       const checkInterval = 1000; // 1 second
       let elapsedTime = 0;
       let intervalId;
+      let resolved = false;
+      
+      const cleanup = () => {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        try { window.removeEventListener('message', messageListener); } catch (_) {}
+        try { if (onStorageChanged) browser.storage.onChanged.removeListener(onStorageChanged); } catch (_) {}
+      };
+      
+      const resolveOnce = (value) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(value);
+      };
       
       // Function to check for auth callback data
       const checkForCallback = async () => {
-        // Check browser.storage for callback data
         const data = await browser.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]);
-        
-        // Check in multiple possible storage locations
-        const callback = data.auth_callback || 
-                         data.twitch_auth_callback || 
-                         data[this.config.storageKeys.authCallback];
-        
+        const callback = data.auth_callback || data.twitch_auth_callback || data[this.config.storageKeys.authCallback];
         if (callback) {
-          
-          // Check for error in the callback
-          if (callback.error) {
-          }
-          
-          // Stop the interval
-          clearInterval(intervalId);
-          
-          // Clear the callback data from storage to prevent reuse
-          try {
-            browser.storage.local.remove(
-              ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]
-            );
-          } catch (e) {
-          }
-          
-          // Only resolve with the callback if it contains a code
+          try { browser.storage.local.remove(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]); } catch (_) {}
           if (callback.code) {
-            resolve(callback);
+            resolveOnce(callback);
             return true;
           } else if (callback.error) {
-            // Resolve with null if there's an error to signal cancellation
-            resolve(null);
+            resolveOnce(null);
             return true;
           }
         }
         
-        // Check if auth window was closed by user
         if (this.authWindow && this.authWindow.closed) {
-          clearInterval(intervalId);
-          
-          // Try to check storage for any last-moment callbacks that might have been missed
-          browser.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]).then(
-            lastCheck => {
-              const lastCallback = lastCheck.auth_callback || 
-                                  lastCheck.twitch_auth_callback || 
-                                  lastCheck[this.config.storageKeys.authCallback];
-                                  
-              if (lastCallback && lastCallback.code) {
-                resolve(lastCallback);
-              } else {
-                resolve(null); // User cancelled
-              }
-              
-              // Clear any callback data
-              browser.storage.local.remove(
-                ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]
-              );
-            }
-          );
+          const lastCheck = await browser.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]);
+          const lastCallback = lastCheck.auth_callback || lastCheck.twitch_auth_callback || lastCheck[this.config.storageKeys.authCallback];
+          try { browser.storage.local.remove(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]); } catch (_) {}
+          resolveOnce(lastCallback && lastCallback.code ? lastCallback : null);
           return true;
         }
         
-        // Check if we've waited too long
         elapsedTime += checkInterval;
         if (elapsedTime >= maxWaitTime) {
-          clearInterval(intervalId);
-          resolve(null); // Timeout
+          resolveOnce(null);
           return true;
         }
-        
         return false;
       };
       
-      // Check immediately first
+      // Immediate check, then poll
       checkForCallback().then(found => {
-        if (!found) {
-          // If not found, start interval for checking
+        if (!found && !resolved) {
           intervalId = setInterval(checkForCallback, checkInterval);
         }
       });
       
-      // Also add a message listener for direct window messages
-      const messageListener = event => {
-        // Look for different variations of auth callback data formats
-        if (event.data && 
-            ((event.data.type === 'auth_callback' && event.data.code) || 
-             (event.data.source === 'eloward_auth' && event.data.code) ||
-             (event.data.service === 'twitch' && event.data.code) ||
-             (event.data.code && (event.data.state || event.data.scope || event.data.token_type)))) {
-          
-          window.removeEventListener('message', messageListener);
-          
-          // Store in browser.storage for consistency
-          const callbackData = {
-            ...event.data,
-            timestamp: Date.now()
-          };
-          
-          browser.storage.local.set({
-            'auth_callback': callbackData,
-            'twitch_auth_callback': callbackData,
-            [this.config.storageKeys.authCallback]: callbackData
-          });
-          
-          resolve(event.data);
+      // Listen for direct window messages from the redirect page
+      const messageListener = (event) => {
+        if (resolved) return;
+        if (event.data && ((event.data.type === 'auth_callback' && event.data.code) || (event.data.source === 'eloward_auth' && event.data.code) || (event.data.service === 'twitch' && event.data.code) || (event.data.code && (event.data.state || event.data.scope || event.data.token_type)))) {
+          const callbackData = { ...event.data, timestamp: Date.now() };
+          try {
+            browser.storage.local.set({ 'auth_callback': callbackData, 'twitch_auth_callback': callbackData, [this.config.storageKeys.authCallback]: callbackData });
+          } catch (_) {}
+          resolveOnce(event.data);
         } else if (event.data && event.data.error) {
-          // Handle error messages
-          window.removeEventListener('message', messageListener);
-          resolve(null); // Treat as cancellation
+          resolveOnce(null);
         }
       };
-      
       window.addEventListener('message', messageListener);
+      
+      // Also listen for storage changes to resolve faster than polling
+      let onStorageChanged = null;
+      try {
+        onStorageChanged = (changes, area) => {
+          if (resolved || area !== 'local') return;
+          for (const key of ['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]) {
+            if (Object.prototype.hasOwnProperty.call(changes, key)) {
+              const newVal = changes[key]?.newValue;
+              if (newVal && newVal.code) {
+                resolveOnce(newVal);
+                break;
+              } else if (newVal && newVal.error) {
+                resolveOnce(null);
+                break;
+              }
+            }
+          }
+        };
+        browser.storage.onChanged.addListener(onStorageChanged);
+      } catch (_) {}
     });
   },
   
