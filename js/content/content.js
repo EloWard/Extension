@@ -258,6 +258,21 @@ const REGION_MAPPING = {
   'ru': 'ru', 'me1': 'me', 'sea': 'sg', 'tw2': 'tw', 'vn2': 'vn'
 };
 
+// Map API/platform regions to human-readable display short-codes for UI
+function getDisplayRegion(regionCode) {
+  if (!regionCode) return null;
+  const code = String(regionCode).toLowerCase();
+  const display = {
+    'na1': 'NA', 'br1': 'BR', 'la1': 'LAN', 'la2': 'LAS', 'oc1': 'OCE',
+    'euw1': 'EUW', 'eun1': 'EUNE', 'tr1': 'TR', 'ru': 'RU', 'kr': 'KR', 'jp1': 'JP',
+    'me1': 'ME', 'ph2': 'PH', 'sg2': 'SG', 'th2': 'TH', 'tw2': 'TW', 'vn2': 'VN',
+    'sea': 'SEA',
+    // In case we ever get regional routes instead of platforms
+    'americas': 'NA', 'europe': 'EU', 'asia': 'ASIA'
+  };
+  return display[code] || regionCode.toUpperCase();
+}
+
 function handleBadgeClick(event) {
   const badge = event.currentTarget;
   const username = badge.dataset.username;
@@ -1661,7 +1676,12 @@ function showSevenTVTooltip(event, rankData) {
   
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-7tv-tooltip-text';
-  tooltipText.textContent = formatRankTextForTooltip(rankData);
+  tooltipText.style.textAlign = 'center';
+  const regionLine = getDisplayRegion(rankData.region);
+  const lines = [];
+  if (regionLine) lines.push(regionLine);
+  lines.push(formatRankTextForTooltip(rankData));
+  tooltipText.innerHTML = lines.map(line => `<div>${line}</div>`).join('');
   
   tooltip.appendChild(tooltipBadge);
   tooltip.appendChild(tooltipText);
@@ -1881,6 +1901,8 @@ function showTooltip(event) {
   const rankTier = badge.dataset.rank || 'UNRANKED';
   const division = badge.dataset.division || '';
   let lp = badge.dataset.lp || '';
+  const regionCode = badge.dataset.region || '';
+  const displayRegion = getDisplayRegion(regionCode);
   
   if (lp && !isNaN(Number(lp))) {
     lp = Number(lp).toString();
@@ -1890,36 +1912,35 @@ function showTooltip(event) {
   
   const tooltipBadge = document.createElement('img');
   tooltipBadge.className = 'eloward-tooltip-badge';
-  
   const originalImg = badge.querySelector('img');
   if (originalImg && originalImg.src) {
     tooltipBadge.src = originalImg.src;
     tooltipBadge.alt = 'Rank Badge';
   }
-  
   tooltipElement.appendChild(tooltipBadge);
   
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-tooltip-text';
-  
+  tooltipText.style.textAlign = 'center';
+  const lines = [];
+  if (displayRegion) {
+    lines.push(displayRegion);
+  }
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
-    tooltipText.textContent = 'Unranked';
+    lines.push('Unranked');
   } else {
     let formattedTier = rankTier.toLowerCase();
     formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
-    
     let rankText = formattedTier;
-    
     if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
       rankText += ' ' + division;
     }
-    
     if (lp !== undefined && lp !== null && lp !== '') {
       rankText += ' - ' + lp + ' LP';
     }
-    
-    tooltipText.textContent = rankText;
+    lines.push(rankText);
   }
+  tooltipText.innerHTML = lines.map(line => `<div>${line}</div>`).join('');
   
   tooltipElement.appendChild(tooltipText);
   
