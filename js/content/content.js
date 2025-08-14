@@ -1679,9 +1679,9 @@ function showSevenTVTooltip(event, rankData) {
   tooltipText.style.textAlign = 'center';
   const regionLine = getDisplayRegion(rankData.region);
   const lines = [];
-  if (regionLine) lines.push(regionLine);
-  lines.push(formatRankTextForTooltip(rankData));
-  tooltipText.innerHTML = lines.map(line => `<div>${line}</div>`).join('');
+  if (regionLine) lines.push(`<div class="eloward-region-line">${regionLine}</div>`);
+  lines.push(`<div>${formatRankTextForTooltip(rankData)}</div>`);
+  tooltipText.innerHTML = lines.join('');
   
   tooltip.appendChild(tooltipBadge);
   tooltip.appendChild(tooltipText);
@@ -1924,7 +1924,7 @@ function showTooltip(event) {
   tooltipText.style.textAlign = 'center';
   const lines = [];
   if (displayRegion) {
-    lines.push(displayRegion);
+    lines.push(`<div class="eloward-region-line">${displayRegion}</div>`);
   }
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
     lines.push('Unranked');
@@ -1938,9 +1938,9 @@ function showTooltip(event) {
     if (lp !== undefined && lp !== null && lp !== '') {
       rankText += ' - ' + lp + ' LP';
     }
-    lines.push(rankText);
+    lines.push(`<div>${rankText}</div>`);
   }
-  tooltipText.innerHTML = lines.map(line => `<div>${line}</div>`).join('');
+  tooltipText.innerHTML = lines.join('');
   
   tooltipElement.appendChild(tooltipText);
   
