@@ -633,60 +633,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: true, refreshed: true });
           } catch (e) {
             console.warn('[EloWard Background] rank: refresh failed', e?.message || e);
-            // Attempt silent re-auth only; do not trigger popup or clear persistent user data
-            try {
-              const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
-              const region = selectedRegion || 'na1';
-              let userDataAfterReauth = null;
-              try {
-                userDataAfterReauth = await RiotAuth.performSilentReauth(region);
-              } catch (_) {
-                // Silent reauth failed; gracefully skip without altering stored data
-                sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
-                return;
-              }
-
-              try {
-                const accountInfo2 = await RiotAuth.getAccountInfo();
-                if (!accountInfo2 || !accountInfo2.puuid) throw new Error('Missing account info after reauth');
-                await RiotAuth.getRankInfo(accountInfo2.puuid);
-                const userData2 = userDataAfterReauth || await RiotAuth.getUserData(true);
-                await PersistentStorage.storeRiotUserData(userData2);
-
-                try {
-                  const twitchData2 = await PersistentStorage.getTwitchUserData();
-                  const twitchUsername2 = twitchData2?.login?.toLowerCase();
-                  const { selectedRegion: sr2 } = await browser.storage.local.get(['selectedRegion']);
-                  const region2 = sr2 || 'na1';
-                  if (twitchUsername2 && userData2) {
-                    const solo2 = userData2.soloQueueRank || null;
-                    const rankData2 = solo2 ? {
-                      tier: solo2.tier,
-                      division: solo2.rank,
-                      leaguePoints: solo2.leaguePoints,
-                      summonerName: userData2.riotId,
-                      region: region2
-                    } : {
-                      tier: 'UNRANKED',
-                      division: '',
-                      leaguePoints: null,
-                      summonerName: userData2.riotId,
-                      region: region2
-                    };
-                    userRankCache.set(twitchUsername2, rankData2);
-                  }
-                } catch (_) {}
-
-                await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
-                console.log('[EloWard Background] rank: refreshed (after silent reauth)');
-                sendResponse({ success: true, refreshed: true, reauthenticated: true });
-              } catch (postReauthErr) {
-                sendResponse({ success: false, refreshed: false, error: postReauthErr?.message || 'post reauth refresh failed' });
-              }
-            } catch (outerErr) {
-              // Final fallback: do nothing destructive; keep UI data intact
-              sendResponse({ success: false, refreshed: false, error: outerErr?.message || e?.message || 'refresh failed' });
-            }
+            // Auto-refresh failed - skip gracefully without altering stored data or triggering popups
+            sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
           }
         } else {
           // Non-intrusive reason logging to help diagnose skips

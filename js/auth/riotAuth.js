@@ -29,15 +29,17 @@ const defaultConfig = {
     leagueEntries: '/riot/league/entries'
   },
   storageKeys: {
+    // Legacy keys - kept for cleanup compatibility only
     accessToken: 'eloward_riot_access_token',
-    refreshToken: 'eloward_riot_refresh_token',
+    refreshToken: 'eloward_riot_refresh_token', 
     tokenExpiry: 'eloward_riot_token_expiry',
     tokens: 'eloward_riot_tokens',
+    idToken: 'eloward_riot_id_token',
+    // Active keys still used
     accountInfo: 'eloward_riot_account_info',
     rankInfo: 'eloward_riot_rank_info',
     authState: 'eloward_auth_state',
-    authCallback: 'eloward_auth_callback',
-    idToken: 'eloward_riot_id_token'
+    authCallback: 'eloward_auth_callback'
   }
 };
 
@@ -406,50 +408,32 @@ export const RiotAuth = {
   },
   
   /**
-   * Get a valid token or throw an error if none is available
+   * Get a valid token for non-rank operations (initial auth, account info, etc.)
+   * NOTE: For rank refreshes, use refreshRank(puuid) instead
    * @returns {Promise<string>} - The access token
    */
   async getValidToken() {
     try {
       const tokens = await this._getTokensObject();
       if (!tokens?.access_token) {
-        return null;
+        throw new ReAuthenticationRequiredError('No access token available. Please re-authenticate.');
       }
       
       const now = Date.now();
       const tokenExpiryMs = tokens.expires_at;
       const expiresInMs = (typeof tokenExpiryMs === 'number' ? tokenExpiryMs : parseInt(tokenExpiryMs, 10)) - now;
-      const twoMinutesInMs = 2 * 60 * 1000;
       
-      // Use existing token if valid for more than 2 minutes
-      if (expiresInMs > twoMinutesInMs) {
-        return tokens.access_token;
-      }
-      
-      // Refresh if expires within 2 minutes or already expired
-      if (tokens.refresh_token) {
-        try {
-          console.log('[RiotAuth] token: refreshing');
-          const refreshResult = await this.refreshToken();
-          console.log('[RiotAuth] token: refreshed');
-          return refreshResult?.access_token || null;
-        } catch (refreshError) {
-          console.warn('[RiotAuth] token: refresh failed', refreshError?.message || refreshError);
-          throw refreshError;
-        }
-      }
-      
-      // No refresh token available
+      // Check if token is expired
       if (expiresInMs <= 0) {
-        throw new ReAuthenticationRequiredError('Token expired and no refresh token available');
+        throw new ReAuthenticationRequiredError('Token expired. Please re-authenticate.');
       }
       
-      return null;
+      return tokens.access_token;
     } catch (error) {
       if (error instanceof ReAuthenticationRequiredError) {
         throw error;
       }
-      throw error;
+      throw new ReAuthenticationRequiredError('Failed to get valid token. Please re-authenticate.');
     }
   },
   
@@ -478,118 +462,25 @@ export const RiotAuth = {
   },
   
   /**
-   * Refresh the access token using a refresh token
+   * DEPRECATED: Refresh the access token using a refresh token
+   * This method is kept for compatibility but should not be used for rank refreshes.
+   * Use refreshRank(puuid) instead for simplified rank updates.
    * @returns {Promise<Object>} - The refreshed token data or null if refresh fails
+   * @deprecated Use refreshRank(puuid) for rank updates
    */
   async refreshToken() {
-    const tokens = await this._getTokensObject();
-    const refreshToken = tokens?.refresh_token;
-
-    if (!refreshToken) {
-      throw new ReAuthenticationRequiredError("No refresh token available for refresh.");
-    }
-
-    try {
-      console.log('[RiotAuth] token: refreshing');
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken
-        }),
-      });
-
-      if (!response.ok) {
-        console.warn('[RiotAuth] token: refresh endpoint returned', response.status);
-        throw new ReAuthenticationRequiredError(`Token refresh failed with status ${response.status}`);
-      }
-
-      const newTokens = await response.json();
-      const actualTokenData = newTokens.data || newTokens;
-      const tokensToStore = {
-        access_token: actualTokenData.access_token,
-        id_token: actualTokenData.id_token || tokens?.id_token,
-        refresh_token: actualTokenData.refresh_token || refreshToken,
-        expires_at: Date.now() + (actualTokenData.expires_in * 1000),
-        scope: actualTokenData.scope || tokens?.scope,
-        token_type: actualTokenData.token_type || tokens?.token_type
-      };
-      await this._storeTokens(tokensToStore);
-      console.log('[RiotAuth] token: refreshed');
-      return tokensToStore;
-
-    } catch (error) {
-      if (error instanceof ReAuthenticationRequiredError) {
-        throw error;
-      }
-      throw new ReAuthenticationRequiredError(`Unexpected error during token refresh: ${error.message}`);
-    }
+    throw new ReAuthenticationRequiredError("Token refresh is deprecated. Use refreshRank(puuid) for rank updates or re-authenticate for new tokens.");
   },
   
   /**
-   * Perform silent re-authentication to get fresh tokens
+   * DEPRECATED: Perform silent re-authentication to get fresh tokens
+   * This method should not be used for rank refreshes. Use refreshRank(puuid) instead.
    * @param {string} region - The region for authentication
    * @returns {Promise<Object>} - The new user data
+   * @deprecated Use refreshRank(puuid) for rank updates or full re-authentication for new initial setup
    */
   async performSilentReauth(region) {
-    try {
-      // Ensure selected region is stored prior to re-auth
-      try {
-        if (region) {
-          await browser.storage.local.set({ selectedRegion: region });
-        }
-      } catch (_) {}
-
-      // Prefer silent refresh-token flow (no UI)
-      try {
-        const refreshed = await this.refreshToken();
-        if (refreshed && refreshed.access_token) {
-          const userData = await this.getUserData(true);
-          await PersistentStorage.storeRiotUserData(userData);
-          return userData;
-        }
-      } catch (e) {
-        // Fall through to interactive non-forced re-auth if refresh token invalid/missing
-        if (!(e instanceof ReAuthenticationRequiredError)) {
-          throw e;
-        }
-      }
-
-      // Interactive fallback without forcing login prompt (leverages existing Riot session)
-      await browser.storage.local.remove(['auth_callback', 'riot_auth_callback', 'eloward_auth_callback']);
-      const state = this._generateRandomState();
-      await this._storeAuthState(state);
-
-      const originalForce = this.config.forcePromptLogin;
-      this.config.forcePromptLogin = false; // do not force prompt during silent fallback
-      let authUrl;
-      try {
-        authUrl = await this._getAuthUrl(region, state);
-      } finally {
-        // restore original setting
-        this.config.forcePromptLogin = originalForce;
-      }
-
-      // Open (non-forced) auth window and await callback
-      this._openAuthWindow(authUrl);
-      const authResult = await this._waitForAuthCallback();
-      if (!authResult || !authResult.code) {
-        throw new ReAuthenticationRequiredError('Interactive re-auth cancelled or failed');
-      }
-      if (authResult.state !== state) {
-        throw new Error('Silent re-authentication security verification failed');
-      }
-
-      await this.exchangeCodeForTokens(authResult.code);
-      const userData = await this.getUserData();
-      await PersistentStorage.storeRiotUserData(userData);
-      return userData;
-    } catch (error) {
-      throw error;
-    }
+    throw new ReAuthenticationRequiredError('Silent re-authentication is deprecated for rank refreshes. Use refreshRank(puuid) or perform full re-authentication.');
   },
   
   /**
@@ -600,32 +491,18 @@ export const RiotAuth = {
     try {
       // Attempt backend disconnect first to remove rank data in DB
       try {
-        const tokens = await this._getTokensObject();
-        const region = (await this._getStoredValue('selectedRegion')) || 'na1';
-        const accessToken = tokens?.access_token || null;
+        // Get PUUID from persistent storage (consistent with refresh flow)
+        const persistentRiotData = await PersistentStorage.getRiotUserData();
+        const puuid = persistentRiotData?.puuid;
 
-        if (accessToken && region) {
-          // Try once with current token
-          let response = await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
+        if (puuid) {
+          // Use simplified PUUID-only disconnect
+          await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ riot_token: accessToken, region })
+            body: JSON.stringify({ puuid })
           });
-
-          // If token is expired/invalid, refresh and retry once
-          if ((response.status === 401 || response.status === 403) && tokens?.refresh_token) {
-            try {
-              const refreshed = await this.refreshToken();
-              response = await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ riot_token: refreshed.access_token, region })
-              });
-            } catch (_) {
-              // Ignore refresh errors; proceed to local cleanup
-            }
-          }
-          // We don't throw on non-OK here; local cleanup still proceeds
+          // We don't throw on non-OK here; local cleanup still proceeds regardless
         }
       } catch (_) {
         // Swallow backend errors; ensure local cleanup still happens
@@ -869,6 +746,16 @@ export const RiotAuth = {
       const responseData = await response.json();
       
       if (!response.ok) {
+        // Handle 404 errors specifically for immediate UI refresh
+        if (response.status === 404) {
+          // Clear persistent storage for immediate UI refresh
+          await PersistentStorage.clearServiceData('riot');
+          const error = new Error('Account not found. Please reconnect your Riot account.');
+          error.status = 404;
+          error.requiresImmediateUIRefresh = true;
+          throw error;
+        }
+        
         // Check if we need to clear persistent data
         if (responseData.action === 'clear_persistent_data') {
           // Clear persistent storage and throw error to prompt reconnect

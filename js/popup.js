@@ -668,33 +668,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       
-      // Re-auth flows: silent first, then interactive popup
+      // Re-authentication required - prompt user to reconnect
       try {
-        await RiotAuth.performSilentReauth(region);
+        await RiotAuth.authenticate(region);
+        const userData = await RiotAuth.getUserData();
+        try { await PersistentStorage.storeRiotUserData(userData); } catch (_) {}
+        updateUserInterface(userData);
+        updateBackgroundCacheForLocalUser(userData);
         await tryPerform();
-        console.log('[EloWard Popup] Manual rank refresh after silent re-auth: successful');
+        console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
         return;
-      } catch (silentErr) {
+      } catch (interactiveErr) {
         try {
-          await RiotAuth.authenticate(region);
-          const userData = await RiotAuth.getUserData();
-          try { await PersistentStorage.storeRiotUserData(userData); } catch (_) {}
-          updateUserInterface(userData);
-          updateBackgroundCacheForLocalUser(userData);
-          await tryPerform();
-          console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
-          return;
-        } catch (interactiveErr) {
-          try {
             await PersistentStorage.updateConnectedState('riot', false);
             await PersistentStorage.clearServiceData('riot');
           } catch (_) {}
           showAuthError('Authentication failed. Please reconnect your Riot account.');
           return;
         }
-      }
     } catch (error) {
       console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
+      
+      // Handle 404 errors with immediate UI refresh to show "Not Connected"
+      if (error?.status === 404 || error?.requiresImmediateUIRefresh) {
+        // Immediately refresh UI to show not connected state
+        showNotConnectedUI();
+        return;
+      }
+      
       // Show "Unranked" if there's a rank lookup error or no data found for this region
       if (error?.message && (
           error.message.includes('not found') || 
