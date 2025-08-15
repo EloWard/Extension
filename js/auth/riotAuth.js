@@ -560,13 +560,8 @@ export const RiotAuth = {
       
 
       
-      // Determine regional route based on platform/region
-      const storedRegion = await this._getStoredValue('selectedRegion');
-      const platform = storedRegion; // require explicit selection
-      if (!platform) {
-        throw new Error('No region selected');
-      }
-      const regionalRoute = this._getRegionalRouteFromPlatform(platform);
+      // Always use americas regional route for account info
+      const regionalRoute = 'americas';
       
 
       
@@ -695,29 +690,6 @@ export const RiotAuth = {
    * @returns {string} - Regional route (e.g., 'americas')
    * @private
    */
-  _getRegionalRouteFromPlatform(platform) {
-    const platformMap = {
-      'na1': 'americas',
-      'br1': 'americas',
-      'la1': 'americas',
-      'la2': 'americas',
-      'oc1': 'americas',
-      'euw1': 'europe',
-      'eun1': 'europe',
-      'tr1': 'europe',
-      'ru': 'europe',
-      'me1': 'europe',
-      'kr': 'asia',
-      'jp1': 'asia',
-      'ph2': 'asia',
-      'sg2': 'asia',
-      'th2': 'asia',
-      'tw2': 'asia',
-      'vn2': 'asia'
-    };
-    
-    return platformMap[platform] || 'americas'; // Default to americas if platform not found
-  },
   
   /**
    * Refresh rank data using simplified PUUID-only flow
