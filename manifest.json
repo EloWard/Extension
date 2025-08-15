@@ -1,7 +1,7 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "EloWard",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Injects real-time League of Legends rank badges into Twitch chat so you can seamlessly display your rank on any channel",
   "icons": {
     "16": "images/logo/icon16.png",
@@ -33,19 +33,10 @@
     }
   ],
   "web_accessible_resources": [
-    {
-      "resources": [
-        "images/logo/*.png"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
+    "images/logo/*.png"
   ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev"
-  },
-  "action": {
+  "content_security_policy": "script-src 'self'; object-src 'self'; img-src 'self' data: https://eloward-cdn.unleashai.workers.dev",
+  "browser_action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "images/logo/icon16.png",
@@ -55,16 +46,18 @@
   },
   "permissions": [
     "storage",
-    "tabs"
-  ],
-  "host_permissions": [
+    "tabs",
     "https://www.twitch.tv/*",
     "https://gql.twitch.tv/*",
     "https://*.unleashai.workers.dev/*",
     "https://www.eloward.com/*"
   ],
   "background": {
-    "service_worker": "js/background/background.js",
-    "type": "module"
+    "page": "background.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "eloward@unleashai.workers.dev"
+    }
   }
 }
