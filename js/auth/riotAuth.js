@@ -823,19 +823,19 @@ export const RiotAuth = {
       'br1': 'americas',
       'la1': 'americas',
       'la2': 'americas',
+      'oc1': 'americas',
       'euw1': 'europe',
       'eun1': 'europe',
       'tr1': 'europe',
       'ru': 'europe',
+      'me1': 'europe',
       'kr': 'asia',
       'jp1': 'asia',
-      'oc1': 'americas',
-      'me1': 'europe',
-      'ph2': 'sea',
-      'sg2': 'sea',
-      'th2': 'sea',
-      'tw2': 'sea',
-      'vn2': 'sea'
+      'ph2': 'asia',
+      'sg2': 'asia',
+      'th2': 'asia',
+      'tw2': 'asia',
+      'vn2': 'asia'
     };
     
     return platformMap[platform] || 'americas'; // Default to americas if platform not found
