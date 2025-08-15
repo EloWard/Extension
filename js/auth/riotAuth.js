@@ -23,7 +23,8 @@ const defaultConfig = {
   endpoints: {
     authInit: '/auth/init',
     authToken: '/auth/token',
-    authRefresh: '/auth/riot/token/refresh',
+    authRefresh: '/auth/riot/token/refresh', // DEPRECATED - kept for compatibility
+    refreshRank: '/riot/refreshrank',
     accountInfo: '/riot/account',
     leagueEntries: '/riot/league/entries'
   },
@@ -842,7 +843,51 @@ export const RiotAuth = {
   },
   
   /**
-   * Get rank data for the specified PUUID
+   * Refresh rank data using simplified PUUID-only flow
+   * @param {string} puuid - The player's PUUID from persistent storage
+   * @returns {Promise<Object>} - Updated rank data or error
+   */
+  async refreshRank(puuid) {
+    try {
+      if (!puuid) {
+        throw new Error('No PUUID provided');
+      }
+      
+      // Call the simplified refresh endpoint with only PUUID
+      const requestUrl = `${this.config.proxyBaseUrl}/riot/refreshrank`;
+      
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          puuid: puuid
+        })
+      });
+      
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        // Check if we need to clear persistent data
+        if (responseData.action === 'clear_persistent_data') {
+          // Clear persistent storage and throw error to prompt reconnect
+          await PersistentStorage.clearServiceData('riot');
+          throw new Error('Account disconnected. Please reconnect your Riot account.');
+        }
+        
+        throw new Error(responseData.message || 'Failed to refresh rank');
+      }
+      
+      return responseData.data;
+    } catch (error) {
+      console.error('[RiotAuth] refreshRank error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get rank data for the specified PUUID (legacy method for compatibility)
    * @param {string} puuid - The player's PUUID
    * @returns {Promise<Array>} - Array of league entries
    */

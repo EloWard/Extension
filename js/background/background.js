@@ -583,32 +583,45 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (shouldRefresh && canRefresh && hasStoredRiot) {
           console.log('[EloWard Background] rank: refreshing');
           try {
-            const accountInfo = await RiotAuth.getAccountInfo();
-            if (!accountInfo || !accountInfo.puuid) throw new Error('Missing account info');
+            // Get PUUID from persistent storage instead of making token-based API call
+            const persistentRiotData = await PersistentStorage.getRiotUserData();
+            if (!persistentRiotData || !persistentRiotData.puuid) {
+              throw new Error('Missing PUUID in persistent storage');
+            }
 
-            await RiotAuth.getRankInfo(accountInfo.puuid);
-            const userData = await RiotAuth.getUserData(true);
-            await PersistentStorage.storeRiotUserData(userData);
+            // Use simplified PUUID-only refresh
+            const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
+            
+            // Update the persistent data with new rank information
+            const updatedUserData = {
+              ...persistentRiotData,
+              soloQueueRank: {
+                tier: refreshedRankData.tier,
+                rank: refreshedRankData.rank,
+                leaguePoints: refreshedRankData.lp
+              }
+            };
+            
+            await PersistentStorage.storeRiotUserData(updatedUserData);
 
             // Update background cache entry for local user (if we know Twitch username)
             try {
               const twitchData = await PersistentStorage.getTwitchUserData();
               const twitchUsername = twitchData?.login?.toLowerCase();
-              const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
-              const region = selectedRegion || 'na1';
-              if (twitchUsername && userData) {
-                const solo = userData.soloQueueRank || null;
+              const region = refreshedRankData.region || 'na1';
+              if (twitchUsername && updatedUserData) {
+                const solo = updatedUserData.soloQueueRank || null;
                 const rankData = solo ? {
                   tier: solo.tier,
                   division: solo.rank,
                   leaguePoints: solo.leaguePoints,
-                  summonerName: userData.riotId,
+                  summonerName: updatedUserData.riotId,
                   region
                 } : {
                   tier: 'UNRANKED',
                   division: '',
                   leaguePoints: null,
-                  summonerName: userData.riotId,
+                  summonerName: updatedUserData.riotId,
                   region
                 };
                 userRankCache.set(twitchUsername, rankData);

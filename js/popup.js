@@ -716,24 +716,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Perform the actual rank refresh operation
   async function performRankRefresh() {
-    const accountInfo = await RiotAuth.getAccountInfo();
+    // Get PUUID from persistent storage instead of making token-based API call
+    const persistentRiotData = await PersistentStorage.getRiotUserData();
     
-    if (!accountInfo || !accountInfo.puuid) {
-      throw new Error('Account information not available');
+    if (!persistentRiotData || !persistentRiotData.puuid) {
+      throw new Error('Account information not available. Please reconnect your Riot account.');
     }
     
-    const selectedRegion = regionSelect.value;
-    const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
-    const userData = await RiotAuth.getUserData(true);
-    // Minimal success log
+    // Use simplified PUUID-only refresh
+    const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
+    
+    // Update the persistent data with new rank information
+    const updatedUserData = {
+      ...persistentRiotData,
+      soloQueueRank: {
+        tier: refreshedRankData.tier,
+        rank: refreshedRankData.rank,
+        leaguePoints: refreshedRankData.lp
+      }
+    };
+    
     console.log('[EloWard Popup] rank: refreshed');
     
-    updateUserInterface(userData);
-    await PersistentStorage.storeRiotUserData(userData);
+    updateUserInterface(updatedUserData);
+    await PersistentStorage.storeRiotUserData(updatedUserData);
     // Ensure background cache for local user is up-to-date after refresh
-    updateBackgroundCacheForLocalUser(userData);
-    
-    // Backend storage is now handled by getUserData() - no duplicate call needed
+    updateBackgroundCacheForLocalUser(updatedUserData);
   }
 
   // Simple cache for the current user's rank badge image by tier, stored as a data URL
