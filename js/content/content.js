@@ -1668,10 +1668,15 @@ function showSevenTVTooltip(event, rankData) {
   tooltipText.className = 'eloward-7tv-tooltip-text';
   tooltipText.style.textAlign = 'center';
   const regionLine = getDisplayRegion(rankData.region);
-  const lines = [];
-  if (regionLine) lines.push(`<div class="eloward-region-line">${regionLine}</div>`);
-  lines.push(`<div>${formatRankTextForTooltip(rankData)}</div>`);
-  tooltipText.innerHTML = lines.join('');
+  if (regionLine) {
+    const regionDiv = document.createElement('div');
+    regionDiv.className = 'eloward-region-line';
+    regionDiv.textContent = regionLine;
+    tooltipText.appendChild(regionDiv);
+  }
+  const rankDiv = document.createElement('div');
+  rankDiv.textContent = formatRankTextForTooltip(rankData);
+  tooltipText.appendChild(rankDiv);
   
   tooltip.appendChild(tooltipBadge);
   tooltip.appendChild(tooltipText);
