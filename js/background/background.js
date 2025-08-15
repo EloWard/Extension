@@ -201,8 +201,7 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
       return userInfo;
     } else {
-      const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
-      const userData = await RiotAuth.getUserData();
+      const userData = await RiotAuth.exchangeCodeForUserData(authData.code);
 
       // Ensure all storage operations complete in sequence
       await PersistentStorage.storeRiotUserData(userData);
@@ -494,21 +493,23 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'get_user_rank_by_puuid') {
     const { puuid, region } = message;
-    
-    RiotAuth.getValidToken()
-      .then(token => {
-        getRankByPuuid(token, puuid, region)
-          .then(rankData => {
-            sendResponse({ rank: rankData });
-          })
-          .catch(error => {
-            sendResponse({ error: error.message });
-          });
-      })
-      .catch(error => {
-        sendResponse({ error: error.message });
-      });
-    
+    (async () => {
+      try {
+        const resp = await fetch(`${RIOT_AUTH_URL}/riot/refreshrank`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ puuid, region })
+        });
+        if (!resp.ok) {
+          sendResponse({ error: 'refresh failed' });
+          return;
+        }
+        const data = await resp.json();
+        sendResponse({ rank: data?.rank || null });
+      } catch (e) {
+        sendResponse({ error: e?.message || 'unexpected' });
+      }
+    })();
     return true;
   }
   
@@ -568,127 +569,72 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const now = Date.now();
         const { eloward_last_rank_refresh_at: lastRefreshAt } = await browser.storage.local.get(['eloward_last_rank_refresh_at']);
-
         const shouldRefresh = !lastRefreshAt || (now - Number(lastRefreshAt) >= RANK_REFRESH_INTERVAL_MS);
 
-        // Verify Riot is authenticated and we have stored riot data before attempting refresh
-        let canRefresh = false;
-        try { canRefresh = await RiotAuth.isAuthenticated(true); } catch (_) { canRefresh = false; }
-        let hasStoredRiot = false;
-        try {
-          const riotStored = await browser.storage.local.get(['eloward_persistent_riot_user_data']);
-          hasStoredRiot = !!riotStored?.eloward_persistent_riot_user_data?.puuid;
-        } catch (_) { hasStoredRiot = false; }
+        const wrap = await browser.storage.local.get(['eloward_persistent_riot_user_data', 'selectedRegion']);
+        const riotStored = wrap?.eloward_persistent_riot_user_data || null;
+        const region = wrap?.selectedRegion || 'na1';
+        const hasStoredRiot = !!riotStored?.puuid;
 
-        if (shouldRefresh && canRefresh && hasStoredRiot) {
-          console.log('[EloWard Background] rank: refreshing');
-          try {
-            const accountInfo = await RiotAuth.getAccountInfo();
-            if (!accountInfo || !accountInfo.puuid) throw new Error('Missing account info');
-
-            await RiotAuth.getRankInfo(accountInfo.puuid);
-            const userData = await RiotAuth.getUserData(true);
-            await PersistentStorage.storeRiotUserData(userData);
-
-            // Update background cache entry for local user (if we know Twitch username)
-            try {
-              const twitchData = await PersistentStorage.getTwitchUserData();
-              const twitchUsername = twitchData?.login?.toLowerCase();
-              const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
-              const region = selectedRegion || 'na1';
-              if (twitchUsername && userData) {
-                const solo = userData.soloQueueRank || null;
-                const rankData = solo ? {
-                  tier: solo.tier,
-                  division: solo.rank,
-                  leaguePoints: solo.leaguePoints,
-                  summonerName: userData.riotId,
-                  region
-                } : {
-                  tier: 'UNRANKED',
-                  division: '',
-                  leaguePoints: null,
-                  summonerName: userData.riotId,
-                  region
-                };
-                userRankCache.set(twitchUsername, rankData);
-              }
-            } catch (_) { /* ignore cache update errors */ }
-
-            await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
-            console.log('[EloWard Background] rank: refreshed');
-            sendResponse({ success: true, refreshed: true });
-          } catch (e) {
-            console.warn('[EloWard Background] rank: refresh failed', e?.message || e);
-            // Attempt silent re-auth only; do not trigger popup or clear persistent user data
-            try {
-              const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
-              const region = selectedRegion || 'na1';
-              let userDataAfterReauth = null;
-              try {
-                userDataAfterReauth = await RiotAuth.performSilentReauth(region);
-              } catch (_) {
-                // Silent reauth failed; gracefully skip without altering stored data
-                sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
-                return;
-              }
-
-              try {
-                const accountInfo2 = await RiotAuth.getAccountInfo();
-                if (!accountInfo2 || !accountInfo2.puuid) throw new Error('Missing account info after reauth');
-                await RiotAuth.getRankInfo(accountInfo2.puuid);
-                const userData2 = userDataAfterReauth || await RiotAuth.getUserData(true);
-                await PersistentStorage.storeRiotUserData(userData2);
-
-                try {
-                  const twitchData2 = await PersistentStorage.getTwitchUserData();
-                  const twitchUsername2 = twitchData2?.login?.toLowerCase();
-                  const { selectedRegion: sr2 } = await browser.storage.local.get(['selectedRegion']);
-                  const region2 = sr2 || 'na1';
-                  if (twitchUsername2 && userData2) {
-                    const solo2 = userData2.soloQueueRank || null;
-                    const rankData2 = solo2 ? {
-                      tier: solo2.tier,
-                      division: solo2.rank,
-                      leaguePoints: solo2.leaguePoints,
-                      summonerName: userData2.riotId,
-                      region: region2
-                    } : {
-                      tier: 'UNRANKED',
-                      division: '',
-                      leaguePoints: null,
-                      summonerName: userData2.riotId,
-                      region: region2
-                    };
-                    userRankCache.set(twitchUsername2, rankData2);
-                  }
-                } catch (_) {}
-
-                await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
-                console.log('[EloWard Background] rank: refreshed (after silent reauth)');
-                sendResponse({ success: true, refreshed: true, reauthenticated: true });
-              } catch (postReauthErr) {
-                sendResponse({ success: false, refreshed: false, error: postReauthErr?.message || 'post reauth refresh failed' });
-              }
-            } catch (outerErr) {
-              // Final fallback: do nothing destructive; keep UI data intact
-              sendResponse({ success: false, refreshed: false, error: outerErr?.message || e?.message || 'refresh failed' });
-            }
-          }
-        } else {
-          // Non-intrusive reason logging to help diagnose skips
-          try {
-            console.log('[EloWard Background] Auto rank refresh: skipped', {
-              shouldRefresh,
-              canRefresh,
-              hasStoredRiot,
-              minutesSinceLast: lastRefreshAt ? Math.round((now - Number(lastRefreshAt)) / 60000) : null
-            });
-          } catch (_) { /* ignore logging errors */ }
+        if (!shouldRefresh || !hasStoredRiot) {
           sendResponse({ success: true, refreshed: false });
+          return;
         }
+
+        console.log('[EloWard Background] rank: refreshing (puuid only)');
+        const resp = await fetch(`${RIOT_AUTH_URL}/riot/refreshrank`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ puuid: riotStored.puuid, region })
+        });
+
+        if (!resp.ok) {
+          try { await PersistentStorage.clearServiceData('riot'); } catch (_) {}
+          sendResponse({ success: false, refreshed: false, error: 'refresh failed', cleared: true });
+          return;
+        }
+
+        const data = await resp.json();
+        const rank = data?.rank || null;
+        const userData = {
+          riotId: riotStored.riotId,
+          puuid: riotStored.puuid,
+          soloQueueRank: rank ? {
+            tier: String(rank.tier || 'UNRANKED').toUpperCase(),
+            rank: rank.division || '',
+            leaguePoints: rank.leaguePoints ?? null
+          } : null
+        };
+
+        await PersistentStorage.storeRiotUserData(userData);
+
+        try {
+          const twitchData = await PersistentStorage.getTwitchUserData();
+          const twitchUsername = twitchData?.login?.toLowerCase();
+          if (twitchUsername) {
+            const solo = userData.soloQueueRank || null;
+            const rankData = solo ? {
+              tier: solo.tier,
+              division: solo.rank,
+              leaguePoints: solo.leaguePoints,
+              summonerName: userData.riotId,
+              region
+            } : {
+              tier: 'UNRANKED',
+              division: '',
+              leaguePoints: null,
+              summonerName: userData.riotId,
+              region
+            };
+            userRankCache.set(twitchUsername, rankData);
+          }
+        } catch (_) {}
+
+        await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
+        sendResponse({ success: true, refreshed: true });
       } catch (e) {
-        sendResponse({ success: false, refreshed: false, error: e?.message || 'unexpected' });
+        try { await PersistentStorage.clearServiceData('riot'); } catch (_) {}
+        sendResponse({ success: false, refreshed: false, error: e?.message || 'unexpected', cleared: true });
       }
     })();
     return true;
@@ -746,6 +692,11 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_riot_account_info',
         'eloward_riot_id_token',
         'eloward_riot_rank_info',
+        // Riot token keys (no longer used)
+        'eloward_riot_access_token',
+        'eloward_riot_refresh_token',
+        'eloward_riot_token_expiry',
+        'eloward_riot_tokens',
         'eloward_signin_attempted',
         'riot_auth',
         'twitch_auth'
@@ -795,6 +746,11 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_riot_account_info',
         'eloward_riot_id_token',
         'eloward_riot_rank_info',
+        // Riot token keys (no longer used)
+        'eloward_riot_access_token',
+        'eloward_riot_refresh_token',
+        'eloward_riot_token_expiry',
+        'eloward_riot_tokens',
         'eloward_signin_attempted',
         'riot_auth',
         RANK_CACHE_STORAGE_KEY,
@@ -803,44 +759,6 @@ browser.runtime.onInstalled.addListener((details) => {
     } catch (_) {}
   })();
 
-function clearAllStoredData() {
-  return new Promise((resolve) => {
-    try {
-      const keysToRemove = [
-        // Auth tokens (kept for API functionality)
-        'eloward_riot_access_token',
-        'eloward_riot_refresh_token',
-        'eloward_riot_token_expiry',
-        'eloward_riot_tokens',
-        'eloward_twitch_access_token',
-        'eloward_twitch_refresh_token',
-        'eloward_twitch_token_expiry',
-        'eloward_twitch_tokens',
-        // Auth state and callback handling
-        'eloward_auth_state',
-        'eloward_twitch_auth_state',
-        'auth_callback',
-        'eloward_auth_callback',
-        'twitch_auth_callback',
-        'riot_auth_callback',
-        'authCallbackProcessed'
-      ];
-      
-      browser.storage.local.remove(keysToRemove).then(() => {
-        PersistentStorage.clearAllData()
-          .then(() => {
-            PersistentStorage.init();
-            resolve();
-          })
-          .catch(error => {
-            resolve();
-          });
-      });
-    } catch (error) {
-      resolve();
-    }
-  });
-}
 
 function checkChannelActive(channelName, skipCache = false) {
   if (!channelName) {
@@ -872,43 +790,6 @@ function checkChannelActive(channelName, skipCache = false) {
   });
 }
 
-function getRankByPuuid(token, puuid, platform) {
-  // Use the worker's path-param route: /riot/league/:platform/:puuid
-  return new Promise((resolve, reject) => {
-    fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${puuid}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`League request failed: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then(leagueEntryOrEntries => {
-        // Worker returns either the solo queue entry or the full array
-        const entry = Array.isArray(leagueEntryOrEntries)
-          ? leagueEntryOrEntries.find(e => e.queueType === 'RANKED_SOLO_5x5')
-          : leagueEntryOrEntries;
-
-        if (entry && entry.queueType === 'RANKED_SOLO_5x5') {
-          resolve({
-            tier: entry.tier,
-            division: entry.rank,
-            leaguePoints: entry.leaguePoints,
-            wins: entry.wins,
-            losses: entry.losses
-          });
-        } else {
-          resolve(null);
-        }
-      })
-      .catch(error => {
-        reject(error);
-      });
-  });
-}
 
 function getRankIconUrl(tier) {
   if (!tier) return 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
@@ -961,21 +842,28 @@ async function getUserLinkedAccount(twitchUsername) {
 
 async function getRankForLinkedAccount(linkedAccount, platform) {
   try {
-    // Get valid token through RiotAuth
-    const token = await RiotAuth.getValidToken();
-    if (!token) {
-      throw new Error('No valid Riot auth token available');
+    if (!linkedAccount?.puuid) {
+      throw new Error('Missing PUUID');
     }
-    
-    return await getRankByPuuid(token, linkedAccount.puuid, platform);
+    const resp = await fetch(`${RIOT_AUTH_URL}/riot/refreshrank`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ puuid: linkedAccount.puuid, region: platform })
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const rank = data?.rank || null;
+    if (!rank) return null;
+    return {
+      tier: rank.tier,
+      division: rank.division,
+      leaguePoints: rank.leaguePoints
+    };
   } catch (error) {
     throw error;
   }
 }
 
-function loadConfiguration() {
-  // Intentionally no-op: do not set default region
-}
 
 async function fetchRankFromDatabase(twitchUsername) {
   if (!twitchUsername) return null;

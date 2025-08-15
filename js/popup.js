@@ -630,11 +630,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function refreshRank() {
     try {
       console.log('[EloWard Popup] Manual rank refresh: requested');
-      // Show a loading state on the button (add a rotating animation class)
       refreshRankBtn.classList.add('refreshing');
-      refreshRankBtn.disabled = true; // Disable button while refreshing
-      
-      // Determine region (from selector or storage)
+      refreshRankBtn.disabled = true;
+
+      // Determine region
       let region = regionSelect.value;
       if (!region) {
         try {
@@ -646,67 +645,49 @@ document.addEventListener('DOMContentLoaded', () => {
         showAuthError('Select a region to refresh rank.');
         return;
       }
-      
-      const tryPerform = async () => {
-        await performRankRefresh();
-        try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
-        console.log('[EloWard Popup] Manual rank refresh: successful');
-      };
-      
-      let isAuthenticated = false;
-      try { isAuthenticated = await RiotAuth.isAuthenticated(); } catch (_) { isAuthenticated = false; }
-      
-      if (isAuthenticated) {
-        try {
-          await tryPerform();
-          return;
-        } catch (error) {
-          if (error?.name !== 'ReAuthenticationRequiredError') {
-            throw error;
-          }
-          // fall through to re-auth flows
-        }
-      }
-      
-      // Re-auth flows: silent first, then interactive popup
-      try {
-        await RiotAuth.performSilentReauth(region);
-        await tryPerform();
-        console.log('[EloWard Popup] Manual rank refresh after silent re-auth: successful');
+
+      // Require stored riot data with puuid
+      const riotStored = await PersistentStorage.getRiotUserData();
+      if (!riotStored?.puuid) {
+        await PersistentStorage.clearServiceData('riot');
+        showAuthError('Not Connected');
         return;
-      } catch (silentErr) {
-        try {
-          await RiotAuth.authenticate(region);
-          const userData = await RiotAuth.getUserData();
-          try { await PersistentStorage.storeRiotUserData(userData); } catch (_) {}
-          updateUserInterface(userData);
-          updateBackgroundCacheForLocalUser(userData);
-          await tryPerform();
-          console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
-          return;
-        } catch (interactiveErr) {
-          try {
-            await PersistentStorage.updateConnectedState('riot', false);
-            await PersistentStorage.clearServiceData('riot');
-          } catch (_) {}
-          showAuthError('Authentication failed. Please reconnect your Riot account.');
-          return;
-        }
       }
+
+      const resp = await fetch('https://eloward-riotauth.unleashai.workers.dev/riot/refreshrank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ puuid: riotStored.puuid, region })
+      });
+
+      if (!resp.ok) {
+        await PersistentStorage.clearServiceData('riot');
+        showNotConnectedUI();
+        return;
+      }
+
+      const data = await resp.json();
+      const rank = data?.rank || null;
+      const userData = {
+        riotId: riotStored.riotId,
+        puuid: riotStored.puuid,
+        soloQueueRank: rank ? {
+          tier: String(rank.tier || 'UNRANKED').toUpperCase(),
+          rank: rank.division || '',
+          leaguePoints: rank.leaguePoints ?? null
+        } : null
+      };
+
+      await PersistentStorage.storeRiotUserData(userData);
+      updateUserInterface(userData);
+      updateBackgroundCacheForLocalUser(userData);
+      try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
+      console.log('[EloWard Popup] Manual rank refresh: successful');
     } catch (error) {
       console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
-      // Show "Unranked" if there's a rank lookup error or no data found for this region
-      if (error?.message && (
-          error.message.includes('not found') || 
-          error.message.includes('not available') || 
-          error.message.includes('no rank data')
-      )) {
-        currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
-        rankBadgePreview.style.transform = 'translateY(-3px)';
-      }
+      try { await PersistentStorage.clearServiceData('riot'); } catch (_) {}
+      showNotConnectedUI();
     } finally {
-      // Remove loading state
       if (refreshRankBtn.classList.contains('refreshing')) {
         refreshRankBtn.classList.remove('refreshing');
         refreshRankBtn.disabled = false;
@@ -716,24 +697,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Perform the actual rank refresh operation
   async function performRankRefresh() {
-    const accountInfo = await RiotAuth.getAccountInfo();
-    
-    if (!accountInfo || !accountInfo.puuid) {
-      throw new Error('Account information not available');
-    }
-    
-    const selectedRegion = regionSelect.value;
-    const rankEntries = await RiotAuth.getRankInfo(accountInfo.puuid);
-    const userData = await RiotAuth.getUserData(true);
-    // Minimal success log
-    console.log('[EloWard Popup] rank: refreshed');
-    
-    updateUserInterface(userData);
-    await PersistentStorage.storeRiotUserData(userData);
-    // Ensure background cache for local user is up-to-date after refresh
-    updateBackgroundCacheForLocalUser(userData);
-    
-    // Backend storage is now handled by getUserData() - no duplicate call needed
+    // Deprecated; kept for backward compatibility. No-op under new flow.
+    return;
   }
 
   // Simple cache for the current user's rank badge image by tier, stored as a data URL
