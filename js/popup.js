@@ -688,6 +688,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     } catch (error) {
       console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
+      
+      // Handle 404 errors with immediate UI refresh to show "Not Connected"
+      if (error?.status === 404 || error?.requiresImmediateUIRefresh) {
+        // Immediately refresh UI to show not connected state
+        showNotConnectedUI();
+        return;
+      }
+      
       // Show "Unranked" if there's a rank lookup error or no data found for this region
       if (error?.message && (
           error.message.includes('not found') || 

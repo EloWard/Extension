@@ -746,6 +746,16 @@ export const RiotAuth = {
       const responseData = await response.json();
       
       if (!response.ok) {
+        // Handle 404 errors specifically for immediate UI refresh
+        if (response.status === 404) {
+          // Clear persistent storage for immediate UI refresh
+          await PersistentStorage.clearServiceData('riot');
+          const error = new Error('Account not found. Please reconnect your Riot account.');
+          error.status = 404;
+          error.requiresImmediateUIRefresh = true;
+          throw error;
+        }
+        
         // Check if we need to clear persistent data
         if (responseData.action === 'clear_persistent_data') {
           // Clear persistent storage and throw error to prompt reconnect
