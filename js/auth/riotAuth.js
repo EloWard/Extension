@@ -443,7 +443,6 @@ export const RiotAuth = {
       // Clear only auth-related session data (no tokens needed)
       const keysToRemove = [
         this.config.storageKeys.authState,
-        'selectedRegion',
         'riot_auth_callback',
         'eloward_auth_callback'
       ];
