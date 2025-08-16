@@ -144,6 +144,22 @@ async function handleAuthCallback(params) {
     return;
   }
 
+  // Check if popup is handling auth - if so, skip background processing to avoid race condition
+  try {
+    const { eloward_popup_auth_active } = await browser.storage.local.get(['eloward_popup_auth_active']);
+    if (eloward_popup_auth_active) {
+      console.log('[EloWard Background] Popup is handling auth, skipping background processing');
+      // Still store callback for popup to find
+      browser.storage.local.set({
+        'auth_callback': {
+          ...params,
+          timestamp: Date.now()
+        }
+      });
+      return;
+    }
+  } catch (_) {}
+
   // De-duplicate by state to avoid double-processing in Firefox
   if (params.state && processedAuthStates.has(params.state)) {
     return;
