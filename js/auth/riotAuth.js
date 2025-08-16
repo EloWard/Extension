@@ -22,7 +22,8 @@ const defaultConfig = {
   forcePromptLogin: true,
   endpoints: {
     authInit: '/auth/init',
-    authToken: '/auth/token',
+    authComplete: '/auth/complete', // NEW: Single-call optimized endpoint
+    authToken: '/auth/token', // DEPRECATED - kept for compatibility
     authRefresh: '/auth/riot/token/refresh', // DEPRECATED - kept for compatibility
     refreshRank: '/riot/refreshrank',
     accountInfo: '/riot/account',
@@ -128,31 +129,10 @@ export const RiotAuth = {
       // Clear any temporary callback keys written by the bridge
       try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','riot_auth_callback']); } catch (_) {}
 
-      // Exchange code for tokens (handle duplicate exchange race with background)
-      console.log('[RiotAuth] exchanging code for tokens');
-      try {
-        await this.exchangeCodeForTokens(authResult.code);
-        console.log('[RiotAuth] token exchange successful');
-      } catch (exchangeError) {
-        // If another context (background) already consumed the one-time code,
-        // tokens may already be present. Wait briefly and check storage.
-        try {
-          await new Promise(r => setTimeout(r, 250));
-          const tokens = await this._getTokensObject();
-          if (tokens && tokens.access_token) {
-            console.log('[RiotAuth] token exchange bypassed: tokens already present');
-            // proceed as success
-          } else {
-            throw exchangeError;
-          }
-        } catch (_) {
-          throw exchangeError;
-        }
-      }
-      
-
-      const userData = await this.getUserData();
-      console.log('[RiotAuth] getUserData successful', userData);
+      // Use optimized single-call auth endpoint
+      console.log('[RiotAuth] calling optimized auth complete endpoint');
+      const userData = await this.completeAuthentication(authResult.code, region);
+      console.log('[RiotAuth] auth complete successful', userData);
       
 
       await PersistentStorage.storeRiotUserData(userData);
@@ -281,9 +261,80 @@ export const RiotAuth = {
   },
   
   /**
-   * Exchange authorization code for tokens
+   * Complete authentication in single optimized call
+   * @param {string} code - The authorization code from Riot
+   * @param {string} region - The selected region
+   * @returns {Promise<Object>} - The complete user data
+   */
+  async completeAuthentication(code, region) {
+    try {
+      if (!code || !region) {
+        throw new Error('Missing required parameters: code and region');
+      }
+
+      // Get Twitch user data to get twitch_id (more secure than username)
+      const twitchUserData = await PersistentStorage.getTwitchUserData();
+      if (!twitchUserData?.id) {
+        throw new Error('Twitch authentication required first. Please connect Twitch.');
+      }
+
+      console.log('[RiotAuth] completeAuthentication config check', {
+        proxyBaseUrl: this.config.proxyBaseUrl,
+        authComplete: this.config.endpoints.authComplete,
+        twitchId: twitchUserData.id
+      });
+
+      const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.authComplete}`;
+      console.log('[RiotAuth] About to make fetch request to:', requestUrl);
+      
+      if (typeof fetch === 'undefined') {
+        throw new Error('fetch is not available in this environment');
+      }
+      
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          code: code,
+          twitch_id: twitchUserData.id,
+          region: region
+        })
+      });
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = null;
+        }
+        
+        const errorMessage = errorData?.error_description || 
+                            errorData?.error || 
+                            `${response.status}: ${response.statusText}`;
+        throw new Error(`Authentication failed: ${errorMessage}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.data || !result.data.puuid) {
+        throw new Error('Invalid response: Missing user data');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('[RiotAuth] completeAuthentication error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * DEPRECATED: Exchange authorization code for tokens
    * @param {string} code - The authorization code from Riot
    * @returns {Promise<Object>} - The token response object
+   * @deprecated Use completeAuthentication instead
    */
   async exchangeCodeForTokens(code) {
     try {
@@ -349,139 +400,20 @@ export const RiotAuth = {
     }
   },
   
-  /**
-   * Store tokens in both storage mechanisms
-   * @param {Object} tokenData - The token data to store
-   * @private
-   */
-  async _storeTokens(tokenData) {
-    try {
-      // Validate required token fields
-      if (!tokenData.access_token || typeof tokenData.access_token !== 'string') {
-        throw new Error('Missing or invalid access_token in token data');
-      }
-      
-      // Validate access token format
-      if (tokenData.access_token.length < 20) {
-        throw new Error('Access token appears to be invalid');
-      }
-      
-      // Store canonical tokens object only
-      const storageData = {
-        [this.config.storageKeys.tokens]: {
-          ...tokenData,
-          stored_at: Date.now()
-        }
-      };
-      await browser.storage.local.set(storageData);
-
-    } catch (error) {
-      throw error;
-    }
-  },
   
   /**
    * Check if user is authenticated
-   * @param {boolean} ignoreInitialErrors - Whether to ignore errors during initial auth check
    * @returns {Promise<boolean>} - True if authenticated
    */
-  async isAuthenticated(ignoreInitialErrors = false) {
+  async isAuthenticated() {
     try {
-      // FIRST check persistent storage - this takes priority
-      const isConnectedInPersistentStorage = await PersistentStorage.isServiceConnected('riot');
-      
-      // If connected in persistent storage, return true immediately without token checks
-      if (isConnectedInPersistentStorage) {
-        return true;
-      }
-      
-      // If not connected in persistent storage, try token validation as fallback
-      try {
-        const token = await this.getValidToken(ignoreInitialErrors);
-        return !!token;
-      } catch (e) {
-        return false;
-      }
+      // Check persistent storage - single source of truth
+      return await PersistentStorage.isServiceConnected('riot');
     } catch (error) {
       return false;
     }
   },
   
-  /**
-   * Get a valid token for non-rank operations (initial auth, account info, etc.)
-   * NOTE: For rank refreshes, use refreshRank(puuid) instead
-   * @returns {Promise<string>} - The access token
-   */
-  async getValidToken() {
-    try {
-      const tokens = await this._getTokensObject();
-      if (!tokens?.access_token) {
-        throw new ReAuthenticationRequiredError('No access token available. Please re-authenticate.');
-      }
-      
-      const now = Date.now();
-      const tokenExpiryMs = tokens.expires_at;
-      const expiresInMs = (typeof tokenExpiryMs === 'number' ? tokenExpiryMs : parseInt(tokenExpiryMs, 10)) - now;
-      
-      // Check if token is expired
-      if (expiresInMs <= 0) {
-        throw new ReAuthenticationRequiredError('Token expired. Please re-authenticate.');
-      }
-      
-      return tokens.access_token;
-    } catch (error) {
-      if (error instanceof ReAuthenticationRequiredError) {
-        throw error;
-      }
-      throw new ReAuthenticationRequiredError('Failed to get valid token. Please re-authenticate.');
-    }
-  },
-  
-  /**
-   * Centralized method to get tokens from various storage locations
-   * @returns {Promise<Object>} - Object with accessToken, refreshToken, tokenExpiry
-   * @private
-   */
-  // Removed: legacy token accessor (unused)
-  
-  /**
-   * Get value from browser.storage.local
-   * @param {string} key - The key to retrieve
-   * @returns {Promise<any>} The stored value
-   * @private
-   */
-  async _getStoredValue(key) {
-    if (!key) return null;
-    
-    try {
-      const result = await browser.storage.local.get([key]);
-      return result[key] || null;
-    } catch (error) {
-      return null;
-    }
-  },
-  
-  /**
-   * DEPRECATED: Refresh the access token using a refresh token
-   * This method is kept for compatibility but should not be used for rank refreshes.
-   * Use refreshRank(puuid) instead for simplified rank updates.
-   * @returns {Promise<Object>} - The refreshed token data or null if refresh fails
-   * @deprecated Use refreshRank(puuid) for rank updates
-   */
-  async refreshToken() {
-    throw new ReAuthenticationRequiredError("Token refresh is deprecated. Use refreshRank(puuid) for rank updates or re-authenticate for new tokens.");
-  },
-  
-  /**
-   * DEPRECATED: Perform silent re-authentication to get fresh tokens
-   * This method should not be used for rank refreshes. Use refreshRank(puuid) instead.
-   * @param {string} region - The region for authentication
-   * @returns {Promise<Object>} - The new user data
-   * @deprecated Use refreshRank(puuid) for rank updates or full re-authentication for new initial setup
-   */
-  async performSilentReauth(region) {
-    throw new ReAuthenticationRequiredError('Silent re-authentication is deprecated for rank refreshes. Use refreshRank(puuid) or perform full re-authentication.');
-  },
   
   /**
    * Completely disconnect and clear all Riot data including persistent storage
@@ -491,42 +423,31 @@ export const RiotAuth = {
     try {
       // Attempt backend disconnect first to remove rank data in DB
       try {
-        // Get PUUID from persistent storage (consistent with refresh flow)
         const persistentRiotData = await PersistentStorage.getRiotUserData();
         const puuid = persistentRiotData?.puuid;
 
         if (puuid) {
-          // Use simplified PUUID-only disconnect
           await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ puuid })
           });
-          // We don't throw on non-OK here; local cleanup still proceeds regardless
         }
       } catch (_) {
         // Swallow backend errors; ensure local cleanup still happens
       }
 
-      // Clear persistent user data
+      // Clear persistent user data (single source of truth)
       await PersistentStorage.clearServiceData('riot');
 
-      // Clear all the tokens and session data
-      let keysToRemove = [
-        this.config.storageKeys.accessToken,
-        this.config.storageKeys.refreshToken,
-        this.config.storageKeys.tokenExpiry,
-        this.config.storageKeys.tokens,
-        this.config.storageKeys.idToken,
-        this.config.storageKeys.accountInfo,
-        this.config.storageKeys.rankInfo,
+      // Clear only auth-related session data (no tokens needed)
+      const keysToRemove = [
         this.config.storageKeys.authState,
-        'riotAuth',
+        'selectedRegion',
         'riot_auth_callback',
         'eloward_auth_callback'
       ];
 
-      // Clear from browser.storage
       await browser.storage.local.remove(keysToRemove);
 
       return true;
@@ -549,147 +470,7 @@ export const RiotAuth = {
       .join('');
   },
   
-  /**
-   * Get Riot account information
-   * @returns {Promise<Object>} - Account info object
-   */
-  async getAccountInfo() {
-    try {
-      // Get access token for API request
-      const accessToken = await this.getValidToken();
-      
-
-      
-      // Always use americas regional route for account info
-      const regionalRoute = 'americas';
-      
-
-      
-      // We'll try multiple endpoints to get account info
-      let accountInfo = null;
-      let error = null;
-      
-      // Try the actual Cloudflare Worker endpoint first
-      try {
-        const requestUrl = `${this.config.proxyBaseUrl}${this.config.endpoints.accountInfo}/${regionalRoute}`;
-        
-        const response = await fetch(requestUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-        
-        if (response.ok) {
-          accountInfo = await response.json();
-        } else {
-          // Store error but continue to fallback methods
-          const errorData = await response.json().catch(() => ({}));
-          error = new Error(`Failed to get account info from primary endpoint: ${response.status} ${errorData.error_description || errorData.message || response.statusText}`);
-        }
-      } catch (accountError) {
-        // Store error but continue to fallback methods
-        error = accountError;
-      }
-      
-      // If primary endpoint failed, try fallback to ID token info from tokens
-      if (!accountInfo) {
-        const tokens = await this._getTokensObject();
-        const idToken = tokens?.id_token || null;
-        if (idToken) {
-          try {
-            const idTokenPayload = await this._decodeIdToken(idToken);
-            
-            if (idTokenPayload && idTokenPayload.sub) {
-              accountInfo = {
-                puuid: idTokenPayload.sub,
-                gameName: idTokenPayload.game_name || null,
-                tagLine: idTokenPayload.tag_line || null
-              };
-            }
-          } catch (tokenError) {
-          }
-        }
-      }
-      
-              // Try fallback endpoint if primary failed
-        if (!accountInfo) {
-          try {
-            const altRequestUrl = `${this.config.proxyBaseUrl}/riot/account/${regionalRoute}`;
-            
-            const response = await fetch(altRequestUrl, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`
-              }
-            });
-            
-            if (response.ok) {
-              accountInfo = await response.json();
-            }
-          } catch (fallbackError) {
-            // Fallback also failed
-          }
-        }
-      
-      // If we still don't have account info after all attempts, we fail
-      if (!accountInfo || !accountInfo.puuid) {
-        throw error || new Error('Failed to get account info from all available sources');
-      }
-      
-      // Use fallback values only if API data is missing
-      if (!accountInfo.gameName) {
-        accountInfo.gameName = 'Summoner';
-      }
-      
-      if (!accountInfo.tagLine) {
-        accountInfo.tagLine = platform.toUpperCase();
-      }
-      
-      // Avoid duplicating account info; persistent storage will store unified user data
-      
-      
-      return accountInfo;
-    } catch (error) {
-      throw error;
-    }
-  },
   
-  /**
-   * Helper method to decode ID token
-   * @param {string} idToken - The ID token to decode
-   * @returns {Promise<Object>} - The decoded payload
-   * @private
-   */
-  async _decodeIdToken(idToken) {
-    if (!idToken) return null;
-    
-    try {
-      const parts = idToken.split('.');
-      if (parts.length !== 3) return null;
-      
-      // Base64 decode the payload
-      let payload = parts[1];
-      payload = payload.replace(/-/g, '+').replace(/_/g, '/');
-      
-      // Add padding if needed
-      while (payload.length % 4) {
-        payload += '=';
-      }
-      
-      const jsonStr = atob(payload);
-      return JSON.parse(jsonStr);
-    } catch (error) {
-      return null;
-    }
-  },
-  
-  /**
-   * Get the regional route from a platform ID
-   * @param {string} platform - Platform ID (e.g., 'na1')
-   * @returns {string} - Regional route (e.g., 'americas')
-   * @private
-   */
   
   /**
    * Refresh rank data using simplified PUUID-only flow
@@ -745,248 +526,6 @@ export const RiotAuth = {
     }
   },
 
-  /**
-   * Get rank data for the specified PUUID (legacy method for compatibility)
-   * @param {string} puuid - The player's PUUID
-   * @returns {Promise<Array>} - Array of league entries
-   */
-  async getRankInfo(puuid) {
-    try {
-      
-      if (!puuid) {
-        throw new Error('No PUUID provided');
-      }
-      
-      // Get the region from storage
-      const region = await this._getStoredValue('selectedRegion');
-      if (!region) {
-        throw new Error('No region selected');
-      }
-      
-      // Get access token
-      const accessToken = await this.getValidToken();
-      if (!accessToken) {
-        throw new Error('No valid access token available');
-      }
-      
-      // Construct the URL for the league entries endpoint using PUUID
-      const requestUrl = `${this.config.proxyBaseUrl}/riot/league/entries?region=${region}&puuid=${puuid}`;
-      
-      // Make the request with the access token
-      const response = await fetch(requestUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        
-        try {
-          const errorData = await response.json();
-          throw new Error(`League API error: ${errorData.message || response.statusText}`);
-        } catch (e) {
-          throw new Error(`League API error: ${response.status} ${response.statusText}`);
-        }
-      }
-      
-      const rankData = await response.json();
-      
-      // Handle different response formats (array or object)
-      let rankEntries;
-      
-      if (Array.isArray(rankData)) {
-        // Direct array response
-        rankEntries = rankData;
-      } else if (rankData.entries && Array.isArray(rankData.entries)) {
-        // Nested entries array
-        rankEntries = rankData.entries;
-      } else if (rankData.rank && rankData.tier) {
-        // Single entry object
-        rankEntries = [rankData];
-      } else if (rankData.status && rankData.status.status_code) {
-        // Error response
-        throw new Error(`League API error: ${rankData.status.message}`);
-      } else {
-        // Empty or unknown format
-        rankEntries = [];
-      }
-      
-      // Log the retrieved rank data summary
-      
-      await this._storeRankInfo(rankEntries);
-      
-      return rankEntries;
-    } catch (error) {
-      return [];
-    }
-  },
-  
-  /**
-   * Store rank info in storage
-   * @param {Object} rankInfo - Rank info to store
-   * @private
-   */
-  async _storeRankInfo(rankInfo) {
-    try {
-      await browser.storage.local.set({
-        [this.config.storageKeys.rankInfo]: rankInfo
-      });
-    } catch (e) {
-    }
-  },
-  
-  /**
-   * Get platform region from region code
-   * @param {string} region - Region code (e.g. 'na1')
-   * @returns {string} - Platform region (e.g. 'americas')
-   * @private
-   */
-  
-  
-  /**
-   * Get user's data (account and rank)
-   * @param {boolean} skipAuthCheck - Whether to skip authentication check
-   * @returns {Promise<Object>} - The user data
-   */
-  async getUserData(skipAuthCheck = false) {
-    try {
-      
-      // Check if user is authenticated
-      if (!skipAuthCheck) {
-        const isAuthenticated = await this.isAuthenticated(true);
-        if (!isAuthenticated) {
-          throw new Error('Not authenticated. Please connect your Riot account first.');
-        }
-      }
-      
-      // ADDED: First try to get data from persistent storage
-      const persistentData = await this.getUserDataFromStorage();
-      
-      // Always attempt to store rank data in backend, regardless of persistent data
-      let userData;
-      
-      if (persistentData) {
-        userData = persistentData;
-      } else {
-        // If no persistent data, proceed with API calls
-      
-      // Get account info
-      const accountInfo = await this.getAccountInfo();
-      
-      if (!accountInfo || !accountInfo.puuid) {
-        throw new Error('Failed to retrieve account info');
-      }
-      
-      
-      // Summoner info no longer needed - using Riot ID for display and PUUID for ranks
-      
-      // Get rank info using the PUUID
-      let rankInfo = [];
-      
-      try {
-        rankInfo = await this.getRankInfo(accountInfo.puuid);
-      } catch (rankError) {
-        rankInfo = [];
-      }
-      
-        // Combine all data with unified riotId
-        userData = {
-          riotId: accountInfo.tagLine ? `${accountInfo.gameName}#${accountInfo.tagLine}` : accountInfo.gameName,
-          puuid: accountInfo.puuid,
-          ranks: rankInfo || [],
-          soloQueueRank: rankInfo && rankInfo.length ? 
-            rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null : null
-        };
-        
-        await PersistentStorage.storeRiotUserData(userData);
-      }
-      
-      // ALWAYS store rank data securely via backend for any successful auth
-      try {
-        // Get current Twitch username and token from storage
-        const twitchData = await browser.storage.local.get(['eloward_persistent_twitch_user_data', 'twitchUsername']);
-        
-        const twitchUsername = twitchData.eloward_persistent_twitch_user_data?.login || twitchData.twitchUsername;
-        
-        if (twitchUsername) {
-          // Get current access token and region
-          const accessToken = await this.getValidToken();
-          const region = await this._getStoredValue('selectedRegion') || 'na1';
-          
-          // Get Twitch token for verification (using static import)
-          const twitchToken = await TwitchAuth.getValidToken();
-          
-          if (accessToken && twitchToken) {
-            // Call the secure backend endpoint
-            const response = await fetch(`${this.config.proxyBaseUrl}/store-rank`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                twitch_token: twitchToken,
-                riot_token: accessToken,
-                region: region,
-                twitch_username: twitchUsername
-              })
-            });
-            
-            if (response.ok) {
-              const result = await response.json();
-            } else {
-              const errorData = await response.json();
-            }
-          }
-        }
-      } catch (uploadError) {
-        // Don't fail the entire operation if upload fails
-      }
-      
-      return userData;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  /**
-   * Process the ID token, extracting user info
-   * @param {string} idToken - The ID token from the authentication flow
-   * @returns {Promise<Object>} - The extracted user info
-   * @private
-   */
-  
-  
-  /**
-   * Store a value in browser.storage.local
-   * @param {string} key - The key to store the value under
-   * @param {any} value - The value to store
-   * @returns {Promise<void>}
-   * @private
-   */
-  async _storeValue(key, value) {
-    try {
-      if (!key) throw new Error('No storage key provided');
-      
-      try {
-        await browser.storage.local.set({ [key]: value });
-      } catch (error) {
-        throw error;
-      }
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  async _getTokensObject() {
-    try {
-      const data = await browser.storage.local.get([this.config.storageKeys.tokens]);
-      return data[this.config.storageKeys.tokens] || null;
-    } catch (e) {
-      return null;
-    }
-  },
   
   /**
    * Get user data from persistent storage
@@ -994,26 +533,20 @@ export const RiotAuth = {
    */
   async getUserDataFromStorage() {
     try {
-      
-      // Try to get user data from persistent storage
       const userData = await PersistentStorage.getRiotUserData();
       
       if (userData) {
-        
-        // Create an object structure similar to what getUserData() would return
-        const formattedUserData = {
+        return {
           ...userData,
           soloQueueRank: userData.rankInfo
         };
-        
-        return formattedUserData;
       }
       
       return null;
     } catch (error) {
       return null;
     }
-  },
+  }
   
   // Additional methods and helper functions can be added here
 };
@@ -1057,7 +590,10 @@ class AuthCallbackWatcher {
    * Start the callback watching process
    */
   start() {
-    console.log('[RiotAuth] AuthCallbackWatcher.start()');
+    console.log('[RiotAuth] AuthCallbackWatcher.start()', {
+      isFirefox: typeof InstallTrigger !== 'undefined'
+    });
+    
     // Check immediately first
     this._checkForCallback().then(found => {
       if (!found && !this.state.isResolved) {
@@ -1066,13 +602,17 @@ class AuthCallbackWatcher {
       }
     });
     
-    // Also immediately check localStorage for any existing data
-    // This handles cases where the redirect page already loaded and stored data
-    setTimeout(() => {
-      if (!this.state.isResolved) {
-        this._checkForCallback();
-      }
-    }, 50);
+    // Firefox may need additional checks due to different timing
+    const isFirefox = typeof InstallTrigger !== 'undefined';
+    const extraChecks = isFirefox ? [50, 100, 250, 500] : [50];
+    
+    extraChecks.forEach(delay => {
+      setTimeout(() => {
+        if (!this.state.isResolved) {
+          this._checkForCallback();
+        }
+      }, delay);
+    });
 
     // Also listen for storage changes so we resolve immediately when callback lands
     try {
@@ -1170,12 +710,19 @@ class AuthCallbackWatcher {
               }
             } catch (_) {}
           }
-          console.log('[RiotAuth] AuthCallbackWatcher found callback in storage', { key, hasCode: !!callback.code, hasState: !!callback.state });
+          console.log('[RiotAuth] AuthCallbackWatcher found callback in storage', { 
+            key, 
+            hasCode: !!callback.code, 
+            hasState: !!callback.state,
+            isFirefox: typeof InstallTrigger !== 'undefined',
+            timestamp: callback.timestamp
+          });
           return callback;
         }
       }
       return null;
     } catch (error) {
+      console.error('[RiotAuth] AuthCallbackWatcher storage error:', error);
       return null;
     }
   }
