@@ -674,7 +674,7 @@ setInterval(() => {
 // ExtensionBridge content script handles all auth redirects via browser.runtime.sendMessage
 
 browser.runtime.onInstalled.addListener((details) => {
-  // Do NOT clear tokens or persistent user data on update; only remove ephemeral/legacy keys
+  // Do NOT clear Twitch tokens or persistent user data on update; remove ephemeral/legacy keys and unused Riot tokens
   const clearEphemeralAndLegacyKeys = async () => {
     try {
       await browser.storage.local.remove([
@@ -691,7 +691,12 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_riot_rank_info',
         'eloward_signin_attempted',
         'riot_auth',
-        'twitch_auth'
+        'twitch_auth',
+        // Now unused token-based keys (migrated to server-side auth)
+        'eloward_riot_access_token',
+        'eloward_riot_refresh_token',
+        'eloward_riot_token_expiry',
+        'eloward_riot_tokens'
       ]);
     } catch (_) {}
   };
@@ -725,7 +730,7 @@ browser.runtime.onInstalled.addListener((details) => {
   // No default region on install/update
 });
 
-  // Also clear sensitive auth callback data on background startup for temp reloads (keep persistent tokens)
+  // Also clear sensitive auth callback data and unused tokens on background startup for temp reloads
   (async () => {
     try {
       await browser.storage.local.remove([
@@ -741,7 +746,12 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_signin_attempted',
         'riot_auth',
         RANK_CACHE_STORAGE_KEY,
-        RANK_CACHE_UPDATED_AT_KEY
+        RANK_CACHE_UPDATED_AT_KEY,
+        // Now unused token-based keys (migrated to server-side auth)
+        'eloward_riot_access_token',
+        'eloward_riot_refresh_token',
+        'eloward_riot_token_expiry',
+        'eloward_riot_tokens'
       ]);
     } catch (_) {}
   })();
@@ -750,11 +760,12 @@ function clearAllStoredData() {
   return new Promise((resolve) => {
     try {
       const keysToRemove = [
-        // Auth tokens (kept for API functionality)
+        // Riot auth tokens (no longer used - migrated to server-side auth)
         'eloward_riot_access_token',
         'eloward_riot_refresh_token',
         'eloward_riot_token_expiry',
         'eloward_riot_tokens',
+        // Twitch auth tokens (still used for Twitch API functionality)
         'eloward_twitch_access_token',
         'eloward_twitch_refresh_token',
         'eloward_twitch_token_expiry',
