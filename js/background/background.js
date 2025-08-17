@@ -9,7 +9,7 @@ import { RiotAuth } from '../auth/riotAuth.js';
 import { TwitchAuth } from '../auth/twitchAuth.js';
 import { PersistentStorage } from '../core/persistentStorage.js';
 
-const RIOT_AUTH_URL = 'https://eloward-riotauth.unleashai.workers.dev';
+// Removed RIOT_AUTH_URL constant - no longer needed with server-side auth
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
 const MAX_RANK_CACHE_SIZE = 1000;
@@ -217,22 +217,9 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
       return userInfo;
     } else {
-      const tokenData = await RiotAuth.exchangeCodeForTokens(authData.code);
-      const userData = await RiotAuth.getUserData();
-
-      // Ensure all storage operations complete in sequence
-      await PersistentStorage.storeRiotUserData(userData);
-      await PersistentStorage.updateConnectedState('riot', true);
-
-      // Only notify popup after ALL data is successfully stored (ignore if no listeners)
-      try {
-        await browser.runtime.sendMessage({
-          type: 'auth_completed',
-          service: 'riot'
-        });
-      } catch (_) {}
-
-      return userData;
+      // For Riot auth, the background script shouldn't handle token exchange
+      // The main authenticate() method in RiotAuth uses completeAuthentication
+      throw new Error('Riot auth should use the main authenticate() method, not background token exchange');
     }
   } catch (error) {
     throw error;
@@ -422,33 +409,33 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       'selectedRegion': message.region || 'na1'
     });
     
-      const url = `${RIOT_AUTH_URL}/auth/init?state=${state}`;
-    
-    fetch(url)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Auth URL request failed: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then(data => {
-        if (!data.authorizationUrl) {
-          throw new Error('No authorization URL returned');
-        }
-        
-        sendResponse({
-          success: true,
-          authUrl: data.authorizationUrl
-        });
-      })
-      .catch(error => {
-        sendResponse({
-          success: false,
-          error: error.message || 'Failed to obtain authorization URL'
-        });
+    // Build authorization URL directly without backend call
+    try {
+      const minimumScopes = 'openid offline_access lol cpid';
+      const params = new URLSearchParams({
+        client_id: RiotAuth.config.clientId,
+        redirect_uri: RiotAuth.config.redirectUri,
+        response_type: 'code',
+        scope: minimumScopes,
+        state: state,
+        prompt: 'login',
+        max_age: '0'
       });
+      
+      const authUrl = `https://auth.riotgames.com/authorize?${params.toString()}`;
+      
+      sendResponse({
+        success: true,
+        authUrl: authUrl
+      });
+    } catch (error) {
+      sendResponse({
+        success: false,
+        error: error.message || 'Failed to build authorization URL'
+      });
+    }
     
-    return true;
+    return false; // synchronous response
   }
   
   // Removed legacy handle_auth_callback action (unused)
@@ -487,46 +474,25 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    // Use the user's selectedRegion (platform routing value) instead of hard-coding NA1
-    browser.storage.local.get(['selectedRegion']).then((data) => {
-      const platform = data?.selectedRegion || 'na1';
-      return fetchRankByTwitchUsername(username, platform)
-        .then(rankData => {
-          if (rankData) {
-            userRankCache.set(username, rankData);
-            if (channelName && rankData?.tier) {
-              incrementSuccessfulLookupCounter(channelName).catch(() => {});
-            }
+    // Fetch rank data from database (region is already stored there)
+    fetchRankByTwitchUsername(username)
+      .then(rankData => {
+        if (rankData) {
+          userRankCache.set(username, rankData);
+          if (channelName && rankData?.tier) {
+            incrementSuccessfulLookupCounter(channelName).catch(() => {});
           }
-          sendResponse({ success: true, rankData, source: 'api' });
-        })
-        .catch(error => {
-          sendResponse({ success: false, error: error.message || 'Error fetching rank data' });
-        });
-    });
-    
-    return true;
-  }
-  
-  if (message.action === 'get_user_rank_by_puuid') {
-    const { puuid, region } = message;
-    
-    RiotAuth.getValidToken()
-      .then(token => {
-        getRankByPuuid(token, puuid, region)
-          .then(rankData => {
-            sendResponse({ rank: rankData });
-          })
-          .catch(error => {
-            sendResponse({ error: error.message });
-          });
+        }
+        sendResponse({ success: true, rankData, source: 'api' });
       })
       .catch(error => {
-        sendResponse({ error: error.message });
+        sendResponse({ success: false, error: error.message || 'Error fetching rank data' });
       });
     
     return true;
   }
+  
+  // Removed deprecated get_user_rank_by_puuid action - no longer needed with server-side auth
   
   if (message.action === 'check_channel_active') {
     const streamer = message.streamer;
@@ -849,43 +815,7 @@ function checkChannelActive(channelName, skipCache = false) {
   });
 }
 
-function getRankByPuuid(token, puuid, platform) {
-  // Use the worker's path-param route: /riot/league/:platform/:puuid
-  return new Promise((resolve, reject) => {
-    fetch(`${RIOT_AUTH_URL}/riot/league/${platform}/${puuid}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`League request failed: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then(leagueEntryOrEntries => {
-        // Worker returns either the solo queue entry or the full array
-        const entry = Array.isArray(leagueEntryOrEntries)
-          ? leagueEntryOrEntries.find(e => e.queueType === 'RANKED_SOLO_5x5')
-          : leagueEntryOrEntries;
-
-        if (entry && entry.queueType === 'RANKED_SOLO_5x5') {
-          resolve({
-            tier: entry.tier,
-            division: entry.rank,
-            leaguePoints: entry.leaguePoints,
-            wins: entry.wins,
-            losses: entry.losses
-          });
-        } else {
-          resolve(null);
-        }
-      })
-      .catch(error => {
-        reject(error);
-      });
-  });
-}
+// Removed deprecated getRankByPuuid function - no longer needed with server-side auth
 
 function getRankIconUrl(tier) {
   if (!tier) return 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
@@ -936,23 +866,22 @@ async function getUserLinkedAccount(twitchUsername) {
   return null;
 }
 
-async function getRankForLinkedAccount(linkedAccount, platform) {
+async function getRankForLinkedAccount() {
   try {
-    // Get valid token through RiotAuth
-    const token = await RiotAuth.getValidToken();
-    if (!token) {
-      throw new Error('No valid Riot auth token available');
+    // Since we now use server-side auth, the linked account's rank is already in the database
+    // Get the current user's Twitch username and fetch from database
+    const twitchData = await PersistentStorage.getTwitchUserData();
+    if (!twitchData?.login) {
+      throw new Error('No Twitch user data available');
     }
     
-    return await getRankByPuuid(token, linkedAccount.puuid, platform);
+    return await fetchRankFromDatabase(twitchData.login);
   } catch (error) {
     throw error;
   }
 }
 
-function loadConfiguration() {
-  // Intentionally no-op: do not set default region
-}
+// Removed unused loadConfiguration function
 
 async function fetchRankFromDatabase(twitchUsername) {
   if (!twitchUsername) return null;
@@ -984,14 +913,14 @@ async function fetchRankFromDatabase(twitchUsername) {
   }
 }
 
-async function fetchRankByTwitchUsername(twitchUsername, platform) {
+async function fetchRankByTwitchUsername(twitchUsername) {
   try {
     // Try to get linked account data first
     const linkedAccount = await getUserLinkedAccount(twitchUsername);
     
     if (linkedAccount) {
       try {
-        const rankData = await getRankForLinkedAccount(linkedAccount, platform);
+        const rankData = await getRankForLinkedAccount();
         return rankData;
       } catch (error) {
         // Fall through to database lookup

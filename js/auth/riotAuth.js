@@ -21,24 +21,12 @@ const defaultConfig = {
   // Force the login prompt so we don't silently reuse a prior Riot session
   forcePromptLogin: true,
   endpoints: {
-    authInit: '/auth/init',
-    authComplete: '/auth/complete', // NEW: Single-call optimized endpoint
-    authToken: '/auth/token', // DEPRECATED - kept for compatibility
-    authRefresh: '/auth/riot/token/refresh', // DEPRECATED - kept for compatibility
+    authComplete: '/auth/complete', // Single-call optimized endpoint
     refreshRank: '/riot/refreshrank',
-    accountInfo: '/riot/account',
-    leagueEntries: '/riot/league/entries'
+    disconnect: '/disconnect'
   },
   storageKeys: {
-    // Legacy keys - kept for cleanup compatibility only
-    accessToken: 'eloward_riot_access_token',
-    refreshToken: 'eloward_riot_refresh_token', 
-    tokenExpiry: 'eloward_riot_token_expiry',
-    tokens: 'eloward_riot_tokens',
-    idToken: 'eloward_riot_id_token',
-    // Active keys still used
-    accountInfo: 'eloward_riot_account_info',
-    rankInfo: 'eloward_riot_rank_info',
+    // Active keys used by auth flow
     authState: 'eloward_auth_state',
     authCallback: 'eloward_auth_callback'
   }
@@ -168,38 +156,29 @@ export const RiotAuth = {
   
   async _getAuthUrl(region, state) {
     try {
-      const url = `${this.config.proxyBaseUrl}${this.config.endpoints.authInit}?state=${state}`;
+      // Build authorization URL directly without backend call
+      // Using minimum required scopes for Riot RSO
+      const minimumScopes = 'openid offline_access lol cpid';
       
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to get auth URL: ${response.status} ${response.statusText}`);
+      const params = new URLSearchParams({
+        client_id: this.config.clientId,
+        redirect_uri: this.config.redirectUri,
+        response_type: 'code',
+        scope: minimumScopes,
+        state: state
+      });
+      
+      // Add force login parameters if configured
+      if (this.config.forcePromptLogin) {
+        params.set('prompt', 'login');
+        params.set('max_age', '0');
       }
       
-      const data = await response.json();
+      const authUrl = `https://auth.riotgames.com/authorize?${params.toString()}`;
       
-      if (!data.authorizationUrl) {
-        throw new Error('No authorization URL returned from backend');
-      }
-      
-      // Ensure prompt=login and max_age=0 are present to force re-auth
-      try {
-        const authUrl = new URL(data.authorizationUrl);
-        if (this.config.forcePromptLogin) {
-          // Only set if not already supplied by backend
-          if (!authUrl.searchParams.get('prompt')) {
-            authUrl.searchParams.set('prompt', 'login');
-          }
-          if (!authUrl.searchParams.get('max_age')) {
-            authUrl.searchParams.set('max_age', '0');
-          }
-        }
-        return authUrl.toString();
-      } catch (_) {
-        // If URL parsing fails, fall back to the provided URL
-        return data.authorizationUrl;
-      }
+      return authUrl;
     } catch (error) {
-      throw new Error('Failed to initialize authentication');
+      throw new Error('Failed to build authorization URL');
     }
   },
   
@@ -330,75 +309,6 @@ export const RiotAuth = {
     }
   },
 
-  /**
-   * DEPRECATED: Exchange authorization code for tokens
-   * @param {string} code - The authorization code from Riot
-   * @returns {Promise<Object>} - The token response object
-   * @deprecated Use completeAuthentication instead
-   */
-  async exchangeCodeForTokens(code) {
-    try {
-      
-      if (!code) {
-        throw new Error('No authorization code provided');
-      }
-      
-      // Exchange the code for tokens
-      const requestUrl = `${this.config.proxyBaseUrl}/auth/token`;
-      
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          code: code,
-          redirect_uri: this.config.redirectUri
-        })
-      });
-      
-      if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch (e) {
-          errorData = null;
-        }
-        
-        const errorMessage = errorData?.error_description || 
-                            errorData?.error || 
-                            `${response.status}: ${response.statusText}`;
-        throw new Error(`Token exchange failed: ${errorMessage}`);
-      }
-      
-      // Parse the token response
-      const tokenData = await response.json();
-      
-      // For newer Cloudflare Worker integration which uses a nested data structure
-      const actualTokenData = tokenData.data || tokenData;
-      
-      if (!actualTokenData.access_token) {
-        throw new Error('Invalid token response: Missing access token');
-      }
-      
-      
-      // Calculate token expiry timestamp
-      const expiresAt = Date.now() + (actualTokenData.expires_in * 1000);
-      
-      // Update token data with expiry timestamp
-      const tokens = {
-        ...actualTokenData,
-        expires_at: expiresAt
-      };
-      
-      // Store tokens only in canonical location
-      await this._storeTokens(tokens);
-      
-      return tokens;
-    } catch (error) {
-      throw error;
-    }
-  },
   
   
   /**
