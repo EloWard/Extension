@@ -563,7 +563,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } catch (_) { hasStoredRiot = false; }
 
         if (shouldRefresh && canRefresh && hasStoredRiot) {
-          console.log('[EloWard Background] rank: refreshing');
+          console.log('[EloWard] Auto rank refresh triggered');
           try {
             // Get PUUID from persistent storage instead of making token-based API call
             const persistentRiotData = await PersistentStorage.getRiotUserData();
@@ -611,26 +611,30 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } catch (_) { /* ignore cache update errors */ }
 
             await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
-            console.log('[EloWard Background] rank: refreshed');
+            console.log('[EloWard] Auto rank refresh completed');
             sendResponse({ success: true, refreshed: true });
           } catch (e) {
-            console.warn('[EloWard Background] rank: refresh failed', e?.message || e);
+            console.warn('[EloWard] Auto rank refresh failed:', e?.message || e);
             // Auto-refresh failed - skip gracefully without altering stored data or triggering popups
             sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
           }
         } else {
-          // Non-intrusive reason logging to help diagnose skips
-          try {
-            console.log('[EloWard Background] Auto rank refresh: skipped', {
-              shouldRefresh,
-              canRefresh,
-              hasStoredRiot,
-              minutesSinceLast: lastRefreshAt ? Math.round((now - Number(lastRefreshAt)) / 60000) : null
-            });
-          } catch (_) { /* ignore logging errors */ }
+          // Simple reason logging for why refresh didn't trigger
+          let reason = '';
+          if (!shouldRefresh) {
+            const minutesSinceLast = lastRefreshAt ? Math.round((now - Number(lastRefreshAt)) / 60000) : 0;
+            reason = `too soon (${minutesSinceLast} minutes since last refresh)`;
+          } else if (!canRefresh) {
+            reason = 'Riot account not authenticated';
+          } else if (!hasStoredRiot) {
+            reason = 'no Riot account data stored';
+          }
+          
+          console.log(`[EloWard] Auto rank refresh not triggered: ${reason}`);
           sendResponse({ success: true, refreshed: false });
         }
       } catch (e) {
+        console.log('[EloWard] Auto rank refresh error:', e?.message || 'unexpected error');
         sendResponse({ success: false, refreshed: false, error: e?.message || 'unexpected' });
       }
     })();
