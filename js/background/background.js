@@ -563,7 +563,18 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } catch (_) { hasStoredRiot = false; }
 
         if (shouldRefresh && canRefresh && hasStoredRiot) {
-          console.log('[EloWard] Auto rank refresh triggered');
+          // Log to page console via content script
+          try {
+            browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+              if (tabs[0]?.url?.includes('twitch.tv')) {
+                browser.tabs.sendMessage(tabs[0].id, { 
+                  type: 'console_log', 
+                  message: '[EloWard] Auto rank refresh triggered' 
+                }).catch(() => {});
+              }
+            });
+          } catch (_) {}
+          
           try {
             // Get PUUID from persistent storage instead of making token-based API call
             const persistentRiotData = await PersistentStorage.getRiotUserData();
@@ -611,10 +622,33 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } catch (_) { /* ignore cache update errors */ }
 
             await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
-            console.log('[EloWard] Auto rank refresh completed');
+            
+            // Log completion to page console
+            try {
+              browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+                if (tabs[0]?.url?.includes('twitch.tv')) {
+                  browser.tabs.sendMessage(tabs[0].id, { 
+                    type: 'console_log', 
+                    message: '[EloWard] Auto rank refresh completed' 
+                  }).catch(() => {});
+                }
+              });
+            } catch (_) {}
+            
             sendResponse({ success: true, refreshed: true });
           } catch (e) {
-            console.warn('[EloWard] Auto rank refresh failed:', e?.message || e);
+            // Log failure to page console
+            try {
+              browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+                if (tabs[0]?.url?.includes('twitch.tv')) {
+                  browser.tabs.sendMessage(tabs[0].id, { 
+                    type: 'console_log', 
+                    message: `[EloWard] Auto rank refresh failed: ${e?.message || 'unknown error'}` 
+                  }).catch(() => {});
+                }
+              });
+            } catch (_) {}
+            
             // Auto-refresh failed - skip gracefully without altering stored data or triggering popups
             sendResponse({ success: false, refreshed: false, error: e?.message || 'refresh failed' });
           }
@@ -630,7 +664,18 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             reason = 'no Riot account data stored';
           }
           
-          console.log(`[EloWard] Auto rank refresh not triggered: ${reason}`);
+          // Log to page console
+          try {
+            browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+              if (tabs[0]?.url?.includes('twitch.tv')) {
+                browser.tabs.sendMessage(tabs[0].id, { 
+                  type: 'console_log', 
+                  message: `[EloWard] Auto rank refresh not triggered: ${reason}` 
+                }).catch(() => {});
+              }
+            });
+          } catch (_) {}
+          
           sendResponse({ success: true, refreshed: false });
         }
       } catch (e) {

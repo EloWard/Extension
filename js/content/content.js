@@ -1986,6 +1986,13 @@ try {
         applyRankToAllUserMessagesInChat(message.username, message.rankData);
       } catch (_) {}
     }
+    
+    // Handle console log messages from background script
+    if (message && message.type === 'console_log' && message.message) {
+      try {
+        console.log(message.message);
+      } catch (_) {}
+    }
   });
 } catch (_) {}
 
