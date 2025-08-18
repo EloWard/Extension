@@ -18,19 +18,18 @@ const defaultConfig = {
   // Make sure this URL is correct and matches a deployed instance
   proxyBaseUrl: 'https://eloward-twitchauth.unleashai.workers.dev',
   // Use an extension-specific redirect URI that's registered with Twitch
-  redirectUri: 'https://www.eloward.com/ext/twitch/auth/redirect',
+  redirectUri: 'https://www.eloward.com/twitch/auth/redirect',
+  clientId: 'pml5yi4pqvuo281akjq0q6topaeli3',
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
   // Force the consent/login prompt to avoid silently reusing a prior session
   forceVerify: true,
   endpoints: {
-    authInit: '/auth/twitch/init',
-    authToken: '/auth/twitch/token',
-    authRefresh: '/auth/twitch/token/refresh',
-    validate: '/auth/twitch/validate',
-    userInfo: '/auth/twitch/user'
+    // Consolidated tokenless endpoint (primary)
+    authComplete: '/twitch/auth'
   },
   storageKeys: {
+    // Token keys retained only for cleanup of legacy clients; no longer used
     accessToken: 'eloward_twitch_access_token',
     refreshToken: 'eloward_twitch_refresh_token',
     tokenExpiry: 'eloward_twitch_token_expiry',
@@ -57,8 +56,8 @@ export const TwitchAuth = {
       // Clear any previous auth states
       await browser.storage.local.remove([this.config.storageKeys.authState]);
       
-      // Generate a unique state value for CSRF protection
-      const state = this._generateRandomState();
+      // Generate a unique state value for CSRF protection and tag as extension flow
+      const state = `ext:${this._generateRandomState()}`;
       
       // Store the state for verification when the user returns
       await this._storeAuthState(state);
@@ -101,51 +100,16 @@ export const TwitchAuth = {
       // Clear any temporary callback keys written by the bridge
       try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','twitch_auth_callback']); } catch (_) {}
 
-      // Exchange the authorization code for tokens
-      try {
-        await this.exchangeCodeForTokens(authResult.code);
-        
-        // Even if getting user info fails, authentication is still considered successful
-        // because we have valid tokens
-        
-        try {
-          // Get user info (this already includes database registration)
-          const userInfo = await this.getUserInfo();
-          
-          // Store the user info in persistent storage
-          await PersistentStorage.storeTwitchUserData(userInfo);
-          
-          return userInfo;
-        } catch (userInfoError) {
-          // Ensure we still consider the user authenticated
-          await PersistentStorage.updateConnectedState('twitch', true);
-          
-          // Return minimal user object if full info unavailable
-          return { authenticated: true };
-        }
-      } catch (tokenError) {
-        // If another context already exchanged the code, tokens may already be present.
-        try {
-          await new Promise(r => setTimeout(r, 250));
-          const tokens = await this.getTokensObject();
-          if (tokens && tokens.access_token) {
-            // Proceed as success using existing tokens
-            try {
-              const userInfo = await this.getUserInfo();
-              if (userInfo) {
-                await PersistentStorage.storeTwitchUserData(userInfo);
-                return userInfo;
-              }
-            } catch (_) {
-              await PersistentStorage.updateConnectedState('twitch', true);
-              return { authenticated: true };
-            }
-          }
-        } catch (_) {}
-        // If no tokens present, propagate original error
-        await PersistentStorage.updateConnectedState('twitch', false);
-        throw tokenError;
+      // Complete tokenless Twitch auth via backend
+      const completed = await this.completeAuthentication(authResult.code);
+      if (completed && completed.id) {
+        await PersistentStorage.storeTwitchUserData(completed);
+        await PersistentStorage.updateConnectedState('twitch', true);
+        return completed;
       }
+      // Fallback minimal success
+      await PersistentStorage.updateConnectedState('twitch', true);
+      return { authenticated: true };
     } catch (error) {
       // Ensure the connected state is reset on any error
       try {
@@ -157,6 +121,26 @@ export const TwitchAuth = {
       // Clear popup auth flag regardless of outcome
       try { await browser.storage.local.remove('eloward_popup_auth_active'); } catch (_) {}
     }
+  },
+
+  /**
+   * Complete Twitch authentication (tokenless) against backend
+   * @param {string} code
+   * @returns {Promise<Object>} minimal user data { id, login, display_name, profile_image_url, email? }
+   */
+  async completeAuthentication(code) {
+    const url = `${this.config.proxyBaseUrl}${this.config.endpoints.authComplete}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, redirect_uri: this.config.redirectUri })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success || !data?.user_data) {
+      const msg = data?.error_description || data?.error || `${response.status}: ${response.statusText}`;
+      throw new Error(`Twitch auth failed: ${msg}`);
+    }
+    return data.user_data;
   },
   
   /**
@@ -193,42 +177,15 @@ export const TwitchAuth = {
    */
   async _getAuthUrl(state) {
     try {
-      
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authInit}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        body: JSON.stringify({
-          state,
-          scopes: this.config.scopes,
-          redirect_uri: this.config.redirectUri,
-          force_verify: !!this.config.forceVerify
-        })
-      });
-      
-      
-      if (!response.ok) {
-        await response.text();
-        throw new Error(`Failed to get Twitch auth URL: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (!data || !data.authUrl) {
-        throw new Error('Auth URL not found in response');
-      }
-      // Ensure force_verify is present even if backend ignores the flag
-      try {
-        const url = new URL(data.authUrl);
-        if (this.config.forceVerify && url.searchParams.get('force_verify') !== 'true') {
-          url.searchParams.set('force_verify', 'true');
-          return url.toString();
-        }
-      } catch (_) { /* ignore URL parse errors */ }
-      return data.authUrl;
+      const clientId = this.config.clientId && String(this.config.clientId).trim();
+      const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', this.config.redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', this.config.scopes);
+      authUrl.searchParams.set('state', state);
+      if (this.config.forceVerify) authUrl.searchParams.set('force_verify', 'true');
+      return authUrl.toString();
     } catch (error) {
       throw error;
     }
@@ -382,75 +339,8 @@ export const TwitchAuth = {
     });
   },
   
-  /**
-   * Exchange authorization code for tokens
-   * @param {string} code - The authorization code
-   * @returns {Promise<Object>} The tokens
-   */
-  async exchangeCodeForTokens(code) {
-    try {
-      
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authToken}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          code,
-          redirect_uri: this.config.redirectUri
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to exchange code for tokens: ${response.status} ${response.statusText}`);
-      }
-      
-      const tokenData = await response.json();
-      
-      // Handle nested response format from Cloudflare Worker
-      const actualTokenData = tokenData.data || tokenData;
-      
-      if (actualTokenData.error) {
-        throw new Error(`Token exchange error: ${actualTokenData.error} - ${actualTokenData.error_description || 'No description'}`);
-      }
-      
-      if (!actualTokenData.access_token) {
-        throw new Error('No access token found in response');
-      }
-      
-      
-      // Store the tokens using the actual token data
-      await this._storeTokens(actualTokenData);
-      
-      // Immediately update the persistent storage connected state to prevent auth errors
-      // This ensures the user is considered authenticated even before getting user info
-      await PersistentStorage.updateConnectedState('twitch', true);
-      
-      return actualTokenData;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  /**
-   * Store tokens securely
-   * @param {Object} tokenData - The tokens to store
-   * @private
-   */
-  async _storeTokens(tokenData) {
-    try {
-      const now = Date.now();
-      const expiresAt = now + (tokenData.expires_in * 1000);
-      const canonical = {
-        ...tokenData,
-        expires_at: expiresAt,
-        stored_at: now
-      };
-      await browser.storage.local.set({ [this.config.storageKeys.tokens]: canonical });
-    } catch (error) {
-      throw error;
-    }
-  },
+  // exchangeCodeForTokens removed in tokenless flow
+  // _storeTokens removed in tokenless flow
   
   /**
    * Check if currently authenticated
@@ -466,15 +356,8 @@ export const TwitchAuth = {
         return true;
       }
       
-      // Fall back to token validation if not in persistent storage
-      let hasValidToken = false;
-      try {
-        const token = await this.getValidToken();
-        hasValidToken = !!token;
-      } catch (e) {
-      }
-      
-      return hasValidToken;
+      // No client tokens in the new flow; rely on persisted state only
+      return false;
     } catch (error) {
       return false;
     }
@@ -484,76 +367,14 @@ export const TwitchAuth = {
    * Get a valid access token, refreshing if necessary
    * @returns {Promise<string>} The access token
    */
-  async getValidToken() {
-    try {
-      const tokens = await this.getTokensObject();
-      if (!tokens?.access_token) {
-        return null;
-      }
-
-      if (!tokens.expires_at) {
-        // No expiry time, assume token is still valid
-        return tokens.access_token;
-      }
-
-      const expiryTime = typeof tokens.expires_at === 'number' ? tokens.expires_at : parseInt(tokens.expires_at, 10);
-      const now = Date.now();
-
-      // Check if token is expired or about to expire (within 5 minutes)
-      if (now >= expiryTime - (5 * 60 * 1000)) {
-        if (!tokens.refresh_token) {
-          throw new Error('No refresh token found for expired access token');
-        }
-        const newTokens = await this.refreshToken(tokens.refresh_token);
-        return newTokens.access_token;
-      }
-
-      // Token is still valid
-      return tokens.access_token;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // getValidToken removed in tokenless flow
   
   /**
    * Refresh access token using a refresh token
    * @param {string} refreshToken - The refresh token
    * @returns {Promise<Object>} The new tokens
    */
-  async refreshToken(refreshToken) {
-    try {
-      const response = await fetch(`${this.config.proxyBaseUrl}${this.config.endpoints.authRefresh}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          refresh_token: refreshToken
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to refresh token: ${response.status} ${response.statusText}`);
-      }
-
-      const tokenData = await response.json();
-
-      if (tokenData.error) {
-        throw new Error(`Token refresh error: ${tokenData.error} - ${tokenData.error_description || 'No description'}`);
-      }
-
-      if (!tokenData.access_token) {
-        throw new Error('No access token found in refresh response');
-      }
-
-      // Store the new tokens canonically
-      await this._storeTokens(tokenData);
-
-      return tokenData;
-    } catch (error) {
-      throw error;
-    }
-  },
+  // refreshToken removed in tokenless flow
   
   /**
    * Completely disconnect and clear all Twitch data including persistent storage
@@ -566,11 +387,11 @@ export const TwitchAuth = {
 
       // 2) Remove any tokens and cached user info so next connect is a full OAuth
       const keysToRemove = [
-        this.config.storageKeys.tokens,            // canonical tokens object
-        this.config.storageKeys.userInfo,          // deprecated user info cache
-        this.config.storageKeys.accessToken,       // legacy
-        this.config.storageKeys.refreshToken,      // legacy
-        this.config.storageKeys.tokenExpiry,       // legacy
+        this.config.storageKeys.tokens,            // legacy cleanup
+        this.config.storageKeys.userInfo,          // legacy cleanup
+        this.config.storageKeys.accessToken,       // legacy cleanup
+        this.config.storageKeys.refreshToken,      // legacy cleanup
+        this.config.storageKeys.tokenExpiry,       // legacy cleanup
         this.config.storageKeys.authState,
         'auth_callback',
         'twitch_auth',
@@ -616,44 +437,8 @@ export const TwitchAuth = {
       if (storedUserInfo) {
         return storedUserInfo;
       }
-      
-      // If not in storage, get fresh data via secure backend
-      
-      // Get a valid access token
-      const accessToken = await this.getValidToken();
-      
-      if (!accessToken) {
-        throw new Error('No valid access token for Twitch API');
-      }
-      
-      // Call the secure backend endpoint to fetch and store user data
-      const response = await fetch('https://eloward-twitchauth.unleashai.workers.dev/store-user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          twitch_token: accessToken
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Backend error: ${response.status} ${errorData.error || response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (!result.success || !result.user_data) {
-        throw new Error('Backend did not return valid user data');
-      }
-      
-      const userInfo = result.user_data;
-      
-      // Store in persistent storage (single source of truth)
-      await PersistentStorage.storeTwitchUserData(userInfo);
-      
-      return userInfo;
+      // No token-based fallback in the new flow
+      throw new Error('No Twitch user data available');
     } catch (error) {
       throw error;
     }
@@ -688,20 +473,7 @@ export const TwitchAuth = {
    * @private
    */
   async _getStoredValue(key) {
-    // For token-related fields, prefer the canonical tokens object
-    if (
-      key === this.config.storageKeys.accessToken ||
-      key === this.config.storageKeys.refreshToken ||
-      key === this.config.storageKeys.tokenExpiry
-    ) {
-      const tokens = await this.getTokensObject();
-      if (!tokens) return null;
-      if (key === this.config.storageKeys.accessToken) return tokens.access_token || null;
-      if (key === this.config.storageKeys.refreshToken) return tokens.refresh_token || null;
-      if (key === this.config.storageKeys.tokenExpiry) return tokens.expires_at || null;
-    }
-
-    // Get only from browser.storage.local for consistency
+    // Tokens no longer used; this is a simple local getter now
     try {
       const result = await browser.storage.local.get([key]);
       return result[key] || null;
@@ -726,21 +498,6 @@ export const TwitchAuth = {
       
       return null;
     } catch (error) {
-      return null;
-    }
-  },
-
-  /**
-   * Get the canonical tokens object from storage
-   * @returns {Promise<Object|null>} The canonical tokens object or null if not found
-   */
-  async getTokensObject() {
-    try {
-      const data = await browser.storage.local.get([this.config.storageKeys.tokens]);
-      const raw = data[this.config.storageKeys.tokens];
-      if (!raw) return null;
-      return typeof raw === 'string' ? JSON.parse(raw) : raw;
-    } catch (e) {
       return null;
     }
   }

@@ -178,6 +178,18 @@ async function handleAuthCallback(params) {
 
   const isTwitchCallback = params.service === 'twitch';
 
+  // Ignore website-initiated Twitch auth callbacks (state not tagged with 'ext:')
+  if (isTwitchCallback) {
+    const st = String(params.state || '');
+    if (!st.startsWith('ext:')) {
+      // Store for visibility then skip processing so the website can use the code
+      try {
+        browser.storage.local.set({ 'auth_callback': { ...params, timestamp: Date.now(), ignored: true } });
+      } catch (_) {}
+      return;
+    }
+  }
+
   // Perform token exchange and ensure we catch errors to avoid uncaught promise rejections
   initiateTokenExchange(params, isTwitchCallback ? 'twitch' : 'riot')
     .then(() => { /* success already notifies popup */ })
@@ -200,8 +212,8 @@ async function initiateTokenExchange(authData, service = 'riot') {
     }
 
     if (service === 'twitch') {
-      const tokenData = await TwitchAuth.exchangeCodeForTokens(authData.code);
-      const userInfo = await TwitchAuth.getUserInfo();
+      // Tokenless consolidated flow
+      const userInfo = await TwitchAuth.completeAuthentication(authData.code);
 
       // Ensure all storage operations complete before returning
       await PersistentStorage.storeTwitchUserData(userInfo);
@@ -745,7 +757,11 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_riot_access_token',
         'eloward_riot_refresh_token',
         'eloward_riot_token_expiry',
-        'eloward_riot_tokens'
+        'eloward_riot_tokens',
+        'eloward_twitch_access_token',
+        'eloward_twitch_refresh_token',
+        'eloward_twitch_token_expiry',
+        'eloward_twitch_tokens'
       ]);
     } catch (_) {}
   };
@@ -800,7 +816,11 @@ browser.runtime.onInstalled.addListener((details) => {
         'eloward_riot_access_token',
         'eloward_riot_refresh_token',
         'eloward_riot_token_expiry',
-        'eloward_riot_tokens'
+        'eloward_riot_tokens',
+        'eloward_twitch_access_token',
+        'eloward_twitch_refresh_token',
+        'eloward_twitch_token_expiry',
+        'eloward_twitch_tokens'
       ]);
     } catch (_) {}
   })();
@@ -814,7 +834,7 @@ function clearAllStoredData() {
         'eloward_riot_refresh_token',
         'eloward_riot_token_expiry',
         'eloward_riot_tokens',
-        // Twitch auth tokens (still used for Twitch API functionality)
+        // Twitch auth tokens (now unused - tokenless flow)
         'eloward_twitch_access_token',
         'eloward_twitch_refresh_token',
         'eloward_twitch_token_expiry',

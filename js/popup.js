@@ -435,13 +435,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isTwitchAuthenticated) {
           // If we didn't render from storage yet, populate from storage-first API
           if (!renderedTwitchFromStorage) {
-            const userData = await TwitchAuth.getUserInfo(); // storage-first
+            // storage-first only; backend already stored user during auth
+            const userData = await PersistentStorage.getTwitchUserData();
             const displayName = userData?.display_name || userData?.login || 'Connected';
             twitchConnectionStatus.textContent = displayName;
             twitchConnectionStatus.classList.add('connected');
             twitchConnectionStatus.classList.remove('error');
             connectTwitchBtn.textContent = 'Disconnect';
-            try { if (userData) await PersistentStorage.storeTwitchUserData(userData); } catch (_) {}
           }
         } else if (!persistentConnectedState.twitch && !renderedTwitchFromStorage) {
           // Only show Not Connected if we haven't already displayed cached data
@@ -882,38 +882,17 @@ document.addEventListener('DOMContentLoaded', () => {
         connectTwitchBtn.disabled = true;
         
         try {
-          // First authenticate to get tokens - this now also updates persistent storage
           await TwitchAuth.authenticate();
-          
-          // Try to get user info but don't fail if this part has issues
-          try {
-            const userData = await TwitchAuth.getUserInfo();
-            
-            // Store user data in persistent storage
-            if (userData) {
-              await PersistentStorage.storeTwitchUserData(userData);
-              
-              // Update UI with user data
-              twitchConnectionStatus.textContent = userData.display_name || userData.login;
-              
-                          // Only mark as connected if we have valid user data
+          // After successful authenticate, the worker registers the user; just read from storage
+          const userData = await PersistentStorage.getTwitchUserData();
+          if (userData) {
+            twitchConnectionStatus.textContent = userData.display_name || userData.login;
             twitchConnectionStatus.classList.add('connected');
+            twitchConnectionStatus.classList.remove('error');
             connectTwitchBtn.textContent = 'Disconnect';
-            
-            // Update Riot controls based on successful connection
             updateRiotControlsBasedOnTwitchStatus();
-            } else {
-              // Authentication succeeded but no user data
-              throw new Error('Failed to retrieve user info');
-            }
-          } catch (userInfoError) {
-            // User info failed - show not connected state
-            twitchConnectionStatus.textContent = 'Not Connected';
-            twitchConnectionStatus.classList.remove('error', 'connected');
-            connectTwitchBtn.textContent = 'Connect';
-            
-            // Update Riot controls based on failed connection
-            updateRiotControlsBasedOnTwitchStatus();
+          } else {
+            throw new Error('Failed to retrieve user info');
           }
           
         } catch (authError) {
