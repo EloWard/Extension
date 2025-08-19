@@ -100,7 +100,15 @@ export const TwitchAuth = {
       // Clear any temporary callback keys written by the bridge
       try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','twitch_auth_callback']); } catch (_) {}
 
-      // Complete tokenless Twitch auth via backend
+      // Give background a brief chance to complete auth first (prevents double exchange in Firefox)
+      const bgUser = await this._waitForStoredTwitchUserData(2000);
+      if (bgUser) {
+        // Background already completed and stored the user data
+        await PersistentStorage.updateConnectedState('twitch', true);
+        return bgUser;
+      }
+
+      // Background didn't complete in time: perform tokenless Twitch auth via backend here
       const completed = await this.completeAuthentication(authResult.code);
       if (completed && completed.id) {
         await PersistentStorage.storeTwitchUserData(completed);
@@ -501,4 +509,17 @@ export const TwitchAuth = {
       return null;
     }
   }
+};
+
+// Helper: wait up to timeoutMs for background to store Twitch user data
+TwitchAuth._waitForStoredTwitchUserData = async function(timeoutMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const user = await PersistentStorage.getTwitchUserData();
+      if (user && user.id) return user;
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return null;
 };

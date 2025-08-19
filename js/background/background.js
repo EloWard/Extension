@@ -144,10 +144,14 @@ async function handleAuthCallback(params) {
     return;
   }
 
-  // Check if popup is handling auth - if so, skip background processing to avoid race condition
+  // Determine service early so we can decide handling strategy
+  const isTwitchCallback = params.service === 'twitch';
+
+  // If popup initiated auth, we still ALWAYS process Twitch in background (Firefox popups may close)
+  // For Riot, we continue to skip background processing to let the popup handle it.
   try {
     const { eloward_popup_auth_active } = await browser.storage.local.get(['eloward_popup_auth_active']);
-    if (eloward_popup_auth_active) {
+    if (eloward_popup_auth_active && !isTwitchCallback) {
       console.log('[EloWard Background] Popup is handling auth, skipping background processing');
       // Still store callback for popup to find
       browser.storage.local.set({
@@ -176,7 +180,7 @@ async function handleAuthCallback(params) {
     }
   });
 
-  const isTwitchCallback = params.service === 'twitch';
+  // isTwitchCallback already determined above
 
   // Ignore website-initiated Twitch auth callbacks (state not tagged with 'ext:')
   if (isTwitchCallback) {
