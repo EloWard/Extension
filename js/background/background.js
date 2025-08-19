@@ -147,20 +147,12 @@ async function handleAuthCallback(params) {
   // Determine service early so we can decide handling strategy
   const isTwitchCallback = params.service === 'twitch';
 
-  // If popup initiated auth, we still ALWAYS process Twitch in background (Firefox popups may close)
-  // For Riot, we continue to skip background processing to let the popup handle it.
+  // Even if the popup initiated auth, ALWAYS process auth in the background for robustness across browsers.
+  // The popup flow will wait briefly to avoid double exchanges.
   try {
     const { eloward_popup_auth_active } = await browser.storage.local.get(['eloward_popup_auth_active']);
-    if (eloward_popup_auth_active && !isTwitchCallback) {
-      console.log('[EloWard Background] Popup is handling auth, skipping background processing');
-      // Still store callback for popup to find
-      browser.storage.local.set({
-        'auth_callback': {
-          ...params,
-          timestamp: Date.now()
-        }
-      });
-      return;
+    if (eloward_popup_auth_active) {
+      console.log('[EloWard Background] Popup is handling auth, continuing background processing for robustness');
     }
   } catch (_) {}
 
@@ -233,9 +225,30 @@ async function initiateTokenExchange(authData, service = 'riot') {
 
       return userInfo;
     } else {
-      // For Riot auth, the background script shouldn't handle token exchange
-      // The main authenticate() method in RiotAuth uses completeAuthentication
-      throw new Error('Riot auth should use the main authenticate() method, not background token exchange');
+      // Riot auth: complete server-side via background for cross-browser robustness
+      // Get region that was stored before auth window opened
+      let region = 'na1';
+      try {
+        const data = await browser.storage.local.get(['selectedRegion']);
+        if (data && data.selectedRegion) region = data.selectedRegion;
+      } catch (_) {}
+
+      // Complete authentication via RiotAuth helper; it validates Twitch linkage inside
+      const riotUser = await RiotAuth.completeAuthentication(authData.code, region);
+
+      // Persist Riot user data and mark connected
+      await PersistentStorage.storeRiotUserData(riotUser);
+      await PersistentStorage.updateConnectedState('riot', true);
+
+      // Notify popup/UI listeners
+      try {
+        await browser.runtime.sendMessage({
+          type: 'auth_completed',
+          service: 'riot'
+        });
+      } catch (_) {}
+
+      return riotUser;
     }
   } catch (error) {
     throw error;

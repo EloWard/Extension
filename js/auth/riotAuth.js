@@ -117,12 +117,20 @@ export const RiotAuth = {
       // Clear any temporary callback keys written by the bridge
       try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','riot_auth_callback']); } catch (_) {}
 
+      // Give background a brief chance to complete auth first to avoid double exchange in Firefox
+      const bgUser = await RiotAuth._waitForStoredRiotUserData(2000);
+      if (bgUser) {
+        console.log('[RiotAuth] background completed auth, using stored data');
+        await PersistentStorage.updateConnectedState('riot', true);
+        return bgUser;
+      }
+
       // Use optimized single-call auth endpoint
       console.log('[RiotAuth] calling optimized auth complete endpoint');
       const userData = await this.completeAuthentication(authResult.code, region);
       console.log('[RiotAuth] auth complete successful', userData);
       
-
+      
       await PersistentStorage.storeRiotUserData(userData);
       console.log('[RiotAuth] stored user data to persistent storage');
       
@@ -742,3 +750,21 @@ class AuthCallbackWatcher {
     this.resolveCallback(result);
   }
 }
+
+// Helper: wait up to timeout for Riot user data written by background
+RiotAuth._waitForStoredRiotUserData = async function(timeoutMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const userData = await PersistentStorage.getRiotUserData();
+      if (userData && userData.puuid) {
+        return {
+          ...userData,
+          soloQueueRank: userData.rankInfo
+        };
+      }
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return null;
+};
