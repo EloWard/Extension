@@ -996,13 +996,12 @@ async function fetchRankFromDatabase(twitchUsername) {
     }
     
     const rankData = await response.json();
-    
+    // Do not return sensitive identifiers like PUUID to content scripts
     return {
       tier: rankData.rank_tier,
       division: rankData.rank_division,
       leaguePoints: rankData.lp,
       summonerName: rankData.riot_id,
-      puuid: rankData.riot_puuid,
       region: rankData.region
     };
   } catch (error) {
