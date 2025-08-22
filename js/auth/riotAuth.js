@@ -416,24 +416,20 @@ export const RiotAuth = {
       const responseData = await response.json();
       
       if (!response.ok) {
-        // Handle 404 errors specifically for immediate UI refresh
+        // Do not clear any local persistent data on refresh errors; just propagate a descriptive error
         if (response.status === 404) {
-          // Clear persistent storage for immediate UI refresh
-          await PersistentStorage.clearServiceData('riot');
-          const error = new Error('Account not found. Please reconnect your Riot account.');
+          const error = new Error('Account not found.');
           error.status = 404;
-          error.requiresImmediateUIRefresh = true;
           throw error;
         }
-        
-        // Check if we need to clear persistent data
-        if (responseData.action === 'clear_persistent_data') {
-          // Clear persistent storage and throw error to prompt reconnect
-          await PersistentStorage.clearServiceData('riot');
-          throw new Error('Account disconnected. Please reconnect your Riot account.');
+
+        if (responseData && responseData.action === 'clear_persistent_data') {
+          const error = new Error('Account disconnected.');
+          error.action = 'clear_persistent_data';
+          throw error;
         }
-        
-        throw new Error(responseData.message || 'Failed to refresh rank');
+
+        throw new Error((responseData && responseData.message) || 'Failed to refresh rank');
       }
       
       return responseData.data;

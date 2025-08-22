@@ -679,33 +679,12 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
         return;
       } catch (interactiveErr) {
-        try {
-            await PersistentStorage.updateConnectedState('riot', false);
-            await PersistentStorage.clearServiceData('riot');
-          } catch (_) {}
-          showAuthError('Authentication failed. Please reconnect your Riot account.');
-          return;
+        // Silently fail on refresh re-auth errors; keep persistent data and UI intact
+        return;
         }
     } catch (error) {
       console.warn('[EloWard Popup] Manual rank refresh: failed', error?.message || error);
-      
-      // Handle 404 errors with immediate UI refresh to show "Not Connected"
-      if (error?.status === 404 || error?.requiresImmediateUIRefresh) {
-        // Immediately refresh UI to show not connected state
-        showNotConnectedUI();
-        return;
-      }
-      
-      // Show "Unranked" if there's a rank lookup error or no data found for this region
-      if (error?.message && (
-          error.message.includes('not found') || 
-          error.message.includes('not available') || 
-          error.message.includes('no rank data')
-      )) {
-        currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
-        rankBadgePreview.style.transform = 'translateY(-3px)';
-      }
+      // Silently fail; leave persistent Riot data and current UI state intact
     } finally {
       // Remove loading state
       if (refreshRankBtn.classList.contains('refreshing')) {
