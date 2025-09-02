@@ -328,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rankInfo) {
           displayRank(rankInfo);
         } else {
-
           currentRank.textContent = 'Unranked';
           rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
           rankBadgePreview.style.transform = 'translateY(-3px)';
@@ -357,115 +356,147 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function checkAuthStatus() {
     try {
+      // Initialize from persistent storage first - single source of truth
+      const [persistentConnectedState, storedRiotData, storedTwitchData, regionData] = await Promise.all([
+        PersistentStorage.getConnectedState(),
+        PersistentStorage.getRiotUserData(),
+        PersistentStorage.getTwitchUserData(),
+        browser.storage.local.get(['selectedRegion'])
+      ]);
       
-      // First check persistent storage for connected states
-      const persistentConnectedState = await PersistentStorage.getConnectedState();
-      
-      // Check persistent storage for user data (even if not "connected" due to expired tokens)
-      const storedRiotData = await PersistentStorage.getRiotUserData();
-      if (storedRiotData) {
+      // Handle Riot authentication state
+      if (storedRiotData && storedRiotData.riotId && storedRiotData.puuid) {
         const userData = {
           riotId: storedRiotData.riotId,
           puuid: storedRiotData.puuid,
           soloQueueRank: storedRiotData.rankInfo
         };
         
-        if (persistentConnectedState.riot) {
-          // User is actively connected with valid tokens
-          updateUserInterface(userData);
-          refreshRankBtn.classList.remove('hidden'); // Show refresh button
-        } else {
-          // User has stored data but tokens may be expired
-          updateUserInterface(userData);
-          // Still show refresh button - it will handle re-authentication if needed
-          refreshRankBtn.classList.remove('hidden');
-          
-          riotConnectionStatus.textContent = userData.riotId;
-          riotConnectionStatus.classList.add('connected');
-          updateRiotButtonText('Disconnect');
+        // Always show user as connected if we have valid stored data
+        updateUserInterface(userData);
+        refreshRankBtn.classList.remove('hidden');
+        riotConnectionStatus.textContent = userData.riotId;
+        riotConnectionStatus.classList.add('connected');
+        updateRiotButtonText('Disconnect');
+        
+        // Update background cache for consistency
+        await updateBackgroundCacheForLocalUser(userData);
+        
+        // Set region from stored data
+        if (regionData.selectedRegion) {
+          regionSelect.value = regionData.selectedRegion;
+        }
+      } else if (persistentConnectedState.twitch) {
+        // Try fallback for existing riot data only if no stored data exists
+        try {
+          const fallbackResult = await PersistentStorage.tryRiotDataFallback();
+          if (fallbackResult.success) {
+            // Recursively call checkAuthStatus to handle the newly stored data
+            return await checkAuthStatus();
+          }
+        } catch (error) {
+          // Backend fallback failed, try cache sync as last resort
+          try {
+            const cacheSync = await syncCacheToStorage();
+            if (cacheSync) {
+              // Recursively call checkAuthStatus to handle the newly stored data
+              return await checkAuthStatus();
+            }
+          } catch (syncError) {
+            // Cache sync also failed, continue with not connected UI
+          }
         }
         
-        // Get the connected region from storage and update the selector
-        browser.storage.local.get(['selectedRegion']).then((result) => {
-          if (result.selectedRegion) {
-            regionSelect.value = result.selectedRegion;
-          }
-        });
-      } else {
         // Show not connected UI for Riot
         riotConnectionStatus.textContent = 'Not Connected';
         riotConnectionStatus.classList.remove('connected', 'error');
-        
-        // Check if first-time user to determine button text
-        const firstTime = await isFirstTimeUser();
         updateRiotButtonText('Connect');
         connectRiotBtn.disabled = false;
-        currentRank.textContent = 'Unknown';
-        rankBadgePreview.style.backgroundImage = 'none';
-        refreshRankBtn.classList.add('hidden'); // Hide refresh button
-        
-        // Reset rank display and show unranked graphic
         currentRank.textContent = 'Unranked';
         rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
+        refreshRankBtn.classList.add('hidden');
         
-        // Set region from storage if available
-        browser.storage.local.get(['selectedRegion']).then((result) => {
-          if (result.selectedRegion) {
-            regionSelect.value = result.selectedRegion;
-          }
-        });
+        if (regionData.selectedRegion) {
+          regionSelect.value = regionData.selectedRegion;
+        }
+      } else {
+        // No Twitch connection, show not connected UI
+        riotConnectionStatus.textContent = 'Not Connected';
+        riotConnectionStatus.classList.remove('connected', 'error');
+        updateRiotButtonText('Connect');
+        currentRank.textContent = 'Unranked';
+        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
+        rankBadgePreview.style.transform = 'translateY(-3px)';
+        refreshRankBtn.classList.add('hidden');
       }
       
-      // Check persistent storage for Twitch data (even if not "connected" due to expired tokens)
-      const storedTwitchData = await PersistentStorage.getTwitchUserData();
-      const renderedTwitchFromStorage = !!storedTwitchData;
-      if (renderedTwitchFromStorage) {
-        // Show user data regardless of connection status (data preserved)
+      // Handle Twitch authentication state - prioritize stored data
+      if (storedTwitchData && storedTwitchData.id) {
         twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
         twitchConnectionStatus.classList.add('connected');
         twitchConnectionStatus.classList.remove('error');
         connectTwitchBtn.textContent = 'Disconnect';
+        
+        // Proactively sync cache to persistent storage if no riot data exists
+        if (!storedRiotData && persistentConnectedState.twitch) {
+          try {
+            const cacheSync = await syncCacheToStorage();
+            if (cacheSync) {
+              // Recursively call checkAuthStatus to handle the newly stored data
+              return await checkAuthStatus();
+            }
+          } catch (syncError) {
+            // Cache sync failed, continue with current state
+          }
+        }
+      } else {
+        twitchConnectionStatus.textContent = 'Not Connected';
+        twitchConnectionStatus.classList.remove('connected', 'error');
+        connectTwitchBtn.textContent = 'Connect';
       }
       
-      // Check Twitch authentication status
-      try {
-        const isTwitchAuthenticated = await TwitchAuth.isAuthenticated();
-        
-        if (isTwitchAuthenticated) {
-          // If we didn't render from storage yet, populate from storage-first API
-          if (!renderedTwitchFromStorage) {
-            // storage-first only; backend already stored user during auth
-            const userData = await PersistentStorage.getTwitchUserData();
-            const displayName = userData?.display_name || userData?.login || 'Connected';
-            twitchConnectionStatus.textContent = displayName;
-            twitchConnectionStatus.classList.add('connected');
-            twitchConnectionStatus.classList.remove('error');
-            connectTwitchBtn.textContent = 'Disconnect';
-          }
-        } else if (!persistentConnectedState.twitch && !renderedTwitchFromStorage) {
-          // Only show Not Connected if we haven't already displayed cached data
-          twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('connected', 'error');
-          connectTwitchBtn.textContent = 'Connect';
-        }
-        
-        updateRiotControlsBasedOnTwitchStatus();
-      } catch (_) {
-        if (!persistentConnectedState.twitch && !renderedTwitchFromStorage) {
-          twitchConnectionStatus.textContent = 'Not Connected';
-          twitchConnectionStatus.classList.remove('connected', 'error');
-          connectTwitchBtn.textContent = 'Connect';
-          updateRiotControlsBasedOnTwitchStatus();
-        }
-      }
+      // Update controls based on final state
+      updateRiotControlsBasedOnTwitchStatus();
       
     } catch (error) {
       showNotConnectedUI();
     }
-    
-    // Ensure Riot controls are properly set based on final Twitch status
-    updateRiotControlsBasedOnTwitchStatus();
+  }
+
+  // Helper function to sync rank cache data to persistent storage if needed
+  async function syncCacheToStorage() {
+    try {
+      const twitchData = await PersistentStorage.getTwitchUserData();
+      if (!twitchData?.login) return false;
+
+      const username = twitchData.login.toLowerCase();
+      
+      // Get current user's rank from background cache
+      const response = await browser.runtime.sendMessage({
+        action: 'get_all_cached_ranks'
+      });
+      
+      if (response?.ranks?.[username]) {
+        const rankData = response.ranks[username];
+        const userData = {
+          riotId: rankData.summonerName || `${username}#NA1`,
+          puuid: 'synced-from-cache',
+          rankInfo: {
+            tier: rankData.tier,
+            rank: rankData.division,
+            leaguePoints: rankData.leaguePoints
+          }
+        };
+        
+        await PersistentStorage.storeRiotUserData(userData);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      return false;
+    }
   }
 
   // Helper function to show the not connected UI state

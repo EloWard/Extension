@@ -29,15 +29,24 @@ export const PersistentStorage = {
       rankInfo: null
     };
     
-    if (userData.soloQueueRank) {
-      persistentData.rankInfo = {
-        tier: userData.soloQueueRank.tier,
-        rank: userData.soloQueueRank.rank,
-        leaguePoints: userData.soloQueueRank.leaguePoints,
-        wins: userData.soloQueueRank.wins,
-        losses: userData.soloQueueRank.losses
-      };
-    }
+          if (userData.soloQueueRank) {
+        persistentData.rankInfo = {
+          tier: userData.soloQueueRank.tier,
+          rank: userData.soloQueueRank.rank,
+          leaguePoints: userData.soloQueueRank.leaguePoints,
+          wins: userData.soloQueueRank.wins,
+          losses: userData.soloQueueRank.losses
+        };
+      } else if (userData.rankInfo) {
+        // Handle fallback format from backend
+        persistentData.rankInfo = {
+          tier: userData.rankInfo.tier,
+          rank: userData.rankInfo.rank,
+          leaguePoints: userData.rankInfo.leaguePoints,
+          wins: userData.rankInfo.wins || 0,
+          losses: userData.rankInfo.losses || 0
+        };
+      }
     
     await browser.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,
@@ -88,7 +97,13 @@ export const PersistentStorage = {
   
   async getConnectedState() {
     const data = await browser.storage.local.get([STORAGE_KEYS.CONNECTED_STATE]);
-    return data[STORAGE_KEYS.CONNECTED_STATE] || { riot: false, twitch: false };
+    const storedState = data[STORAGE_KEYS.CONNECTED_STATE] || {};
+    
+    // Always return complete state object with explicit false values
+    return {
+      riot: storedState.riot === true,
+      twitch: storedState.twitch === true
+    };
   },
   
   async isServiceConnected(service) {
@@ -155,6 +170,49 @@ export const PersistentStorage = {
         hasRankData: false,
         canAccessDatabase: false
       };
+    }
+  },
+
+  async tryRiotDataFallback() {
+    try {
+      // Get the twitch_id from stored twitch data
+      const twitchData = await this.getTwitchUserData();
+      if (!twitchData?.id) {
+        return { success: false, error: 'No Twitch data available' };
+      }
+
+      // Call the backend fallback endpoint
+      const response = await fetch('https://eloward-users.unleashai.workers.dev/user/riot-fallback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          twitch_id: twitchData.id
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Failed to fetch riot data' };
+      }
+
+      if (!data.success || !data.riot_data) {
+        return { success: false, error: 'Invalid response from server' };
+      }
+
+      // Store the region first so storeRiotUserData can use it
+      if (data.riot_data.region) {
+        await browser.storage.local.set({ selectedRegion: data.riot_data.region });
+      }
+
+      // Store the riot data using existing method
+      await this.storeRiotUserData(data.riot_data);
+      
+      return { success: true, data: data.riot_data };
+    } catch (error) {
+      return { success: false, error: error.message || 'Failed to check riot data fallback' };
     }
   }
 }; 
