@@ -364,6 +364,18 @@ document.addEventListener('DOMContentLoaded', () => {
         browser.storage.local.get(['selectedRegion'])
       ]);
       
+      // Handle Twitch authentication state FIRST - never block this
+      if (storedTwitchData && storedTwitchData.id) {
+        twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
+        twitchConnectionStatus.classList.add('connected');
+        twitchConnectionStatus.classList.remove('error');
+        connectTwitchBtn.textContent = 'Disconnect';
+      } else {
+        twitchConnectionStatus.textContent = 'Not Connected';
+        twitchConnectionStatus.classList.remove('connected', 'error');
+        connectTwitchBtn.textContent = 'Connect';
+      }
+      
       // Handle Riot authentication state
       if (storedRiotData && storedRiotData.riotId && storedRiotData.puuid) {
         const userData = {
@@ -379,26 +391,15 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.add('connected');
         updateRiotButtonText('Disconnect');
         
-        // Update background cache for consistency
-        await updateBackgroundCacheForLocalUser(userData);
+        // Update background cache for consistency (non-blocking)
+        updateBackgroundCacheForLocalUser(userData).catch(() => {});
         
         // Set region from stored data
         if (regionData.selectedRegion) {
           regionSelect.value = regionData.selectedRegion;
         }
-      } else if (persistentConnectedState.twitch) {
-        // Try fallback for existing riot data only if no stored data exists
-        try {
-          const fallbackResult = await PersistentStorage.tryRiotDataFallback();
-          if (fallbackResult.success) {
-            // Recursively call checkAuthStatus to handle the newly stored data
-            return await checkAuthStatus();
-          }
-        } catch (error) {
-          // Backend fallback failed, continue with not connected UI
-        }
-        
-        // Show not connected UI for Riot
+      } else {
+        // Show not connected UI for Riot immediately
         riotConnectionStatus.textContent = 'Not Connected';
         riotConnectionStatus.classList.remove('connected', 'error');
         updateRiotButtonText('Connect');
@@ -411,29 +412,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (regionData.selectedRegion) {
           regionSelect.value = regionData.selectedRegion;
         }
-      } else {
-        // No Twitch connection, show not connected UI
-        riotConnectionStatus.textContent = 'Not Connected';
-        riotConnectionStatus.classList.remove('connected', 'error');
-        updateRiotButtonText('Connect');
-        currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
-        rankBadgePreview.style.transform = 'translateY(-3px)';
-        refreshRankBtn.classList.add('hidden');
-      }
-      
-      // Handle Twitch authentication state - prioritize stored data
-      if (storedTwitchData && storedTwitchData.id) {
-        twitchConnectionStatus.textContent = storedTwitchData.display_name || storedTwitchData.login;
-        twitchConnectionStatus.classList.add('connected');
-        twitchConnectionStatus.classList.remove('error');
-        connectTwitchBtn.textContent = 'Disconnect';
         
-
-      } else {
-        twitchConnectionStatus.textContent = 'Not Connected';
-        twitchConnectionStatus.classList.remove('connected', 'error');
-        connectTwitchBtn.textContent = 'Connect';
+        // Try fallback asynchronously if Twitch connected (non-blocking)
+        if (persistentConnectedState.twitch) {
+          PersistentStorage.tryRiotDataFallback()
+            .then(fallbackResult => {
+              if (fallbackResult.success) {
+                const userData = {
+                  riotId: fallbackResult.data.riotId,
+                  puuid: fallbackResult.data.puuid,
+                  soloQueueRank: fallbackResult.data.rankInfo
+                };
+                
+                updateUserInterface(userData);
+                riotConnectionStatus.textContent = userData.riotId;
+                riotConnectionStatus.classList.add('connected');
+                updateRiotButtonText('Disconnect');
+                refreshRankBtn.classList.remove('hidden');
+                
+                updateBackgroundCacheForLocalUser(userData).catch(() => {});
+              }
+            })
+            .catch(() => {
+              // Fallback failed, UI already shows not connected
+            });
+        }
       }
       
       // Update controls based on final state
