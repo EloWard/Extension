@@ -549,6 +549,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false; // synchronous response
   }
   
+  if (message.action === 'clear_user_rank_cache' && message.username) {
+    const username = message.username.toLowerCase();
+    if (userRankCache.cache.has(username)) {
+      userRankCache.cache.delete(username);
+      maybePersistRankCache(userRankCache).catch(() => {});
+    }
+    sendResponse({ success: true });
+    return false; // synchronous response
+  }
+  
   if (message.action === 'get_all_cached_ranks') {
     const allRanks = {};
     for (const [username, entry] of userRankCache.cache.entries()) {

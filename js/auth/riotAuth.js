@@ -339,12 +339,14 @@ export const RiotAuth = {
    */
   async disconnect() {
     try {
+      // Get current user data before clearing for backend disconnect
+      const persistentRiotData = await PersistentStorage.getRiotUserData();
+      const twitchData = await PersistentStorage.getTwitchUserData();
+      
       // Attempt backend disconnect first to remove rank data in DB
       try {
-        const persistentRiotData = await PersistentStorage.getRiotUserData();
         const puuid = persistentRiotData?.puuid;
-
-        if (puuid) {
+        if (puuid && puuid !== 'synced-from-cache') {
           await fetch(`${this.config.proxyBaseUrl}/disconnect`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
@@ -355,15 +357,35 @@ export const RiotAuth = {
         // Swallow backend errors; ensure local cleanup still happens
       }
 
-      // Clear persistent user data (single source of truth)
+      // Clear persistent user data and connected state
       await PersistentStorage.clearServiceData('riot');
 
-      // Clear only auth-related session data (no tokens needed)
+      // Clear current user's rank data from background cache
+      if (twitchData?.login) {
+        try {
+          await browser.runtime.sendMessage({
+            action: 'clear_user_rank_cache',
+            username: twitchData.login.toLowerCase()
+          });
+        } catch (_) {}
+      }
+
+      // Clear ALL Riot-related storage keys including cached badges and region
       const keysToRemove = [
         this.config.storageKeys.authState,
         'riot_auth_callback',
-        'eloward_auth_callback'
+        'eloward_auth_callback',
+        'auth_callback', 
+        'selectedRegion',
+        'eloward_signin_attempted'
       ];
+
+      // Clear cached badge images (all rank badges)
+      const allKeys = await browser.storage.local.get(null);
+      const badgeKeys = Object.keys(allKeys).filter(key => 
+        key.startsWith('eloward_cached_badge_image_')
+      );
+      keysToRemove.push(...badgeKeys);
 
       await browser.storage.local.remove(keysToRemove);
 

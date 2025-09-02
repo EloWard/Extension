@@ -18,14 +18,14 @@ export const PersistentStorage = {
   },
   
   async storeRiotUserData(userData) {
-    if (!userData) return;
+    if (!userData || !userData.puuid) return;
     
     const currentData = await browser.storage.local.get(['selectedRegion']);
     
     const persistentData = {
       riotId: userData.riotId,
       puuid: userData.puuid,
-      region: currentData.selectedRegion,
+      region: userData.region || currentData.selectedRegion,
       rankInfo: null
     };
     

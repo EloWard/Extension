@@ -395,16 +395,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return await checkAuthStatus();
           }
         } catch (error) {
-          // Backend fallback failed, try cache sync as last resort
-          try {
-            const cacheSync = await syncCacheToStorage();
-            if (cacheSync) {
-              // Recursively call checkAuthStatus to handle the newly stored data
-              return await checkAuthStatus();
-            }
-          } catch (syncError) {
-            // Cache sync also failed, continue with not connected UI
-          }
+          // Backend fallback failed, continue with not connected UI
         }
         
         // Show not connected UI for Riot
@@ -438,18 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
         twitchConnectionStatus.classList.remove('error');
         connectTwitchBtn.textContent = 'Disconnect';
         
-        // Proactively sync cache to persistent storage if no riot data exists
-        if (!storedRiotData && persistentConnectedState.twitch) {
-          try {
-            const cacheSync = await syncCacheToStorage();
-            if (cacheSync) {
-              // Recursively call checkAuthStatus to handle the newly stored data
-              return await checkAuthStatus();
-            }
-          } catch (syncError) {
-            // Cache sync failed, continue with current state
-          }
-        }
+
       } else {
         twitchConnectionStatus.textContent = 'Not Connected';
         twitchConnectionStatus.classList.remove('connected', 'error');
@@ -464,40 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Helper function to sync rank cache data to persistent storage if needed
-  async function syncCacheToStorage() {
-    try {
-      const twitchData = await PersistentStorage.getTwitchUserData();
-      if (!twitchData?.login) return false;
 
-      const username = twitchData.login.toLowerCase();
-      
-      // Get current user's rank from background cache
-      const response = await browser.runtime.sendMessage({
-        action: 'get_all_cached_ranks'
-      });
-      
-      if (response?.ranks?.[username]) {
-        const rankData = response.ranks[username];
-        const userData = {
-          riotId: rankData.summonerName || `${username}#NA1`,
-          puuid: 'synced-from-cache',
-          rankInfo: {
-            tier: rankData.tier,
-            rank: rankData.division,
-            leaguePoints: rankData.leaguePoints
-          }
-        };
-        
-        await PersistentStorage.storeRiotUserData(userData);
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      return false;
-    }
-  }
 
   // Helper function to show the not connected UI state
   async function showNotConnectedUI() {
