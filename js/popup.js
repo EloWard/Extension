@@ -71,6 +71,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Standardize rank data extraction from user data
+  function extractRankDataForDisplay(userData) {
+    let rankInfo = null;
+    
+    // Check for soloQueueRank structure (from persistent storage)
+    if (userData.soloQueueRank) {
+      rankInfo = {
+        tier: userData.soloQueueRank.tier,
+        division: userData.soloQueueRank.rank,
+        leaguePoints: userData.soloQueueRank.leaguePoints,
+        plus_active: userData.plus_active || false
+      };
+    }
+    // Check for direct rank structure (from backend)
+    else if (userData.tier) {
+      rankInfo = {
+        tier: userData.tier,
+        division: userData.division,
+        leaguePoints: userData.leaguePoints,
+        plus_active: userData.plus_active || false
+      };
+    }
+    // Check for legacy ranks array structure
+    else if (userData.ranks && userData.ranks.length > 0) {
+      const soloQueueEntry = userData.ranks.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+      if (soloQueueEntry) {
+        rankInfo = {
+          tier: soloQueueEntry.tier,
+          division: soloQueueEntry.rank,
+          leaguePoints: soloQueueEntry.leaguePoints,
+          plus_active: userData.plus_active || false
+        };
+      }
+    }
+    // Check for rankInfo structure
+    else if (userData.rankInfo) {
+      rankInfo = {
+        ...userData.rankInfo,
+        plus_active: userData.plus_active || false
+      };
+    }
+    
+    // Ensure tier is properly capitalized
+    const tierUpper = rankInfo.tier.toUpperCase();
+    rankInfo.tier = tierUpper.charAt(0) + tierUpper.slice(1).toLowerCase();
+    
+    return rankInfo;
+  }
+
 
 
   async function isFirstTimeUser() {
@@ -267,30 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hide region selector once Riot is connected
         try { regionSelect.classList.add('hidden'); } catch (_) {}
         
-        let rankInfo = null;
-        
-
-        if (userData.soloQueueRank) {
-          rankInfo = {
-            tier: userData.soloQueueRank.tier.charAt(0) + userData.soloQueueRank.tier.slice(1).toLowerCase(),
-            division: userData.soloQueueRank.rank,
-            leaguePoints: userData.soloQueueRank.leaguePoints
-          };
-        } else if (userData.ranks && userData.ranks.length > 0) {
-          const soloQueueEntry = userData.ranks.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-          if (soloQueueEntry) {
-            rankInfo = {
-              tier: soloQueueEntry.tier.charAt(0) + soloQueueEntry.tier.slice(1).toLowerCase(),
-              division: soloQueueEntry.rank,
-              leaguePoints: soloQueueEntry.leaguePoints
-            };
-          }
-        } else if (userData.rankInfo) {
-          rankInfo = userData.rankInfo;
-        }
-        
-
-        
+        // Use standardized rank data extraction
+        const rankInfo = extractRankDataForDisplay(userData);
 
         if (rankInfo) {
           displayRank(rankInfo);
@@ -761,29 +788,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update premium star visibility
     updatePremiumStar(isPremium);
     
-    if (!rankData) {
-      currentRank.textContent = 'Unranked';
-      const unrankedKey = 'unranked';
-      const extension = isPremium ? '.webp' : '.png';
-      const suffix = isPremium ? '_premium' : '';
-      const unrankedUrl = `https://eloward-cdn.unleashai.workers.dev/lol/unranked${suffix}${extension}`;
-      try {
-        const cachedUnranked = await getCachedBadgeDataUrl(unrankedKey, isPremium);
-        if (cachedUnranked) {
-          rankBadgePreview.style.backgroundImage = `url('${cachedUnranked}')`;
-        } else {
-          rankBadgePreview.style.backgroundImage = `url('${unrankedUrl}')`;
-          prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl, isPremium);
-        }
-      } catch (_) {
-        rankBadgePreview.style.backgroundImage = `url('${unrankedUrl}')`;
-        prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl, isPremium);
-      }
-      // Apply custom positioning for unranked badge
-      rankBadgePreview.style.transform = 'translateY(-3px)';
-      return;
-    }
-    
     // Properly capitalize the tier
     let formattedTier = rankData.tier.toLowerCase();
     formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
@@ -957,8 +961,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Store updated data
         await PersistentStorage.storeRiotUserData(updatedUserData);
         
-        // Update UI with fresh data
-        displayRank(updatedUserData);
+        // Update UI with fresh data (extract standardized rank data)
+        const rankDataForDisplay = extractRankDataForDisplay(updatedUserData);
+        displayRank(rankDataForDisplay);
       }
     } catch (error) {
       // Silently fail - popup will show existing data
