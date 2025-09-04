@@ -668,6 +668,28 @@ function initializeStorage() {
         action: 'set_current_user',
         username: extensionState.currentUser
       });
+      
+      // Check if local user data is cached and fresh, fetch from backend if needed
+      chrome.runtime.sendMessage({
+        action: 'get_cached_rank',
+        username: extensionState.currentUser
+      }, (cachedResponse) => {
+        if (!cachedResponse?.rankData) {
+          // No cached data, fetch fresh from backend
+          chrome.runtime.sendMessage({
+            action: 'fetch_rank_for_username',
+            username: extensionState.currentUser
+          }, (response) => {
+            if (response?.success && response?.rankData) {
+              chrome.runtime.sendMessage({
+                action: 'set_rank_data',
+                username: extensionState.currentUser,
+                rankData: response.rankData
+              });
+            }
+          });
+        }
+      });
     }
   });
 }
