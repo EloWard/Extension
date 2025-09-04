@@ -22,8 +22,8 @@ const defaultConfig = {
   clientId: 'pml5yi4pqvuo281akjq0q6topaeli3',
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
-  // Force the consent/login prompt to avoid silently reusing a prior session
-  forceVerify: true,
+  // Conditionally force the authorization screen only when switching accounts
+  forceVerify: false, // Will be set dynamically based on context
   endpoints: {
     // Consolidated tokenless endpoint (primary)
     authComplete: '/twitch/auth'
@@ -52,6 +52,11 @@ export const TwitchAuth = {
    */
   async authenticate() {
     try {
+      console.log('[TwitchAuth] Starting authentication flow...');
+      
+      // Check if user recently disconnected (wants to switch accounts)
+      const switchAccountMode = await this._shouldForceReauthorization();
+      console.log('[TwitchAuth] Switch account mode:', switchAccountMode);
       
       // Clear any previous auth states
       await browser.storage.local.remove([this.config.storageKeys.authState]);
@@ -63,7 +68,7 @@ export const TwitchAuth = {
       await this._storeAuthState(state);
       
       // Get authentication URL from the backend proxy
-      const authUrl = await this._getAuthUrl(state);
+      const authUrl = await this._getAuthUrl(state, switchAccountMode);
       
       // Clear any existing callbacks before opening the window
       try {
@@ -89,6 +94,7 @@ export const TwitchAuth = {
       
       // Verify the state to prevent CSRF attacks
       if (authResult.state !== state) {
+        console.warn('[TwitchAuth] State mismatch - expected:', state, 'got:', authResult.state);
         
         // Try fallback state verification
         const storedState = await this._getStoredAuthState();
@@ -97,28 +103,42 @@ export const TwitchAuth = {
         }
       }
       
+      console.log('[TwitchAuth] State verification passed');
+      
       // Clear any temporary callback keys written by the bridge
       try { await browser.storage.local.remove(['auth_callback','eloward_auth_callback','twitch_auth_callback']); } catch (_) {}
 
       // Give background a brief chance to complete auth first (prevents double exchange in Firefox)
+      console.log('[TwitchAuth] Checking if background completed auth...');
       const bgUser = await this._waitForStoredTwitchUserData(2000);
       if (bgUser) {
-        // Background already completed and stored the user data
+        console.log('[TwitchAuth] Background completed auth successfully:', bgUser.login || bgUser.id);
         await PersistentStorage.updateConnectedState('twitch', true);
         return bgUser;
       }
 
       // Background didn't complete in time: perform tokenless Twitch auth via backend here
+      console.log('[TwitchAuth] Background did not complete, performing tokenless auth...');
       const completed = await this.completeAuthentication(authResult.code);
       if (completed && completed.id) {
+        console.log('[TwitchAuth] Tokenless auth completed successfully:', completed.login || completed.id);
         await PersistentStorage.storeTwitchUserData(completed);
         await PersistentStorage.updateConnectedState('twitch', true);
         return completed;
       }
       // Fallback minimal success
+      console.log('[TwitchAuth] Using fallback minimal success response');
       await PersistentStorage.updateConnectedState('twitch', true);
       return { authenticated: true };
     } catch (error) {
+      console.error('[TwitchAuth] Authentication failed:', error.message);
+      
+      // Check if this might be a 2FA/userscript interference issue
+      if (error.message?.includes('400') || error.message?.includes('Bad Request')) {
+        console.warn('[TwitchAuth] Possible 2FA or userscript interference detected');
+        console.warn('[TwitchAuth] Try disabling Twitch-related browser extensions/userscripts and retry');
+      }
+      
       // Ensure the connected state is reset on any error
       try {
         await PersistentStorage.updateConnectedState('twitch', false);
@@ -180,10 +200,11 @@ export const TwitchAuth = {
   /**
    * Get authentication URL from backend
    * @param {string} state - A unique state for CSRF protection
+   * @param {boolean} forceReauth - Whether to force re-authorization screen
    * @returns {Promise<string>} The authentication URL
    * @private
    */
-  async _getAuthUrl(state) {
+  async _getAuthUrl(state, forceReauth = false) {
     try {
       const clientId = this.config.clientId && String(this.config.clientId).trim();
       const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
@@ -192,7 +213,15 @@ export const TwitchAuth = {
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('scope', this.config.scopes);
       authUrl.searchParams.set('state', state);
-      if (this.config.forceVerify) authUrl.searchParams.set('force_verify', 'true');
+      
+      // Only show authorization screen when user explicitly wants to switch accounts
+      if (forceReauth) {
+        console.log('[TwitchAuth] Adding force_verify for account switching');
+        authUrl.searchParams.set('force_verify', 'true');
+      } else {
+        console.log('[TwitchAuth] Using normal auth flow (no force_verify)');
+      }
+      
       return authUrl.toString();
     } catch (error) {
       throw error;
@@ -249,8 +278,8 @@ export const TwitchAuth = {
   async _waitForAuthCallback() {
     
     return new Promise(resolve => {
-      const maxWaitTime = 300000; // 5 minutes
-      const checkInterval = 1000; // 1 second
+      const maxWaitTime = 600000; // 10 minutes (extended for 2FA + force_verify flow)
+      const checkInterval = 1500; // 1.5 seconds (slightly slower polling to be less aggressive)
       let elapsedTime = 0;
       let intervalId;
       let resolved = false;
@@ -287,6 +316,8 @@ export const TwitchAuth = {
         }
         
         if (this.authWindow && this.authWindow.closed) {
+          // Give extra time for callbacks to arrive after window closure (2FA + force_verify can be slower)
+          await new Promise(r => setTimeout(r, 2000));
           const lastCheck = await browser.storage.local.get(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]);
           const lastCallback = lastCheck.auth_callback || lastCheck.twitch_auth_callback || lastCheck[this.config.storageKeys.authCallback];
           try { browser.storage.local.remove(['auth_callback', 'twitch_auth_callback', this.config.storageKeys.authCallback]); } catch (_) {}
@@ -414,9 +445,46 @@ export const TwitchAuth = {
       // 3) Explicitly mark service disconnected to avoid isAuthenticated short-circuit
       try { await PersistentStorage.updateConnectedState('twitch', false); } catch (_) {}
 
-      // Rely on force_verify to prompt re-login on next connect; no logout popup/revocation
+      // 4) Set flag to show authorization screen on next connect (for account switching)
+      try {
+        await browser.storage.local.set({ 
+          'eloward_twitch_wants_reauth': true,
+          'eloward_twitch_disconnect_timestamp': Date.now()
+        });
+        console.log('[TwitchAuth] Set reauth flag for account switching');
+      } catch (_) {}
+
       return true;
     } catch (error) {
+      return false;
+    }
+  },
+  
+  /**
+   * Check if we should force re-authorization (user wants to switch accounts)
+   * @returns {Promise<boolean>} True if should show authorization screen
+   * @private
+   */
+  async _shouldForceReauthorization() {
+    try {
+      const { eloward_twitch_wants_reauth: wantsReauth, eloward_twitch_disconnect_timestamp: disconnectTime } = 
+        await browser.storage.local.get(['eloward_twitch_wants_reauth', 'eloward_twitch_disconnect_timestamp']);
+      
+      if (wantsReauth && disconnectTime) {
+        // Clear the flag so it's only used once
+        await browser.storage.local.remove(['eloward_twitch_wants_reauth', 'eloward_twitch_disconnect_timestamp']);
+        
+        // Only use force_verify if disconnect was recent (within 10 minutes)
+        const tenMinutes = 10 * 60 * 1000;
+        const isRecent = (Date.now() - disconnectTime) < tenMinutes;
+        
+        console.log('[TwitchAuth] Recent disconnect for account switching:', isRecent);
+        return isRecent;
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn('[TwitchAuth] Error checking reauth flag:', error);
       return false;
     }
   },
