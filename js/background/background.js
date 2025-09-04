@@ -81,6 +81,7 @@ class UserRankCache {
     const currentUserEntry = this.currentUser ? this.cache.get(this.currentUser) : null;
     this.cache.clear();
 
+    // Preserve current user entry to prevent loss of local user data
     if (this.currentUser && currentUserEntry) {
       this.cache.set(this.currentUser, currentUserEntry);
     }
@@ -93,6 +94,7 @@ class UserRankCache {
     let userToEvict = null;
 
     for (const [key, entry] of this.cache.entries()) {
+      // Never evict current user
       if (key === this.currentUser) {
         continue;
       }
@@ -470,7 +472,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Removed legacy handle_auth_callback action (unused)
   
   if (message.action === 'get_rank_icon_url') {
-    const iconUrl = getRankIconUrl(message.tier);
+    const iconUrl = getRankIconUrl(message.tier, message.isPremium);
     sendResponse({ iconUrl: iconUrl });
     return false; // synchronous response
   }
@@ -541,6 +543,37 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     userRankCache.setCurrentUser(message.username);
     sendResponse({ success: true });
     return false; // synchronous response
+  }
+  
+  // Enhanced local user rank data caching with persistent storage update
+  if (message.action === 'set_rank_data') {
+    if (message.username && message.rankData) {
+      const normalizedUsername = message.username.toLowerCase();
+      
+      // Add to cache
+      userRankCache.set(normalizedUsername, message.rankData);
+      
+      // If this is the current user, also update persistent storage
+      if (userRankCache.currentUser === normalizedUsername) {
+        updatePersistentRiotDataFromRankData(message.rankData).catch(error => {
+          console.warn('[Background] Failed to update persistent riot data:', error);
+        });
+      }
+      
+      // Broadcast update so content scripts can immediately apply badges
+      try {
+        browser.runtime.sendMessage({
+          type: 'rank_data_updated',
+          username: normalizedUsername,
+          rankData: message.rankData
+        }).catch(() => {});
+      } catch (_) {}
+      
+      sendResponse({ success: true });
+    } else {
+      sendResponse({ success: false, error: 'Missing username or rank data' });
+    }
+    return true;
   }
   
   if (message.action === 'clear_rank_cache') {
@@ -725,23 +758,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.action === 'set_rank_data') {
-    if (message.username && message.rankData) {
-      userRankCache.set(message.username, message.rankData);
-      // Broadcast update so content scripts can immediately apply badges
-      try {
-        browser.runtime.sendMessage({
-          type: 'rank_data_updated',
-          username: message.username.toLowerCase(),
-          rankData: message.rankData
-        }).catch(() => {});
-      } catch (_) {}
-      sendResponse({ success: true });
-    } else {
-      sendResponse({ success: false, error: 'Missing username or rank data' });
-    }
-    return true;
-  }
   
   sendResponse({ error: 'Unknown action', action: message.action });
   return false; // synchronous response
@@ -924,28 +940,34 @@ function checkChannelActive(channelName, skipCache = false) {
 
 // Removed deprecated getRankByPuuid function - no longer needed with server-side auth
 
-function getRankIconUrl(tier) {
-  if (!tier) return 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
+function getRankIconUrl(tier, isPremium = false) {
+  if (!tier) {
+    return isPremium 
+      ? 'https://eloward-cdn.unleashai.workers.dev/lol/unranked_premium.webp'
+      : 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
+  }
   
   const tierLower = tier.toLowerCase();
   
   const tierIcons = {
-    'iron': 'iron.png',
-    'bronze': 'bronze.png',
-    'silver': 'silver.png',
-    'gold': 'gold.png',
-    'platinum': 'platinum.png',
-    'emerald': 'emerald.png',
-    'diamond': 'diamond.png',
-    'master': 'master.png',
-    'grandmaster': 'grandmaster.png',
-    'challenger': 'challenger.png',
-    'unranked': 'unranked.png'
+    'iron': 'iron',
+    'bronze': 'bronze',
+    'silver': 'silver',
+    'gold': 'gold',
+    'platinum': 'platinum',
+    'emerald': 'emerald',
+    'diamond': 'diamond',
+    'master': 'master',
+    'grandmaster': 'grandmaster',
+    'challenger': 'challenger',
+    'unranked': 'unranked'
   };
   
-  const iconFile = tierIcons[tierLower] || 'unranked.png';
+  const iconName = tierIcons[tierLower] || 'unranked';
+  const extension = isPremium ? '.webp' : '.png';
+  const suffix = isPremium ? '_premium' : '';
   
-  return `https://eloward-cdn.unleashai.workers.dev/lol/${iconFile.replace('.png', '')}.png`;
+  return `https://eloward-cdn.unleashai.workers.dev/lol/${iconName}${suffix}${extension}`;
 }
 
 // Removed unused handleAuthCallbackFromRedirect in favor of storage + message callback flows
@@ -990,6 +1012,37 @@ async function getRankForLinkedAccount() {
 
 // Removed unused loadConfiguration function
 
+// Update persistent riot data when local user rank data is cached
+async function updatePersistentRiotDataFromRankData(rankData) {
+  try {
+    // Get existing persistent data
+    const existingData = await PersistentStorage.getRiotUserData();
+    
+    if (existingData && existingData.puuid) {
+      // Create updated data with new rank info and plus_active
+      const updatedData = {
+        ...existingData,
+        rankInfo: {
+          tier: rankData.tier,
+          rank: rankData.division,
+          leaguePoints: rankData.leaguePoints,
+          wins: existingData.rankInfo?.wins || 0,
+          losses: existingData.rankInfo?.losses || 0
+        },
+        region: rankData.region || existingData.region,
+        plus_active: rankData.plus_active || false
+      };
+      
+      // Store updated data
+      await PersistentStorage.storeRiotUserData(updatedData);
+      
+      console.log('[Background] Updated persistent riot data from rank cache');
+    }
+  } catch (error) {
+    console.warn('[Background] Error updating persistent riot data:', error);
+  }
+}
+
 async function fetchRankFromDatabase(twitchUsername) {
   if (!twitchUsername) return null;
   
@@ -1012,7 +1065,8 @@ async function fetchRankFromDatabase(twitchUsername) {
       division: rankData.rank_division,
       leaguePoints: rankData.lp,
       summonerName: rankData.riot_id,
-      region: rankData.region
+      region: rankData.region,
+      plus_active: rankData.plus_active || false
     };
   } catch (error) {
     return null;

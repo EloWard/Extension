@@ -38,28 +38,61 @@ const ImageCache = (() => {
   async function preloadTier(tierLower) {
     const key = String(tierLower || '').toLowerCase();
     if (!key) return null;
-    if (tierToBlobUrl.has(key)) return tierToBlobUrl.get(key);
-    if (inFlight.has(key)) return inFlight.get(key);
-
-    const url = `${CDN_BASE}/lol/${key}.png`;
-    const p = (async () => {
-      try {
-        const resp = await fetch(url, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
-        if (!resp.ok) throw new Error(String(resp.status));
-        const blob = await resp.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        tierToBlobUrl.set(key, blobUrl);
-        return blobUrl;
-      } catch (_) {
-        // Fallback to CDN URL on failure
-        tierToBlobUrl.set(key, url);
-        return url;
-      } finally {
-        inFlight.delete(key);
-      }
-    })();
-    inFlight.set(key, p);
-    return p;
+    
+    // Preload both regular and premium variants
+    const regularKey = key;
+    const premiumKey = `${key}_premium`;
+    
+    const promises = [];
+    
+    // Preload regular variant
+    if (!tierToBlobUrl.has(regularKey) && !inFlight.has(regularKey)) {
+      const regularUrl = `${CDN_BASE}/lol/${key}.png`;
+      const regularPromise = (async () => {
+        try {
+          const resp = await fetch(regularUrl, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
+          if (!resp.ok) throw new Error(String(resp.status));
+          const blob = await resp.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          tierToBlobUrl.set(regularKey, blobUrl);
+          return blobUrl;
+        } catch (_) {
+          // Fallback to CDN URL on failure
+          tierToBlobUrl.set(regularKey, regularUrl);
+          return regularUrl;
+        } finally {
+          inFlight.delete(regularKey);
+        }
+      })();
+      inFlight.set(regularKey, regularPromise);
+      promises.push(regularPromise);
+    }
+    
+    // Preload premium variant
+    if (!tierToBlobUrl.has(premiumKey) && !inFlight.has(premiumKey)) {
+      const premiumUrl = `${CDN_BASE}/lol/${key}_premium.webp`;
+      const premiumPromise = (async () => {
+        try {
+          const resp = await fetch(premiumUrl, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
+          if (!resp.ok) throw new Error(String(resp.status));
+          const blob = await resp.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          tierToBlobUrl.set(premiumKey, blobUrl);
+          return blobUrl;
+        } catch (_) {
+          // Fallback to CDN URL on failure
+          tierToBlobUrl.set(premiumKey, premiumUrl);
+          return premiumUrl;
+        } finally {
+          inFlight.delete(premiumKey);
+        }
+      })();
+      inFlight.set(premiumKey, premiumPromise);
+      promises.push(premiumPromise);
+    }
+    
+    // Return promise for regular variant (for backwards compatibility)
+    return tierToBlobUrl.get(regularKey) || inFlight.get(regularKey) || promises[0];
   }
 
   async function init() {
@@ -69,9 +102,11 @@ const ImageCache = (() => {
     } catch (_) {}
   }
 
-  function getSrcSync(tier) {
-    const key = String(tier || 'unranked').toLowerCase();
-    return tierToBlobUrl.get(key) || `${CDN_BASE}/lol/${key}.png`;
+  function getSrcSync(tier, isPremium = false) {
+    const tierKey = String(tier || 'unranked').toLowerCase();
+    const key = isPremium ? `${tierKey}_premium` : tierKey;
+    const extension = isPremium ? '.webp' : '.png';
+    return tierToBlobUrl.get(key) || `${CDN_BASE}/lol/${key}${extension}`;
   }
 
   function revokeAll() {
@@ -296,6 +331,8 @@ function handleBadgeClick(event) {
 
 function createBadgeElement(rankData) {
   const badge = document.createElement('span');
+  const isPremium = rankData.plus_active || false;
+  
   badge.className = 'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
   badge.dataset.rank = rankData.tier.toLowerCase();
@@ -304,6 +341,7 @@ function createBadgeElement(rankData) {
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
   badge.dataset.region = rankData.region;
+  badge.dataset.isPremium = isPremium ? 'true' : 'false';
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -314,7 +352,7 @@ function createBadgeElement(rankData) {
   img.decoding = 'async';
   try { img.fetchPriority = 'high'; } catch (_) {}
   img.loading = 'eager';
-  img.src = ImageCache.getSrcSync(rankData.tier);
+  img.src = ImageCache.getSrcSync(rankData.tier, isPremium);
   
   badge.appendChild(img);
   badge.addEventListener('mouseenter', showTooltip);
@@ -1260,13 +1298,15 @@ function handleCurrentUserMessages(messageData) {
       division: riotData.rankInfo.rank,
       leaguePoints: riotData.rankInfo.leaguePoints,
       summonerName: riotData.riotId,
-      region: riotData.region
+      region: riotData.region,
+      plus_active: riotData.plus_active || false
     } : (riotData ? {
       tier: 'UNRANKED',
       division: '',
       leaguePoints: null,
       summonerName: riotData.riotId,
-      region: riotData.region
+      region: riotData.region,
+      plus_active: riotData.plus_active || false
     } : null);
 
     if (!userRankData) return;
@@ -1275,11 +1315,13 @@ function handleCurrentUserMessages(messageData) {
       addBadgeToMessage(usernameElement, userRankData);
     });
 
+    // Immediately cache local user rank data for consistent performance
     chrome.runtime.sendMessage({
       action: 'set_rank_data',
       username: extensionState.currentUser,
       rankData: userRankData
     });
+
     
     if (extensionState.channelName) {
       chrome.runtime.sendMessage({
@@ -1391,22 +1433,26 @@ function processNewMessage(messageNode) {
           division: riotData.rankInfo.rank,
           leaguePoints: riotData.rankInfo.leaguePoints,
           summonerName: riotData.riotId,
-          region: riotData.region
+          region: riotData.region,
+          plus_active: riotData.plus_active || false
         } : (riotData ? {
           tier: 'UNRANKED',
           division: '',
           leaguePoints: null,
           summonerName: riotData.riotId,
-          region: riotData.region
+          region: riotData.region,
+          plus_active: riotData.plus_active || false
         } : null);
 
         if (!userRankData) return;
 
+        // Immediately cache local user rank data for consistent performance
         chrome.runtime.sendMessage({
           action: 'set_rank_data',
           username: username,
           rankData: userRankData
         });
+
         
         if (extensionState.channelName) {
           chrome.runtime.sendMessage({
@@ -1621,6 +1667,8 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
     badge.classList.add('eloward-single-badge');
   }
   
+  const isPremium = rankData.plus_active || false;
+  
   badge.dataset.rankText = formatRankText(rankData);
   badge.dataset.rank = rankData.tier.toLowerCase();
   badge.dataset.division = rankData.division || '';
@@ -1628,6 +1676,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
   badge.dataset.region = rankData.region;
+  badge.dataset.isPremium = isPremium ? 'true' : 'false';
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -1637,7 +1686,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
   img.decoding = 'async';
   try { img.fetchPriority = 'high'; } catch (_) {}
   img.loading = 'eager';
-  img.src = ImageCache.getSrcSync(rankData.tier);
+  img.src = ImageCache.getSrcSync(rankData.tier, isPremium);
   
   badge.appendChild(img);
   badge.addEventListener('mouseenter', (e) => showSevenTVTooltip(e, rankData));
@@ -1842,12 +1891,16 @@ function findBadgeContainer(messageContainer) {
 function updateBadgeElement(badgeElement, rankData) {
   try {
     if (!badgeElement) return;
+    
+    const isPremium = rankData.plus_active || false;
+    
     badgeElement.dataset.rankText = formatRankText(rankData);
     badgeElement.dataset.rank = rankData.tier.toLowerCase();
     badgeElement.dataset.division = rankData.division || '';
     badgeElement.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? String(rankData.leaguePoints) : '';
     badgeElement.dataset.username = rankData.summonerName || '';
     badgeElement.dataset.region = rankData.region || '';
+    badgeElement.dataset.isPremium = isPremium ? 'true' : 'false';
 
     const img = badgeElement.querySelector('img');
     if (img) {
@@ -1855,7 +1908,7 @@ function updateBadgeElement(badgeElement, rankData) {
       try { img.decoding = 'async'; } catch (_) {}
       try { img.fetchPriority = 'high'; } catch (_) {}
       try { img.loading = 'eager'; } catch (_) {}
-      img.src = ImageCache.getSrcSync(rankData.tier);
+      img.src = ImageCache.getSrcSync(rankData.tier, isPremium);
     }
   } catch (_) {}
 }

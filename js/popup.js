@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const accountHeader = document.getElementById('account-header');
   const accountContent = document.getElementById('account-content');
   const accountDropdownArrow = accountHeader.querySelector('.dropdown-arrow');
+  const premiumStar = document.getElementById('premium-star');
   
 
 
@@ -63,47 +64,13 @@ document.addEventListener('DOMContentLoaded', () => {
     connectRiotBtn.textContent = text;
   }
 
-  // Push latest local user's rank into background cache so it's fresh for chat injection
-  async function updateBackgroundCacheForLocalUser(userData) {
-    try {
-      const twitchInfo = await PersistentStorage.getTwitchUserData();
-      const twitchUsername = twitchInfo?.login?.toLowerCase();
-      if (!twitchUsername || !userData) return;
-
-      // Derive rank data from userData
-      let tier = 'UNRANKED';
-      let division = '';
-      let leaguePoints = null;
-      if (userData.soloQueueRank) {
-        tier = userData.soloQueueRank.tier?.toUpperCase() || 'UNRANKED';
-        division = userData.soloQueueRank.rank || '';
-        leaguePoints = userData.soloQueueRank.leaguePoints ?? null;
-      } else if (userData.rankInfo) {
-        tier = userData.rankInfo.tier?.toUpperCase() || 'UNRANKED';
-        division = userData.rankInfo.rank || '';
-        leaguePoints = userData.rankInfo.leaguePoints ?? null;
-      }
-
-      const { selectedRegion } = await browser.storage.local.get(['selectedRegion']);
-      const region = selectedRegion || '';
-
-      const rankData = {
-        tier,
-        division,
-        leaguePoints,
-        summonerName: userData.riotId,
-        region
-      };
-
-      try {
-        await browser.runtime.sendMessage({
-          action: 'set_rank_data',
-          username: twitchUsername,
-          rankData
-        });
-      } catch (_) {}
-    } catch (_) {}
+  // Update premium star visibility based on plus_active status
+  function updatePremiumStar(isPremium) {
+    if (premiumStar) {
+      premiumStar.style.display = isPremium ? 'flex' : 'none';
+    }
   }
+
 
 
   async function isFirstTimeUser() {
@@ -391,8 +358,6 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.add('connected');
         updateRiotButtonText('Disconnect');
         
-        // Update background cache for consistency (non-blocking)
-        updateBackgroundCacheForLocalUser(userData).catch(() => {});
         
         // Set region from stored data
         if (regionData.selectedRegion) {
@@ -430,7 +395,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateRiotButtonText('Disconnect');
                 refreshRankBtn.classList.remove('hidden');
                 
-                updateBackgroundCacheForLocalUser(userData).catch(() => {});
               }
             })
             .catch(() => {
@@ -568,14 +532,34 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use the Riot RSO authentication module
         const userData = await RiotAuth.authenticate(region);
         
-        // Store user data in persistent storage
-        await PersistentStorage.storeRiotUserData(userData);
+        // Fetch plus_active status from backend for the local user
+        let updatedUserData = userData;
+        try {
+          const twitchData = await PersistentStorage.getTwitchUserData();
+          if (twitchData?.login) {
+            const response = await browser.runtime.sendMessage({
+              action: 'fetch_rank_for_username',
+              username: twitchData.login.toLowerCase()
+            });
+            
+            if (response?.success && response?.rankData) {
+              updatedUserData = {
+                ...userData,
+                plus_active: response.rankData.plus_active || false
+              };
+            }
+          }
+        } catch (error) {
+          console.warn('[EloWard Popup] Failed to fetch plus_active status:', error);
+          // Continue with original userData if plus_active fetch fails
+        }
+        
+        // Store user data in persistent storage (with plus_active if fetched)
+        await PersistentStorage.storeRiotUserData(updatedUserData);
         
         // Update UI with the user data
-        updateUserInterface(userData);
+        updateUserInterface(updatedUserData);
         
-        // Ensure background cache for local user is up-to-date
-        updateBackgroundCacheForLocalUser(userData);
         
         // Store the connected region in storage and ensure the region selector reflects the current region
         await browser.storage.local.set({ selectedRegion: region });
@@ -653,9 +637,30 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         await RiotAuth.authenticate(region);
         const userData = await RiotAuth.getUserData();
-        try { await PersistentStorage.storeRiotUserData(userData); } catch (_) {}
-        updateUserInterface(userData);
-        updateBackgroundCacheForLocalUser(userData);
+        
+        // Fetch plus_active status from backend for the local user
+        let updatedUserData = userData;
+        try {
+          const twitchData = await PersistentStorage.getTwitchUserData();
+          if (twitchData?.login) {
+            const response = await browser.runtime.sendMessage({
+              action: 'fetch_rank_for_username',
+              username: twitchData.login.toLowerCase()
+            });
+            
+            if (response?.success && response?.rankData) {
+              updatedUserData = {
+                ...userData,
+                plus_active: response.rankData.plus_active || false
+              };
+            }
+          }
+        } catch (error) {
+          console.warn('[EloWard Popup] Failed to fetch plus_active status during re-auth:', error);
+        }
+        
+        try { await PersistentStorage.storeRiotUserData(updatedUserData); } catch (_) {}
+        updateUserInterface(updatedUserData);
         await tryPerform();
         console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
         return;
@@ -701,14 +706,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     updateUserInterface(updatedUserData);
     await PersistentStorage.storeRiotUserData(updatedUserData);
-    // Ensure background cache for local user is up-to-date after refresh
-    updateBackgroundCacheForLocalUser(updatedUserData);
   }
 
   // Simple cache for the current user's rank badge image by tier, stored as a data URL
-  async function getCachedBadgeDataUrl(tierKey) {
+  async function getCachedBadgeDataUrl(tierKey, isPremium = false) {
     try {
-      const key = `eloward_cached_badge_image_${tierKey}`;
+      const suffix = isPremium ? '_premium' : '';
+      const key = `eloward_cached_badge_image_${tierKey}${suffix}`;
       const res = await browser.storage.local.get([key]);
       return res[key] || null;
     } catch (_) {
@@ -716,7 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function cacheBadgeImage(tierKey, imageUrl) {
+  async function cacheBadgeImage(tierKey, imageUrl, isPremium = false) {
     try {
       const response = await fetch(imageUrl, { cache: 'force-cache' });
       if (!response.ok) return;
@@ -727,36 +731,53 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.onloadend = () => resolve(reader.result);
         reader.readAsDataURL(blob);
       });
-      const key = `eloward_cached_badge_image_${tierKey}`;
+      const suffix = isPremium ? '_premium' : '';
+      const key = `eloward_cached_badge_image_${tierKey}${suffix}`;
       await browser.storage.local.set({ [key]: dataUrl });
     } catch (_) {
       // ignore cache errors
     }
   }
 
-  async function prefetchAndCacheBadgeImage(tierKey, imageUrl) {
-    const existing = await getCachedBadgeDataUrl(tierKey);
+  async function prefetchAndCacheBadgeImage(tierKey, imageUrl, isPremium = false) {
+    const existing = await getCachedBadgeDataUrl(tierKey, isPremium);
     if (!existing) {
-      cacheBadgeImage(tierKey, imageUrl);
+      cacheBadgeImage(tierKey, imageUrl, isPremium);
     }
   }
 
   async function displayRank(rankData) {
+    // Check premium status from persistent data if not in rankData
+    let isPremium = rankData?.plus_active || false;
+    if (!isPremium) {
+      try {
+        const riotData = await PersistentStorage.getRiotUserData();
+        isPremium = riotData?.plus_active || false;
+      } catch (_) {
+        isPremium = false;
+      }
+    }
+    
+    // Update premium star visibility
+    updatePremiumStar(isPremium);
+    
     if (!rankData) {
       currentRank.textContent = 'Unranked';
       const unrankedKey = 'unranked';
-      const unrankedUrl = `https://eloward-cdn.unleashai.workers.dev/lol/unranked.png`;
+      const extension = isPremium ? '.webp' : '.png';
+      const suffix = isPremium ? '_premium' : '';
+      const unrankedUrl = `https://eloward-cdn.unleashai.workers.dev/lol/unranked${suffix}${extension}`;
       try {
-        const cachedUnranked = await getCachedBadgeDataUrl(unrankedKey);
+        const cachedUnranked = await getCachedBadgeDataUrl(unrankedKey, isPremium);
         if (cachedUnranked) {
           rankBadgePreview.style.backgroundImage = `url('${cachedUnranked}')`;
         } else {
           rankBadgePreview.style.backgroundImage = `url('${unrankedUrl}')`;
-          prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl);
+          prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl, isPremium);
         }
       } catch (_) {
         rankBadgePreview.style.backgroundImage = `url('${unrankedUrl}')`;
-        prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl);
+        prefetchAndCacheBadgeImage(unrankedKey, unrankedUrl, isPremium);
       }
       // Apply custom positioning for unranked badge
       rankBadgePreview.style.transform = 'translateY(-3px)';
@@ -783,20 +804,22 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Determine the rank badge image path
     const rankImageFileName = formattedTier.toLowerCase();
-    const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}.png`;
+    const extension = isPremium ? '.webp' : '.png';
+    const suffix = isPremium ? '_premium' : '';
+    const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}`;
 
     // Try cached image first for instant render; fall back to network and prefetch for next time
     try {
-      const cached = await getCachedBadgeDataUrl(rankImageFileName);
+      const cached = await getCachedBadgeDataUrl(rankImageFileName, isPremium);
       if (cached) {
         rankBadgePreview.style.backgroundImage = `url('${cached}')`;
       } else {
         rankBadgePreview.style.backgroundImage = `url('${imageUrl}')`;
-        prefetchAndCacheBadgeImage(rankImageFileName, imageUrl);
+        prefetchAndCacheBadgeImage(rankImageFileName, imageUrl, isPremium);
       }
     } catch (_) {
       rankBadgePreview.style.backgroundImage = `url('${imageUrl}')`;
-      prefetchAndCacheBadgeImage(rankImageFileName, imageUrl);
+      prefetchAndCacheBadgeImage(rankImageFileName, imageUrl, isPremium);
     }
     
     // Apply different positioning based on rank
@@ -894,4 +917,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     updateRiotControlsBasedOnTwitchStatus();
   });
+
+  // Fetch fresh rank data from backend when popup opens
+  async function refreshLocalUserRankData() {
+    try {
+      const twitchData = await PersistentStorage.getTwitchUserData();
+      const riotData = await PersistentStorage.getRiotUserData();
+      
+      // Only refresh if both Twitch and Riot are connected
+      if (!twitchData?.login || !riotData?.riotId) {
+        return;
+      }
+
+      const twitchUsername = twitchData.login.toLowerCase();
+      
+      // Fetch fresh rank data from backend via background script
+      const response = await browser.runtime.sendMessage({
+        action: 'fetch_rank_for_username',
+        username: twitchUsername
+      });
+
+      if (response?.success && response?.rankData) {
+        const backendRankData = response.rankData;
+        
+        // Update stored persistent data with fresh backend data
+        const updatedUserData = {
+          ...riotData,
+          soloQueueRank: {
+            tier: backendRankData.tier,
+            rank: backendRankData.division,
+            leaguePoints: backendRankData.leaguePoints,
+            wins: riotData.soloQueueRank?.wins || 0,
+            losses: riotData.soloQueueRank?.losses || 0
+          },
+          region: backendRankData.region || riotData.region,
+          plus_active: backendRankData.plus_active || false
+        };
+
+        // Store updated data
+        await PersistentStorage.storeRiotUserData(updatedUserData);
+        
+        // Update UI with fresh data
+        displayRank(updatedUserData);
+      }
+    } catch (error) {
+      // Silently fail - popup will show existing data
+      console.warn('[EloWard Popup] Failed to refresh rank data:', error);
+    }
+  }
+
+  // Call refresh function after popup loads (non-blocking)
+  refreshLocalUserRankData().catch(() => {});
 }); 

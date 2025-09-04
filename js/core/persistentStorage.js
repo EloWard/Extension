@@ -26,7 +26,8 @@ export const PersistentStorage = {
       riotId: userData.riotId,
       puuid: userData.puuid,
       region: userData.region || currentData.selectedRegion,
-      rankInfo: null
+      rankInfo: null,
+      plus_active: userData.plus_active || false
     };
     
           if (userData.soloQueueRank) {

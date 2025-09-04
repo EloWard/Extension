@@ -22,8 +22,8 @@ const defaultConfig = {
   clientId: 'pml5yi4pqvuo281akjq0q6topaeli3',
   // Make sure scopes match what's in the twitchRSO implementation
   scopes: 'user:read:email',
-  // Force the consent/login prompt to avoid silently reusing a prior session
-  forceVerify: true,
+  // Default to false to prevent 2FA infinite loops - use explicit methods for forced auth
+  forceVerify: false,
   endpoints: {
     // Consolidated tokenless endpoint (primary)
     authComplete: '/twitch/auth'
@@ -49,12 +49,20 @@ export const TwitchAuth = {
   
   /**
    * Start the Twitch authentication flow
+   * @param {Object} options - Authentication options
+   * @param {boolean} options.forceVerify - Force re-authorization even if already authorized
+   * @param {boolean} options.clearSession - Clear Twitch session before authenticating (for account switching)
    */
-  async authenticate() {
+  async authenticate(options = {}) {
     try {
       
       // Clear any previous auth states
       await browser.storage.local.remove([this.config.storageKeys.authState]);
+      
+      // Clear Twitch session if requested (for account switching)
+      if (options.clearSession) {
+        await this._clearTwitchSession();
+      }
       
       // Generate a unique state value for CSRF protection and tag as extension flow
       const state = `ext:${this._generateRandomState()}`;
@@ -63,7 +71,7 @@ export const TwitchAuth = {
       await this._storeAuthState(state);
       
       // Get authentication URL from the backend proxy
-      const authUrl = await this._getAuthUrl(state);
+      const authUrl = await this._getAuthUrl(state, options);
       
       // Clear any existing callbacks before opening the window
       try {
@@ -180,10 +188,11 @@ export const TwitchAuth = {
   /**
    * Get authentication URL from backend
    * @param {string} state - A unique state for CSRF protection
+   * @param {Object} options - Authentication options
    * @returns {Promise<string>} The authentication URL
    * @private
    */
-  async _getAuthUrl(state) {
+  async _getAuthUrl(state, options = {}) {
     try {
       const clientId = this.config.clientId && String(this.config.clientId).trim();
       const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
@@ -192,7 +201,13 @@ export const TwitchAuth = {
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('scope', this.config.scopes);
       authUrl.searchParams.set('state', state);
-      if (this.config.forceVerify) authUrl.searchParams.set('force_verify', 'true');
+      
+      // Use explicit forceVerify option or fall back to config default
+      const shouldForceVerify = options.forceVerify !== undefined ? options.forceVerify : this.config.forceVerify;
+      if (shouldForceVerify) {
+        authUrl.searchParams.set('force_verify', 'true');
+      }
+      
       return authUrl.toString();
     } catch (error) {
       throw error;
@@ -351,6 +366,68 @@ export const TwitchAuth = {
   // _storeTokens removed in tokenless flow
   
   /**
+   * Authenticate with account switching - clears session and forces re-auth
+   * Use this when user wants to switch to a different Twitch account
+   * @returns {Promise<Object>} Authentication result
+   */
+  async authenticateWithAccountSwitch() {
+    try {
+      console.log('[TwitchAuth] Starting account switch authentication');
+      return await this.authenticate({ 
+        clearSession: true, 
+        forceVerify: true 
+      });
+    } catch (error) {
+      console.error('[TwitchAuth] Account switch authentication failed:', error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Clear Twitch session by opening logout URL briefly
+   * This allows users to switch accounts by logging out of current session
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _clearTwitchSession() {
+    return new Promise((resolve) => {
+      try {
+        console.log('[TwitchAuth] Clearing Twitch session for account switching');
+        
+        // Open Twitch logout page to clear session
+        const logoutUrl = 'https://www.twitch.tv/logout';
+        const logoutWindow = window.open(
+          logoutUrl, 
+          'twitchLogout', 
+          'width=400,height=300,toolbar=0,location=0,menubar=0,directories=0,scrollbars=0,status=0'
+        );
+        
+        if (logoutWindow) {
+          // Give it time to process logout then close
+          setTimeout(() => {
+            try {
+              if (!logoutWindow.closed) {
+                logoutWindow.close();
+              }
+            } catch (e) {
+              // Ignore errors when closing popup
+            }
+            console.log('[TwitchAuth] Session clearing completed');
+            resolve();
+          }, 3000);
+        } else {
+          // Popup blocked or failed - continue anyway
+          console.warn('[TwitchAuth] Logout popup blocked, continuing without session clear');
+          resolve();
+        }
+      } catch (error) {
+        console.warn('[TwitchAuth] Session clearing failed:', error);
+        resolve(); // Don't fail the auth flow if session clearing fails
+      }
+    });
+  },
+  
+  /**
    * Check if currently authenticated
    * @returns {Promise<boolean>} True if authenticated
    */
@@ -386,10 +463,17 @@ export const TwitchAuth = {
   
   /**
    * Completely disconnect and clear all Twitch data including persistent storage
+   * @param {Object} options - Disconnect options
+   * @param {boolean} options.clearSession - Also clear Twitch session (for account switching)
    * @returns {Promise<boolean>} - Whether disconnect was successful
    */
-  async disconnect() {
+  async disconnect(options = {}) {
     try {
+      // Clear Twitch session if requested (for complete logout/account switching)
+      if (options.clearSession) {
+        await this._clearTwitchSession();
+      }
+
       // 1) Clear persistent user data and connected state (single source of truth)
       await PersistentStorage.clearServiceData('twitch');
 
@@ -414,9 +498,23 @@ export const TwitchAuth = {
       // 3) Explicitly mark service disconnected to avoid isAuthenticated short-circuit
       try { await PersistentStorage.updateConnectedState('twitch', false); } catch (_) {}
 
-      // Rely on force_verify to prompt re-login on next connect; no logout popup/revocation
       return true;
     } catch (error) {
+      return false;
+    }
+  },
+  
+  /**
+   * Disconnect and switch to a different Twitch account
+   * This clears the session completely and prepares for account switching
+   * @returns {Promise<boolean>} - Whether disconnect was successful
+   */
+  async disconnectForAccountSwitch() {
+    try {
+      console.log('[TwitchAuth] Disconnecting for account switch');
+      return await this.disconnect({ clearSession: true });
+    } catch (error) {
+      console.error('[TwitchAuth] Disconnect for account switch failed:', error);
       return false;
     }
   },
