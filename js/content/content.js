@@ -1732,7 +1732,10 @@ function showSevenTVTooltip(event, rankData) {
   tooltipBadge.className = 'eloward-7tv-tooltip-badge';
   tooltipBadge.decoding = 'async';
   tooltipBadge.loading = 'eager';
-  tooltipBadge.src = ImageCache.getSrcSync(rankData.tier);
+  
+  // Use premium badge if user has plus_active
+  const isPremium = rankData.plus_active || false;
+  tooltipBadge.src = ImageCache.getSrcSync(rankData.tier, isPremium);
   tooltipBadge.alt = 'Rank Badge';
   
   const tooltipText = document.createElement('div');
