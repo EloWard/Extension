@@ -480,6 +480,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'fetch_rank_for_username') {
     const username = message.username;
     const channelName = message.channel;
+    const skipCache = message.skipCache;
     
     if (!username) {
       sendResponse({ success: false, error: 'No username provided' });
@@ -490,19 +491,22 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       incrementDbReadCounter(channelName).catch(() => {});
     }
     
-    const cachedRankData = userRankCache.get(username);
-    if (cachedRankData) {
-      if (channelName && cachedRankData?.tier) {
-        incrementSuccessfulLookupCounter(channelName).catch(() => {});
+    // Check cache only if not explicitly skipping cache
+    if (!skipCache) {
+      const cachedRankData = userRankCache.get(username);
+      if (cachedRankData) {
+        if (channelName && cachedRankData?.tier) {
+          incrementSuccessfulLookupCounter(channelName).catch(() => {});
+        }
+        
+        sendResponse({
+          success: true,
+          rankData: cachedRankData,
+          source: 'cache'
+        });
+        
+        return true;
       }
-      
-      sendResponse({
-        success: true,
-        rankData: cachedRankData,
-        source: 'cache'
-      });
-      
-      return true;
     }
     
     // Fetch rank data from database (region is already stored there)
@@ -1025,9 +1029,7 @@ async function updatePersistentRiotDataFromRankData(rankData) {
         rankInfo: {
           tier: rankData.tier,
           rank: rankData.division,
-          leaguePoints: rankData.leaguePoints,
-          wins: existingData.rankInfo?.wins || 0,
-          losses: existingData.rankInfo?.losses || 0
+          leaguePoints: rankData.leaguePoints
         },
         region: rankData.region || existingData.region,
         plus_active: rankData.plus_active || false

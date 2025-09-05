@@ -34,18 +34,14 @@ export const PersistentStorage = {
         persistentData.rankInfo = {
           tier: userData.soloQueueRank.tier,
           rank: userData.soloQueueRank.rank,
-          leaguePoints: userData.soloQueueRank.leaguePoints,
-          wins: userData.soloQueueRank.wins,
-          losses: userData.soloQueueRank.losses
+          leaguePoints: userData.soloQueueRank.leaguePoints
         };
       } else if (userData.rankInfo) {
         // Handle fallback format from backend
         persistentData.rankInfo = {
           tier: userData.rankInfo.tier,
           rank: userData.rankInfo.rank,
-          leaguePoints: userData.rankInfo.leaguePoints,
-          wins: userData.rankInfo.wins || 0,
-          losses: userData.rankInfo.losses || 0
+          leaguePoints: userData.rankInfo.leaguePoints
         };
       }
     

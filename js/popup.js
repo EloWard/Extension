@@ -935,10 +935,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const twitchUsername = twitchData.login.toLowerCase();
       
-      // Fetch fresh rank data from backend via background script
+      // Fetch fresh rank data from backend via background script (bypass cache for popup)
       const response = await browser.runtime.sendMessage({
         action: 'fetch_rank_for_username',
-        username: twitchUsername
+        username: twitchUsername,
+        skipCache: true
       });
 
       if (response?.success && response?.rankData) {
@@ -950,9 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
           soloQueueRank: {
             tier: backendRankData.tier,
             rank: backendRankData.division,
-            leaguePoints: backendRankData.leaguePoints,
-            wins: riotData.soloQueueRank?.wins || 0,
-            losses: riotData.soloQueueRank?.losses || 0
+            leaguePoints: backendRankData.leaguePoints
           },
           region: backendRankData.region || riotData.region,
           plus_active: backendRankData.plus_active || false

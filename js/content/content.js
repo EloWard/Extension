@@ -1276,7 +1276,7 @@ function processUsernamesBatch(userMessageMap) {
 
       for (const [username, messageData] of userMessageMap.entries()) {
 
-        if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
+        if (extensionState.currentUser && username === extensionState.currentUser) {
           handleCurrentUserMessages(messageData);
           continue;
         }
@@ -1446,7 +1446,7 @@ function processNewMessage(messageNode) {
       return;
     }
     
-    if (extensionState.currentUser && username === extensionState.currentUser.toLowerCase()) {
+    if (extensionState.currentUser && username === extensionState.currentUser) {
       chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
         const riotData = data.eloward_persistent_riot_user_data;
         
