@@ -290,7 +290,7 @@ function findVodUsernameInfo(messageNode) {
 const REGION_MAPPING = {
   'na1': 'na', 'euw1': 'euw', 'eun1': 'eune', 'kr': 'kr', 'br1': 'br',
   'jp1': 'jp', 'la1': 'lan', 'la2': 'las', 'oc1': 'oce', 'tr1': 'tr',
-  'ru': 'ru', 'me1': 'me', 'sea': 'sg', 'tw2': 'tw', 'vn2': 'vn'
+  'ru': 'ru', 'me1': 'me', 'sg2': 'sea', 'tw2': 'tw', 'vn2': 'vn'
 };
 
 // Map API/platform regions to human-readable display short-codes for UI
