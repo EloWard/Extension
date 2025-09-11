@@ -716,11 +716,11 @@ select:disabled {
   height: 14px;
   width: 14px;
   left: 2px;
-  bottom: 2px;
+  top: 2px;
   background-color: var(--text-secondary);
   transition: all 0.3s ease;
   border-radius: 50%;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .toggle-switch input:checked + .toggle-slider {
@@ -729,12 +729,12 @@ select:disabled {
 }
 
 .toggle-switch input:checked + .toggle-slider:before {
-  transform: translateX(16px);
+  transform: translateX(18px);
   background-color: var(--text-primary);
 }
 
 .toggle-switch:hover .toggle-slider {
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
 .toggle-switch input:checked + .toggle-slider:hover {
