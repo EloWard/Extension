@@ -137,6 +137,16 @@ header h1 {
   animation: fadeDown 0.3s ease;
 }
 
+/* Disable animations during initialization */
+.tip-content.no-animation {
+  animation: none !important;
+}
+
+.dropdown-arrow.no-transition,
+.dropdown-arrow.no-transition svg {
+  transition: none !important;
+}
+
 @keyframes fadeDown {
   from {
     opacity: 0;
@@ -745,4 +755,10 @@ select:disabled {
 /* Smooth transitions for all toggle interactions */
 .toggle-slider, .toggle-slider:before {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Disable transitions during initialization to prevent visual flicker */
+.toggle-switch.no-transition .toggle-slider,
+.toggle-switch.no-transition .toggle-slider:before {
+  transition: none !important;
 }

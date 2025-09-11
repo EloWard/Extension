@@ -248,10 +248,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function initializeAccountSectionState() {
     try {
+      // Disable animations during initialization
+      accountDropdownArrow.classList.add('no-transition');
+      accountContent.classList.add('no-animation');
+      
       const result = await browser.storage.local.get(['accountSectionCollapsed']);
       const isCollapsed = result.accountSectionCollapsed;
       
-
       if (isCollapsed === undefined || isCollapsed === false) {
         accountContent.style.display = 'block';
         accountDropdownArrow.classList.add('rotated');
@@ -259,15 +262,31 @@ document.addEventListener('DOMContentLoaded', () => {
         accountContent.style.display = 'none';
         accountDropdownArrow.classList.remove('rotated');
       }
+      
+      // Re-enable animations after initialization
+      setTimeout(() => {
+        accountDropdownArrow.classList.remove('no-transition');
+        accountContent.classList.remove('no-animation');
+      }, 10);
     } catch (error) {
-
+      // Default to expanded on error
       accountContent.style.display = 'block';
       accountDropdownArrow.classList.add('rotated');
+      
+      // Clean up animation classes
+      setTimeout(() => {
+        accountDropdownArrow.classList.remove('no-transition');
+        accountContent.classList.remove('no-animation');
+      }, 10);
     }
   }
 
   async function initializeOptionsSectionState() {
     try {
+      // Disable animations during initialization
+      optionsDropdownArrow.classList.add('no-transition');
+      optionsContent.classList.add('no-animation');
+      
       const result = await browser.storage.local.get(['optionsSectionCollapsed']);
       const isCollapsed = result.optionsSectionCollapsed;
       
@@ -279,10 +298,22 @@ document.addEventListener('DOMContentLoaded', () => {
         optionsContent.style.display = 'none';
         optionsDropdownArrow.classList.remove('rotated');
       }
+      
+      // Re-enable animations after initialization
+      setTimeout(() => {
+        optionsDropdownArrow.classList.remove('no-transition');
+        optionsContent.classList.remove('no-animation');
+      }, 10);
     } catch (error) {
       // Default to expanded on error
       optionsContent.style.display = 'block';
       optionsDropdownArrow.classList.add('rotated');
+      
+      // Clean up animation classes
+      setTimeout(() => {
+        optionsDropdownArrow.classList.remove('no-transition');
+        optionsContent.classList.remove('no-animation');
+      }, 10);
     }
   }
 
@@ -407,6 +438,8 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.add('connected');
         updateRiotButtonText('Disconnect');
         
+        // Initialize user options (loads instantly from cache, syncs in background)
+        initializeUserOptions().catch(() => {});
         
         // Set region from stored data
         if (regionData.selectedRegion) {
@@ -530,6 +563,9 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             // Use disconnect method to clear both tokens and persistent data
             await RiotAuth.disconnect();
+            
+            // Clear cached options since user is disconnecting
+            await clearOptionsFromStorage();
             
             // Update UI manually
             riotConnectionStatus.textContent = 'Not Connected';
@@ -738,16 +774,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Use simplified PUUID-only refresh
     const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
     
-    // Update the persistent data with new rank information
+    // Backend already returns the correct rank (current or peak) based on user's show_peak setting
+    // So we use the returned rank data directly instead of overriding it
     const updatedUserData = {
       ...persistentRiotData,
       soloQueueRank: {
-        tier: refreshedRankData.tier,
-        rank: refreshedRankData.rank,
+        tier: refreshedRankData.rank_tier,
+        rank: refreshedRankData.rank_division,
         leaguePoints: refreshedRankData.lp
-      }
+      },
+      // Store additional options data that might have been updated
+      plus_active: refreshedRankData.plus_active
     };
-    
     
     updateUserInterface(updatedUserData);
     await PersistentStorage.storeRiotUserData(updatedUserData);
@@ -873,6 +911,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Use disconnect method to clear both tokens and persistent data
         await TwitchAuth.disconnect();
+        
+        // Clear cached options since user is disconnecting
+        await clearOptionsFromStorage();
         
         // Update UI after logout
         twitchConnectionStatus.textContent = 'Not Connected';
@@ -1003,7 +1044,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
       }
 
-      return await response.json();
+      const options = await response.json();
+      
+      // Cache the fetched options for instant loading next time
+      if (options) {
+        await saveOptionsToStorage(options);
+      }
+      
+      return options;
     } catch (error) {
       console.warn('[EloWard Popup] Error fetching user options:', error);
       return null;
@@ -1044,34 +1092,84 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      return await response.json();
+      const updatedOptions = await response.json();
+      
+      // Update local storage with the new options
+      await saveOptionsToStorage(updatedOptions);
+      
+      return updatedOptions;
     } catch (error) {
       console.error('[EloWard Popup] Error updating user option:', error);
       throw error;
     }
   }
 
+  // Load user options from local storage for instant display
+  async function loadOptionsFromStorage() {
+    try {
+      const stored = await browser.storage.local.get(['eloward_user_options']);
+      return stored.eloward_user_options || null;
+    } catch (error) {
+      console.warn('[EloWard Popup] Error loading options from storage:', error);
+      return null;
+    }
+  }
+
+  // Save user options to local storage
+  async function saveOptionsToStorage(options) {
+    try {
+      await browser.storage.local.set({
+        eloward_user_options: {
+          show_peak: Boolean(options.show_peak),
+          animate_badge: Boolean(options.animate_badge),
+          plus_active: Boolean(options.plus_active),
+          cached_at: Date.now()
+        }
+      });
+    } catch (error) {
+      console.warn('[EloWard Popup] Error saving options to storage:', error);
+    }
+  }
+
+  // Clear user options from local storage (used on disconnect)
+  async function clearOptionsFromStorage() {
+    try {
+      await browser.storage.local.remove(['eloward_user_options']);
+    } catch (error) {
+      console.warn('[EloWard Popup] Error clearing options from storage:', error);
+    }
+  }
+
   async function initializeUserOptions() {
     try {
-      const options = await fetchUserOptions();
-      if (!options) {
+      const showPeakToggle = document.getElementById('use-peak-rank');
+      const animateBadgeToggle = document.getElementById('show-animated-badge');
+      
+      if (!showPeakToggle || !animateBadgeToggle) {
         return;
       }
 
-      // Initialize toggle states based on backend options
-      const showPeakToggle = document.getElementById('use-peak-rank');
-      const animateBadgeToggle = document.getElementById('show-animated-badge');
-
-      if (showPeakToggle) {
-        showPeakToggle.checked = options.show_peak;
+      // Step 1: Instantly load from local storage (no animation)
+      const cachedOptions = await loadOptionsFromStorage();
+      if (cachedOptions) {
+        // Disable transitions to prevent any visual flicker
+        showPeakToggle.parentElement.classList.add('no-transition');
+        animateBadgeToggle.parentElement.classList.add('no-transition');
+        
+        // Set states immediately from cache
+        showPeakToggle.checked = cachedOptions.show_peak;
+        animateBadgeToggle.checked = cachedOptions.animate_badge;
+        
+        // Re-enable transitions after immediate setting
+        setTimeout(() => {
+          showPeakToggle.parentElement.classList.remove('no-transition');
+          animateBadgeToggle.parentElement.classList.remove('no-transition');
+        }, 10);
       }
 
-      if (animateBadgeToggle) {
-        animateBadgeToggle.checked = options.animate_badge;
-      }
-
-      // Add event listeners for option updates
-      if (showPeakToggle) {
+      // Step 2: Add event listeners (only add once)
+      if (!showPeakToggle.hasAttribute('data-initialized')) {
+        showPeakToggle.setAttribute('data-initialized', 'true');
         showPeakToggle.addEventListener('change', async (e) => {
           try {
             await updateUserOption('show_peak', e.target.checked);
@@ -1083,7 +1181,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      if (animateBadgeToggle) {
+      if (!animateBadgeToggle.hasAttribute('data-initialized')) {
+        animateBadgeToggle.setAttribute('data-initialized', 'true');
         animateBadgeToggle.addEventListener('change', async (e) => {
           try {
             await updateUserOption('animate_badge', e.target.checked);
@@ -1095,6 +1194,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      // Step 3: Background sync with backend (non-blocking)
+      fetchUserOptions().then(async (backendOptions) => {
+        if (backendOptions) {
+          // Update local storage with fresh backend data
+          await saveOptionsToStorage(backendOptions);
+          
+          // Update toggles if backend data differs from what's currently shown
+          if (showPeakToggle.checked !== backendOptions.show_peak) {
+            showPeakToggle.checked = backendOptions.show_peak;
+          }
+          if (animateBadgeToggle.checked !== backendOptions.animate_badge) {
+            animateBadgeToggle.checked = backendOptions.animate_badge;
+          }
+        }
+      }).catch(() => {
+        // Silent fail - user still sees cached data
+      });
+
     } catch (error) {
       console.warn('[EloWard Popup] Error initializing user options:', error);
     }
@@ -1102,7 +1219,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Call refresh function after popup loads (non-blocking)
   refreshLocalUserRankData().catch(() => {});
-
-  // Initialize user options (non-blocking)
-  initializeUserOptions().catch(() => {});
 }); 

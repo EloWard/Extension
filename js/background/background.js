@@ -661,14 +661,17 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Use simplified PUUID-only refresh
             const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
             
+            // Backend returns the correct rank (current or peak) based on user's show_peak setting
             // Update the persistent data with new rank information
             const updatedUserData = {
               ...persistentRiotData,
               soloQueueRank: {
-                tier: refreshedRankData.tier,
-                rank: refreshedRankData.rank,
+                tier: refreshedRankData.rank_tier,
+                rank: refreshedRankData.rank_division,
                 leaguePoints: refreshedRankData.lp
-              }
+              },
+              // Store additional options data that might have been updated
+              plus_active: refreshedRankData.plus_active
             };
             
             await PersistentStorage.storeRiotUserData(updatedUserData);
