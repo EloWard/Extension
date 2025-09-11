@@ -138,10 +138,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
 
  
-  optionsContent.style.display = 'none';
-
 
   initializeAccountSectionState();
+  initializeOptionsSectionState();
   loadToggleStates();
 
 
@@ -227,6 +226,9 @@ document.addEventListener('DOMContentLoaded', () => {
       optionsContent.style.display = 'none';
       optionsDropdownArrow.classList.remove('rotated');
     }
+    
+    // Save the collapsed state to storage
+    browser.storage.local.set({ 'optionsSectionCollapsed': !isHidden });
   });
   
 
@@ -264,6 +266,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
       accountContent.style.display = 'block';
       accountDropdownArrow.classList.add('rotated');
+    }
+  }
+
+  async function initializeOptionsSectionState() {
+    try {
+      const result = await browser.storage.local.get(['optionsSectionCollapsed']);
+      const isCollapsed = result.optionsSectionCollapsed;
+      
+      // Default to expanded (false) if not set
+      if (isCollapsed === undefined || isCollapsed === false) {
+        optionsContent.style.display = 'block';
+        optionsDropdownArrow.classList.add('rotated');
+      } else {
+        optionsContent.style.display = 'none';
+        optionsDropdownArrow.classList.remove('rotated');
+      }
+    } catch (error) {
+      // Default to expanded on error
+      optionsContent.style.display = 'block';
+      optionsDropdownArrow.classList.add('rotated');
     }
   }
 
