@@ -15,8 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const optionsHeader = document.getElementById('options-header');
   const optionsContent = document.getElementById('options-content');
   const optionsDropdownArrow = optionsHeader.querySelector('.dropdown-arrow');
-  const usePeakRankToggle = document.getElementById('use-peak-rank');
-  const showAnimatedBadgeToggle = document.getElementById('show-animated-badge');
   const connectTwitchBtn = document.getElementById('connect-twitch');
   const twitchConnectionStatus = document.getElementById('twitch-connection-status');
   const accountHeader = document.getElementById('account-header');
@@ -141,7 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initializeAccountSectionState();
   initializeOptionsSectionState();
-  loadToggleStates();
 
 
   setRiotControlsDisabled(true, 'no_twitch');
@@ -289,25 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Toggle functionality for options (frontend-only)
-  function loadToggleStates() {
-    // Set default states
-    usePeakRankToggle.checked = false;
-    showAnimatedBadgeToggle.checked = true;
-  }
 
-  // Event listeners for toggles
-  usePeakRankToggle.addEventListener('change', () => {
-    // Frontend-only toggle - no persistence needed
-    console.log('Use Peak Rank:', usePeakRankToggle.checked);
-  });
-
-  showAnimatedBadgeToggle.addEventListener('change', () => {
-    // Frontend-only toggle - no persistence needed
-    console.log('Show Animated Badge:', showAnimatedBadgeToggle.checked);
-  });
-  
-  
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
@@ -664,7 +643,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Refresh rank function to update player rank information
   async function refreshRank() {
     try {
-      console.log('[EloWard Popup] Manual rank refresh: requested');
       // Show a loading state on the button (add a rotating animation class)
       refreshRankBtn.classList.add('refreshing');
       refreshRankBtn.disabled = true; // Disable button while refreshing
@@ -685,7 +663,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const tryPerform = async () => {
         await performRankRefresh();
         try { await browser.storage.local.set({ eloward_last_rank_refresh_at: Date.now() }); } catch (_) {}
-        console.log('[EloWard Popup] Manual rank refresh: successful');
       };
       
       let isAuthenticated = false;
@@ -732,7 +709,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try { await PersistentStorage.storeRiotUserData(updatedUserData); } catch (_) {}
         updateUserInterface(updatedUserData);
         await tryPerform();
-        console.log('[EloWard Popup] Manual rank refresh after interactive re-auth: successful');
         return;
       } catch (interactiveErr) {
         // Silently fail on refresh re-auth errors; keep persistent data and UI intact
@@ -772,7 +748,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
     
-    console.log('[EloWard Popup] rank: refreshed');
     
     updateUserInterface(updatedUserData);
     await PersistentStorage.storeRiotUserData(updatedUserData);
@@ -1013,6 +988,121 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Fetch and initialize user options
+  async function fetchUserOptions() {
+    try {
+      const riotData = await PersistentStorage.getRiotUserData();
+      if (!riotData?.puuid) {
+        return null;
+      }
+
+      const response = await fetch(`https://eloward-ranks.unleashai.workers.dev/api/options/${riotData.puuid}`);
+      
+      if (!response.ok) {
+        console.warn('[EloWard Popup] Failed to fetch user options:', response.status);
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.warn('[EloWard Popup] Error fetching user options:', error);
+      return null;
+    }
+  }
+
+  async function updateUserOption(field, value) {
+    try {
+      const [riotData, twitchData] = await Promise.all([
+        PersistentStorage.getRiotUserData(),
+        PersistentStorage.getTwitchUserData()
+      ]);
+      
+      if (!riotData?.puuid) {
+        throw new Error('No PUUID available');
+      }
+      
+      if (!twitchData?.login) {
+        throw new Error('No Twitch username available');
+      }
+
+      const requestBody = { 
+        puuid: riotData.puuid,
+        twitch_username: twitchData.login
+      };
+      requestBody[field] = value;
+
+      const response = await fetch('https://eloward-ranks.unleashai.workers.dev/api/options', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[EloWard Popup] Error updating user option:', error);
+      throw error;
+    }
+  }
+
+  async function initializeUserOptions() {
+    try {
+      const options = await fetchUserOptions();
+      if (!options) {
+        return;
+      }
+
+      // Initialize toggle states based on backend options
+      const showPeakToggle = document.getElementById('use-peak-rank');
+      const animateBadgeToggle = document.getElementById('show-animated-badge');
+
+      if (showPeakToggle) {
+        showPeakToggle.checked = options.show_peak;
+      }
+
+      if (animateBadgeToggle) {
+        animateBadgeToggle.checked = options.animate_badge;
+      }
+
+      // Add event listeners for option updates
+      if (showPeakToggle) {
+        showPeakToggle.addEventListener('change', async (e) => {
+          try {
+            await updateUserOption('show_peak', e.target.checked);
+          } catch (error) {
+            // Revert toggle on error
+            e.target.checked = !e.target.checked;
+            console.error('Failed to update show_peak option:', error);
+          }
+        });
+      }
+
+      if (animateBadgeToggle) {
+        animateBadgeToggle.addEventListener('change', async (e) => {
+          try {
+            await updateUserOption('animate_badge', e.target.checked);
+          } catch (error) {
+            // Revert toggle on error
+            e.target.checked = !e.target.checked;
+            console.error('Failed to update animate_badge option:', error);
+          }
+        });
+      }
+
+    } catch (error) {
+      console.warn('[EloWard Popup] Error initializing user options:', error);
+    }
+  }
+
   // Call refresh function after popup loads (non-blocking)
   refreshLocalUserRankData().catch(() => {});
+
+  // Initialize user options (non-blocking)
+  initializeUserOptions().catch(() => {});
 }); 
