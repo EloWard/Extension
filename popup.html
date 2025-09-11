@@ -95,16 +95,33 @@
     </div>
     
     <div class="card tip-card">
-      <div class="collapsible-header" id="streamer-header">
-        <h2>Are you a streamer?</h2>
+      <div class="collapsible-header" id="options-header">
+        <h2>Options</h2>
         <div class="dropdown-arrow">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 9l6 6 6-6"></path>
           </svg>
         </div>
       </div>
-      <div class="tip-content" id="streamer-content" style="display: none;">
-        <p>To see rank badges in your OBS chat dock, use the EloWard Add-On. Detailed setup available at <a href="https://www.eloward.com/setup" target="_blank" style="color: #D9A336; font-weight: 600; text-decoration: none;">eloward.com/setup</a>.</p>
+      <div class="tip-content" id="options-content" style="display: none;">
+        <div class="option-item">
+          <div class="option-info">
+            <span class="option-label">Use Peak Rank</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="use-peak-rank">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="option-item">
+          <div class="option-info">
+            <span class="option-label">Show Animated Badge</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="show-animated-badge">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
       </div>
     </div>
     

@@ -12,9 +12,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const rankBadgePreview = document.getElementById('rank-badge-preview');
   const regionSelect = document.getElementById('region');
   const refreshRankBtn = document.getElementById('refresh-rank');
-  const streamerHeader = document.getElementById('streamer-header');
-  const streamerContent = document.getElementById('streamer-content');
-  const dropdownArrow = streamerHeader.querySelector('.dropdown-arrow');
+  const optionsHeader = document.getElementById('options-header');
+  const optionsContent = document.getElementById('options-content');
+  const optionsDropdownArrow = optionsHeader.querySelector('.dropdown-arrow');
+  const usePeakRankToggle = document.getElementById('use-peak-rank');
+  const showAnimatedBadgeToggle = document.getElementById('show-animated-badge');
   const connectTwitchBtn = document.getElementById('connect-twitch');
   const twitchConnectionStatus = document.getElementById('twitch-connection-status');
   const accountHeader = document.getElementById('account-header');
@@ -136,10 +138,11 @@ document.addEventListener('DOMContentLoaded', () => {
   
 
  
-  streamerContent.style.display = 'none';
+  optionsContent.style.display = 'none';
 
 
   initializeAccountSectionState();
+  loadToggleStates();
 
 
   setRiotControlsDisabled(true, 'no_twitch');
@@ -213,16 +216,16 @@ document.addEventListener('DOMContentLoaded', () => {
   connectRiotBtn.addEventListener('mouseleave', hideTooltip);
   
 
-  streamerHeader.addEventListener('click', () => {
-    const isHidden = streamerContent.style.display === 'none';
+  optionsHeader.addEventListener('click', () => {
+    const isHidden = optionsContent.style.display === 'none';
     
     // Toggle the display of the content
     if (isHidden) {
-      streamerContent.style.display = 'block';
-      dropdownArrow.classList.add('rotated');
+      optionsContent.style.display = 'block';
+      optionsDropdownArrow.classList.add('rotated');
     } else {
-      streamerContent.style.display = 'none';
-      dropdownArrow.classList.remove('rotated');
+      optionsContent.style.display = 'none';
+      optionsDropdownArrow.classList.remove('rotated');
     }
   });
   
@@ -263,6 +266,24 @@ document.addEventListener('DOMContentLoaded', () => {
       accountDropdownArrow.classList.add('rotated');
     }
   }
+
+  // Toggle functionality for options (frontend-only)
+  function loadToggleStates() {
+    // Set default states
+    usePeakRankToggle.checked = false;
+    showAnimatedBadgeToggle.checked = true;
+  }
+
+  // Event listeners for toggles
+  usePeakRankToggle.addEventListener('change', () => {
+    // Frontend-only toggle - no persistence needed
+    console.log('Use Peak Rank:', usePeakRankToggle.checked);
+  });
+
+  showAnimatedBadgeToggle.addEventListener('change', () => {
+    // Frontend-only toggle - no persistence needed
+    console.log('Show Animated Badge:', showAnimatedBadgeToggle.checked);
+  });
   
   
 
