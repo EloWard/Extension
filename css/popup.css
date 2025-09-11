@@ -352,6 +352,11 @@ header h1 {
   padding-bottom: 0;
 }
 
+/* Reduce bottom padding for the card containing the rank section */
+.card:has(.rank-container) {
+  padding-bottom: 8px;
+}
+
 .rank-badge {
   width: 70px;
   height: 70px;
@@ -359,7 +364,6 @@ header h1 {
   background-position: center;
   background-repeat: no-repeat;
   position: relative;
-  transform: translateY(-3px);
 }
 
 .rank-info {
@@ -378,7 +382,6 @@ header h1 {
   font-weight: 600;
   font-size: 16px;
   color: var(--primary);
-  margin-top: -8px;
 }
 
 /* Refresh Button Styling */
@@ -396,7 +399,6 @@ header h1 {
   transition: all 0.2s ease;
   padding: 0;
   outline: none;
-  margin-top: -8px;
 }
 
 .btn-icon:hover {
@@ -568,7 +570,7 @@ footer {
 }
 
 .tip-card .collapsible-header {
-  padding: 0;
+  padding: 0 0 0 4px;
   height: 26px;
 }
 
