@@ -101,6 +101,10 @@ header h1 {
 
 .collapsible-header h2 {
   margin-bottom: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary);
+  font-family: 'Cinzel', serif;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -255,7 +259,7 @@ header h1 {
 }
 
 .compact-select.button-width:focus {
-  box-shadow: 0 0 0 2px rgba(217, 163, 54, 0.3);
+  box-shadow: 0 0 0 0px rgba(217, 163, 54, 0.3);
 }
 
 /* Old region selector styles - can be removed if no longer used elsewhere */
@@ -473,7 +477,7 @@ header h1 {
 footer {
   margin-top: auto;
   text-align: center;
-  padding: 6px 0 4px;
+  padding: 6px 0 0px;
   color: var(--text-secondary);
   font-size: 12px;
 }
@@ -566,7 +570,9 @@ footer {
 .tip-card h2 {
   margin-bottom: 0;
   font-size: 16px;
+  font-weight: 600;
   color: var(--primary);
+  font-family: 'Cinzel', serif;
 }
 
 .tip-card .collapsible-header {
