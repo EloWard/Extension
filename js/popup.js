@@ -674,6 +674,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isAuthenticated) {
         try {
           await tryPerform();
+          console.log('[EloWard Popup] Manual rank refresh: completed successfully');
           return;
         } catch (error) {
           if (error?.name !== 'ReAuthenticationRequiredError') {
@@ -712,6 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try { await PersistentStorage.storeRiotUserData(updatedUserData); } catch (_) {}
         updateUserInterface(updatedUserData);
         await tryPerform();
+        console.log('[EloWard Popup] Manual rank refresh: completed successfully (after re-auth)');
         return;
       } catch (interactiveErr) {
         // Silently fail on refresh re-auth errors; keep persistent data and UI intact

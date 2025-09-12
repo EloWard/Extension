@@ -454,6 +454,13 @@ export const RiotAuth = {
         throw new Error((responseData && responseData.message) || 'Failed to refresh rank');
       }
       
+      console.log('[RiotAuth] refreshRank success:', {
+        tier: responseData.data?.rank_tier,
+        division: responseData.data?.rank_division,
+        lp: responseData.data?.lp,
+        region: responseData.data?.region
+      });
+      
       return responseData.data;
     } catch (error) {
       console.error('[RiotAuth] refreshRank error:', error);
