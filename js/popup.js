@@ -140,6 +140,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAccountSectionState();
   initializeOptionsSectionState();
 
+  // Initialize options as disabled until we know connection status
+  updateOptionsBasedOnRiotConnection();
 
   setRiotControlsDisabled(true, 'no_twitch');
 
@@ -361,6 +363,9 @@ document.addEventListener('DOMContentLoaded', () => {
     riotConnectionStatus.textContent = 'Not Connected';
     riotConnectionStatus.classList.remove('error', 'connected');
     
+    // Update options to disabled state since Riot connection failed
+    updateOptionsBasedOnRiotConnection();
+    
     const firstTime = await isFirstTimeUser();
     updateRiotButtonText('Connect');
     connectRiotBtn.disabled = false;
@@ -405,6 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
         riotConnectionStatus.classList.add('connected');
         updateRiotButtonText('Disconnect');
         
+        // Update options based on new connection state
+        updateOptionsBasedOnRiotConnection();
+        
         // Initialize user options (loads instantly from cache, syncs in background)
         initializeUserOptions().catch(() => {});
         
@@ -422,6 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
         rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
         refreshRankBtn.classList.add('hidden');
+        
+        // Update options to disabled state since Riot is not connected
+        updateOptionsBasedOnRiotConnection();
         
         if (regionData.selectedRegion) {
           regionSelect.value = regionData.selectedRegion;
@@ -444,6 +455,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 riotConnectionStatus.classList.add('connected');
                 updateRiotButtonText('Disconnect');
                 refreshRankBtn.classList.remove('hidden');
+                
+                // Update options based on new connection state
+                updateOptionsBasedOnRiotConnection();
                 
                 // Store user options from fallback response (no need for separate API call)
                 if (fallbackResult.data.show_peak !== undefined || fallbackResult.data.animate_badge !== undefined) {
@@ -487,6 +501,9 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRiotButtonText('Connect');
     connectRiotBtn.disabled = false;
     currentRank.textContent = 'Unknown';
+    
+    // Update options to disabled state since Riot is not connected
+    updateOptionsBasedOnRiotConnection();
     rankBadgePreview.style.backgroundImage = 'none';
     refreshRankBtn.classList.add('hidden'); // Hide refresh button
     
@@ -552,6 +569,9 @@ document.addEventListener('DOMContentLoaded', () => {
             riotConnectionStatus.classList.remove('connected');
             updateRiotButtonText('Connect');
             
+            // Update options to disabled state since Riot is disconnected
+            updateOptionsBasedOnRiotConnection();
+            
             // Show unranked rank display
             currentRank.textContent = 'Unranked';
             rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
@@ -565,6 +585,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updateRiotButtonText('Connect');
             riotConnectionStatus.textContent = 'Not Connected';
             riotConnectionStatus.classList.remove('error', 'connected');
+            
+            // Update options to disabled state since Riot connection failed
+            updateOptionsBasedOnRiotConnection();
           } finally {
             // Re-enable button
             connectRiotBtn.disabled = false;
@@ -636,6 +659,9 @@ document.addEventListener('DOMContentLoaded', () => {
           updateRiotButtonText('Connect');
           riotConnectionStatus.textContent = 'Not Connected';
           riotConnectionStatus.classList.remove('error', 'connected');
+          
+          // Update options to disabled state since Riot connection failed
+          updateOptionsBasedOnRiotConnection();
         } finally {
           // Re-enable button
           connectRiotBtn.disabled = false;
@@ -1111,6 +1137,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function updateOptionsBasedOnRiotConnection() {
+    const showPeakToggle = document.getElementById('use-peak-rank');
+    const animateBadgeToggle = document.getElementById('show-animated-badge');
+    
+    if (!showPeakToggle || !animateBadgeToggle) {
+      return;
+    }
+
+    // Check if Riot is connected by looking at the status element
+    const riotConnectionStatus = document.getElementById('riot-connection-status');
+    const isRiotConnected = riotConnectionStatus && riotConnectionStatus.classList.contains('connected');
+    
+    // Get the option item containers
+    const showPeakOption = showPeakToggle.closest('.option-item');
+    const animateBadgeOption = animateBadgeToggle.closest('.option-item');
+    
+    if (isRiotConnected) {
+      // Enable options when Riot is connected
+      if (showPeakOption) showPeakOption.classList.remove('disabled');
+      if (animateBadgeOption) animateBadgeOption.classList.remove('disabled');
+      showPeakToggle.disabled = false;
+      animateBadgeToggle.disabled = false;
+    } else {
+      // Disable options when Riot is not connected
+      if (showPeakOption) showPeakOption.classList.add('disabled');
+      if (animateBadgeOption) animateBadgeOption.classList.add('disabled');
+      showPeakToggle.disabled = true;
+      animateBadgeToggle.disabled = true;
+    }
+  }
+
   async function initializeUserOptions() {
     try {
       const showPeakToggle = document.getElementById('use-peak-rank');
@@ -1119,6 +1176,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!showPeakToggle || !animateBadgeToggle) {
         return;
       }
+
+      // Update options state based on Riot connection first
+      updateOptionsBasedOnRiotConnection();
 
       // Step 1: Instantly load from local storage (no animation)
       const cachedOptions = await loadOptionsFromStorage();
@@ -1142,6 +1202,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!showPeakToggle.hasAttribute('data-initialized')) {
         showPeakToggle.setAttribute('data-initialized', 'true');
         showPeakToggle.addEventListener('change', async (e) => {
+          // Prevent changes if Riot is not connected
+          if (showPeakToggle.disabled) {
+            e.preventDefault();
+            e.target.checked = !e.target.checked;
+            return;
+          }
+          
           try {
             await updateUserOption('show_peak', e.target.checked);
           } catch (error) {
@@ -1155,6 +1222,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!animateBadgeToggle.hasAttribute('data-initialized')) {
         animateBadgeToggle.setAttribute('data-initialized', 'true');
         animateBadgeToggle.addEventListener('change', async (e) => {
+          // Prevent changes if Riot is not connected
+          if (animateBadgeToggle.disabled) {
+            e.preventDefault();
+            e.target.checked = !e.target.checked;
+            return;
+          }
+          
           try {
             await updateUserOption('animate_badge', e.target.checked);
           } catch (error) {

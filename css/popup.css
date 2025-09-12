@@ -741,3 +741,39 @@ select:disabled {
 .toggle-switch.no-transition .toggle-slider:before {
   transition: none !important;
 }
+
+/* Disabled state for options when Riot is not connected */
+.option-item.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.option-item.disabled .option-label {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.option-item.disabled .toggle-switch {
+  cursor: not-allowed;
+}
+
+.option-item.disabled .toggle-slider {
+  background-color: rgba(44, 62, 80, 0.4);
+  border-color: rgba(44, 62, 80, 0.4);
+  cursor: not-allowed;
+}
+
+.option-item.disabled .toggle-slider:before {
+  background-color: rgba(160, 155, 140, 0.5);
+  cursor: not-allowed;
+}
+
+.option-item.disabled .toggle-switch input:checked + .toggle-slider {
+  background-color: rgba(217, 163, 54, 0.3);
+  border-color: rgba(217, 163, 54, 0.3);
+}
+
+.option-item.disabled .toggle-switch input:checked + .toggle-slider:before {
+  background-color: rgba(255, 255, 255, 0.4);
+}
