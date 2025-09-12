@@ -620,26 +620,35 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use the Riot RSO authentication module
         const userData = await RiotAuth.authenticate(region);
         
-        // Fetch plus_active status from backend for the local user
+        // Fetch complete user data from backend using the correct by-puuid endpoint
         let updatedUserData = userData;
         try {
-          const twitchData = await PersistentStorage.getTwitchUserData();
-          if (twitchData?.login) {
+          if (userData?.puuid) {
             const response = await browser.runtime.sendMessage({
-              action: 'fetch_rank_for_username',
-              username: twitchData.login.toLowerCase()
+              action: 'fetch_rank_by_puuid',
+              puuid: userData.puuid
             });
             
             if (response?.success && response?.rankData) {
               updatedUserData = {
                 ...userData,
-                plus_active: response.rankData.plus_active || false
+                plus_active: response.rankData.plus_active || false,
+                // Store additional options that come from the backend
+                show_peak: response.rankData.show_peak || false,
+                animate_badge: response.rankData.animate_badge || false
               };
+              
+              // Update user options storage with fresh backend data
+              await saveOptionsToStorage({
+                show_peak: response.rankData.show_peak || false,
+                animate_badge: response.rankData.animate_badge || false,
+                plus_active: response.rankData.plus_active || false
+              });
             }
           }
         } catch (error) {
-          console.warn('[EloWard Popup] Failed to fetch plus_active status:', error);
-          // Continue with original userData if plus_active fetch fails
+          console.warn('[EloWard Popup] Failed to fetch complete user data:', error);
+          // Continue with original userData if backend fetch fails
         }
         
         // Store user data in persistent storage (with plus_active if fetched)
@@ -647,6 +656,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update UI with the user data
         updateUserInterface(updatedUserData);
+        
+        // Update options based on new connection state and initialize options UI
+        updateOptionsBasedOnRiotConnection();
+        await initializeUserOptions();
         
         
         // Store the connected region in storage and ensure the region selector reflects the current region
@@ -726,27 +739,36 @@ document.addEventListener('DOMContentLoaded', () => {
       // Re-authentication required - prompt user to reconnect
       try {
         await RiotAuth.authenticate(region);
-        const userData = await RiotAuth.getUserData();
+        const userData = await RiotAuth.getUserDataFromStorage();
         
-        // Fetch plus_active status from backend for the local user
+        // Fetch complete user data from backend using the correct by-puuid endpoint
         let updatedUserData = userData;
         try {
-          const twitchData = await PersistentStorage.getTwitchUserData();
-          if (twitchData?.login) {
+          if (userData?.puuid) {
             const response = await browser.runtime.sendMessage({
-              action: 'fetch_rank_for_username',
-              username: twitchData.login.toLowerCase()
+              action: 'fetch_rank_by_puuid',
+              puuid: userData.puuid
             });
             
             if (response?.success && response?.rankData) {
               updatedUserData = {
                 ...userData,
-                plus_active: response.rankData.plus_active || false
+                plus_active: response.rankData.plus_active || false,
+                // Store additional options that come from the backend
+                show_peak: response.rankData.show_peak || false,
+                animate_badge: response.rankData.animate_badge || false
               };
+              
+              // Update user options storage with fresh backend data
+              await saveOptionsToStorage({
+                show_peak: response.rankData.show_peak || false,
+                animate_badge: response.rankData.animate_badge || false,
+                plus_active: response.rankData.plus_active || false
+              });
             }
           }
         } catch (error) {
-          console.warn('[EloWard Popup] Failed to fetch plus_active status during re-auth:', error);
+          console.warn('[EloWard Popup] Failed to fetch complete user data during re-auth:', error);
         }
         
         try { await PersistentStorage.storeRiotUserData(updatedUserData); } catch (_) {}
@@ -1012,9 +1034,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const updatedUserData = {
           ...riotData,
           soloQueueRank: {
-            tier: backendRankData.tier,
-            rank: backendRankData.division,
-            leaguePoints: backendRankData.leaguePoints
+            tier: backendRankData.rank_tier,
+            rank: backendRankData.rank_division,
+            leaguePoints: backendRankData.lp
           },
           region: backendRankData.region || riotData.region,
           plus_active: backendRankData.plus_active || false
@@ -1215,6 +1237,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Revert toggle on error
             e.target.checked = !e.target.checked;
             console.error('Failed to update show_peak option:', error);
+            
+            // Show user-friendly error for premium features
+            if (error.message?.includes('Premium subscription required')) {
+              // Could add a visual notification here
+              console.warn('Peak rank display requires EloWard+ subscription');
+            }
           }
         });
       }
@@ -1235,6 +1263,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Revert toggle on error
             e.target.checked = !e.target.checked;
             console.error('Failed to update animate_badge option:', error);
+            
+            // Show user-friendly error for premium features
+            if (error.message?.includes('Premium subscription required')) {
+              // Could add a visual notification here
+              console.warn('Animated badges require EloWard+ subscription');
+            }
           }
         });
       }
