@@ -430,12 +430,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Try fallback asynchronously if Twitch connected (non-blocking)
         if (persistentConnectedState.twitch) {
           PersistentStorage.tryRiotDataFallback()
-            .then(fallbackResult => {
+            .then(async (fallbackResult) => {
               if (fallbackResult.success) {
                 const userData = {
                   riotId: fallbackResult.data.riotId,
                   puuid: fallbackResult.data.puuid,
-                  soloQueueRank: fallbackResult.data.rankInfo
+                  soloQueueRank: fallbackResult.data.rankInfo,
+                  plus_active: fallbackResult.data.plus_active
                 };
                 
                 updateUserInterface(userData);
@@ -443,6 +444,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 riotConnectionStatus.classList.add('connected');
                 updateRiotButtonText('Disconnect');
                 refreshRankBtn.classList.remove('hidden');
+                
+                // Store user options from fallback response (no need for separate API call)
+                if (fallbackResult.data.show_peak !== undefined || fallbackResult.data.animate_badge !== undefined) {
+                  await saveOptionsToStorage({
+                    show_peak: Boolean(fallbackResult.data.show_peak),
+                    animate_badge: Boolean(fallbackResult.data.animate_badge),
+                    plus_active: Boolean(fallbackResult.data.plus_active)
+                  });
+                }
+                
+                // Initialize options UI with the data we already have
+                await initializeUserOptions();
                 
               }
             })
@@ -953,27 +966,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // Fetch fresh rank data from backend when popup opens
   async function refreshLocalUserRankData() {
     try {
-      const twitchData = await PersistentStorage.getTwitchUserData();
       const riotData = await PersistentStorage.getRiotUserData();
       
-      // Only refresh if both Twitch and Riot are connected
-      if (!twitchData?.login || !riotData?.riotId) {
+      // Only refresh if we have a PUUID
+      if (!riotData?.puuid) {
         return;
       }
-
-      const twitchUsername = twitchData.login.toLowerCase();
       
-      // Fetch fresh rank data from backend via background script (bypass cache for popup)
+      // Fetch complete rank + options data using PUUID endpoint (gets all data in one call)
       const response = await browser.runtime.sendMessage({
-        action: 'fetch_rank_for_username',
-        username: twitchUsername,
-        skipCache: true
+        action: 'fetch_rank_by_puuid',
+        puuid: riotData.puuid
       });
 
       if (response?.success && response?.rankData) {
         const backendRankData = response.rankData;
         
-        // Update stored persistent data with fresh backend data
+        // Update stored persistent data with fresh backend data including plus_active
         const updatedUserData = {
           ...riotData,
           soloQueueRank: {
@@ -985,12 +994,33 @@ document.addEventListener('DOMContentLoaded', () => {
           plus_active: backendRankData.plus_active || false
         };
 
-        // Store updated data
+        // Store updated riot data
         await PersistentStorage.storeRiotUserData(updatedUserData);
+        
+        // Update user options storage with fresh backend options data
+        const userOptions = {
+          show_peak: backendRankData.show_peak || false,
+          animate_badge: backendRankData.animate_badge || false,
+          cached_at: Date.now()
+        };
+        await browser.storage.local.set({ eloward_user_options: userOptions });
         
         // Update UI with fresh data (extract standardized rank data)
         const rankDataForDisplay = extractRankDataForDisplay(updatedUserData);
         displayRank(rankDataForDisplay);
+        
+        // Update premium star based on fresh plus_active data
+        updatePremiumStar(backendRankData.plus_active || false);
+        
+        // Update options toggles if they exist (sync UI with backend)
+        const showPeakToggle = document.getElementById('show-peak-toggle');
+        const animateBadgeToggle = document.getElementById('animate-badge-toggle');
+        if (showPeakToggle && showPeakToggle.checked !== userOptions.show_peak) {
+          showPeakToggle.checked = userOptions.show_peak;
+        }
+        if (animateBadgeToggle && animateBadgeToggle.checked !== userOptions.animate_badge) {
+          animateBadgeToggle.checked = userOptions.animate_badge;
+        }
       }
     } catch (error) {
       // Silently fail - popup will show existing data
@@ -998,34 +1028,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Fetch and initialize user options
-  async function fetchUserOptions() {
-    try {
-      const riotData = await PersistentStorage.getRiotUserData();
-      if (!riotData?.puuid) {
-        return null;
-      }
-
-      const response = await fetch(`https://eloward-ranks.unleashai.workers.dev/api/options/${riotData.puuid}`);
-      
-      if (!response.ok) {
-        console.warn('[EloWard Popup] Failed to fetch user options:', response.status);
-        return null;
-      }
-
-      const options = await response.json();
-      
-      // Cache the fetched options for instant loading next time
-      if (options) {
-        await saveOptionsToStorage(options);
-      }
-      
-      return options;
-    } catch (error) {
-      console.warn('[EloWard Popup] Error fetching user options:', error);
-      return null;
-    }
-  }
 
   async function updateUserOption(field, value) {
     try {
@@ -1163,23 +1165,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      // Step 3: Background sync with backend (non-blocking)
-      fetchUserOptions().then(async (backendOptions) => {
-        if (backendOptions) {
-          // Update local storage with fresh backend data
-          await saveOptionsToStorage(backendOptions);
-          
-          // Update toggles if backend data differs from what's currently shown
-          if (showPeakToggle.checked !== backendOptions.show_peak) {
-            showPeakToggle.checked = backendOptions.show_peak;
-          }
-          if (animateBadgeToggle.checked !== backendOptions.animate_badge) {
-            animateBadgeToggle.checked = backendOptions.animate_badge;
-          }
-        }
-      }).catch(() => {
-        // Silent fail - user still sees cached data
-      });
+      // Note: Backend sync is handled by refreshLocalUserRankData() which gets all options + rank data in one call
 
     } catch (error) {
       console.warn('[EloWard Popup] Error initializing user options:', error);

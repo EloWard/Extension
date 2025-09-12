@@ -331,7 +331,7 @@ function handleBadgeClick(event) {
 
 function createBadgeElement(rankData) {
   const badge = document.createElement('span');
-  const isPremium = rankData.plus_active || false;
+  const isPremium = rankData.animate_badge || false;
   
   badge.className = 'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
@@ -1312,8 +1312,9 @@ function processUsernamesBatch(userMessageMap) {
 }
 
 function handleCurrentUserMessages(messageData) {
-  chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+  chrome.storage.local.get(['eloward_persistent_riot_user_data', 'eloward_user_options'], (data) => {
     const riotData = data.eloward_persistent_riot_user_data;
+    const userOptions = data.eloward_user_options || {};
     
     const userRankData = riotData?.rankInfo ? {
       tier: riotData.rankInfo.tier,
@@ -1321,14 +1322,14 @@ function handleCurrentUserMessages(messageData) {
       leaguePoints: riotData.rankInfo.leaguePoints,
       summonerName: riotData.riotId,
       region: riotData.region,
-      plus_active: riotData.plus_active || false
+      animate_badge: userOptions.animate_badge || false
     } : (riotData ? {
       tier: 'UNRANKED',
       division: '',
       leaguePoints: null,
       summonerName: riotData.riotId,
       region: riotData.region,
-      plus_active: riotData.plus_active || false
+      animate_badge: userOptions.animate_badge || false
     } : null);
 
     if (!userRankData) return;
@@ -1447,8 +1448,9 @@ function processNewMessage(messageNode) {
     }
     
     if (extensionState.currentUser && username === extensionState.currentUser) {
-      chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
+      chrome.storage.local.get(['eloward_persistent_riot_user_data', 'eloward_user_options'], (data) => {
         const riotData = data.eloward_persistent_riot_user_data;
+        const userOptions = data.eloward_user_options || {};
         
         const userRankData = riotData?.rankInfo ? {
           tier: riotData.rankInfo.tier,
@@ -1456,14 +1458,14 @@ function processNewMessage(messageNode) {
           leaguePoints: riotData.rankInfo.leaguePoints,
           summonerName: riotData.riotId,
           region: riotData.region,
-          plus_active: riotData.plus_active || false
+          animate_badge: userOptions.animate_badge || false
         } : (riotData ? {
           tier: 'UNRANKED',
           division: '',
           leaguePoints: null,
           summonerName: riotData.riotId,
           region: riotData.region,
-          plus_active: riotData.plus_active || false
+          animate_badge: userOptions.animate_badge || false
         } : null);
 
         if (!userRankData) return;
@@ -1689,7 +1691,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
     badge.classList.add('eloward-single-badge');
   }
   
-  const isPremium = rankData.plus_active || false;
+  const isPremium = rankData.animate_badge || false;
   
   badge.dataset.rankText = formatRankText(rankData);
   badge.dataset.rank = rankData.tier.toLowerCase();
@@ -1733,8 +1735,8 @@ function showSevenTVTooltip(event, rankData) {
   tooltipBadge.decoding = 'async';
   tooltipBadge.loading = 'eager';
   
-  // Use premium badge if user has plus_active
-  const isPremium = rankData.plus_active || false;
+  // Use premium badge if user has animate_badge
+  const isPremium = rankData.animate_badge || false;
   tooltipBadge.src = ImageCache.getSrcSync(rankData.tier, isPremium);
   tooltipBadge.alt = 'Rank Badge';
   
@@ -1917,7 +1919,7 @@ function updateBadgeElement(badgeElement, rankData) {
   try {
     if (!badgeElement) return;
     
-    const isPremium = rankData.plus_active || false;
+    const isPremium = rankData.animate_badge || false;
     
     badgeElement.dataset.rankText = formatRankText(rankData);
     badgeElement.dataset.rank = rankData.tier.toLowerCase();

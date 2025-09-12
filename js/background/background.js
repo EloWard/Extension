@@ -527,7 +527,25 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // Removed deprecated get_user_rank_by_puuid action - no longer needed with server-side auth
+  if (message.action === 'fetch_rank_by_puuid') {
+    const puuid = message.puuid;
+    
+    if (!puuid) {
+      sendResponse({ success: false, error: 'No PUUID provided' });
+      return true;
+    }
+    
+    // Call the by-puuid endpoint which returns all options + plus_active
+    fetchRankByPuuid(puuid)
+      .then(rankData => {
+        sendResponse({ success: true, rankData, source: 'api' });
+      })
+      .catch(error => {
+        sendResponse({ success: false, error: error.message || 'Error fetching rank data by PUUID' });
+      });
+    
+    return true;
+  }
   
   if (message.action === 'check_channel_active') {
     const streamer = message.streamer;
@@ -682,19 +700,28 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
               const twitchUsername = twitchData?.login?.toLowerCase();
               const region = refreshedRankData.region || 'na1';
               if (twitchUsername && updatedUserData) {
+                // Get user's animate_badge preference for consistent cache entry
+                let animateBadge = false;
+                try {
+                  const userOptions = await browser.storage.local.get(['eloward_user_options']);
+                  animateBadge = userOptions.eloward_user_options?.animate_badge || false;
+                } catch (_) {}
+                
                 const solo = updatedUserData.soloQueueRank || null;
                 const rankData = solo ? {
                   tier: solo.tier,
                   division: solo.rank,
                   leaguePoints: solo.leaguePoints,
                   summonerName: updatedUserData.riotId,
-                  region
+                  region,
+                  animate_badge: animateBadge
                 } : {
                   tier: 'UNRANKED',
                   division: '',
                   leaguePoints: null,
                   summonerName: updatedUserData.riotId,
-                  region
+                  region,
+                  animate_badge: animateBadge
                 };
                 userRankCache.set(twitchUsername, rankData);
               }
@@ -1026,7 +1053,7 @@ async function updatePersistentRiotDataFromRankData(rankData) {
     const existingData = await PersistentStorage.getRiotUserData();
     
     if (existingData && existingData.puuid) {
-      // Create updated data with new rank info and plus_active
+      // Create updated data with new rank info 
       const updatedData = {
         ...existingData,
         rankInfo: {
@@ -1034,8 +1061,7 @@ async function updatePersistentRiotDataFromRankData(rankData) {
           rank: rankData.division,
           leaguePoints: rankData.leaguePoints
         },
-        region: rankData.region || existingData.region,
-        plus_active: rankData.plus_active || false
+        region: rankData.region || existingData.region
       };
       
       // Store updated data
@@ -1071,7 +1097,46 @@ async function fetchRankFromDatabase(twitchUsername) {
       leaguePoints: rankData.lp,
       summonerName: rankData.riot_id,
       region: rankData.region,
-      plus_active: rankData.plus_active || false
+      animate_badge: rankData.animate_badge || false
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+async function fetchRankByPuuid(puuid) {
+  if (!puuid) return null;
+  
+  try {
+    const response = await fetch(`${RANK_WORKER_API_URL}/api/ranks/lol/by-puuid`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        puuid: puuid
+      })
+    });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const rankData = await response.json();
+    // Return complete data including all options for frontend sync
+    return {
+      tier: rankData.rank_tier,
+      division: rankData.rank_division,
+      leaguePoints: rankData.lp,
+      summonerName: rankData.riot_id,
+      region: rankData.region,
+      plus_active: rankData.plus_active || false,
+      show_peak: rankData.show_peak || false,
+      animate_badge: rankData.animate_badge || false,
+      twitch_username: rankData.twitch_username
     };
   } catch (error) {
     return null;
