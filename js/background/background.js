@@ -1108,48 +1108,34 @@ async function fetchRankByPuuid(puuid) {
   if (!puuid) return null;
   
   try {
-    // Get username first to fetch rank data from the public endpoint
-    const persistentRiotData = await PersistentStorage.getRiotUserData();
-    if (!persistentRiotData?.riotId) {
-      throw new Error('No Riot ID available in persistent storage');
-    }
+    const response = await fetch(`${RANK_WORKER_API_URL}/api/ranks/lol/by-puuid`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ puuid })
+    });
     
-    const twitchData = await PersistentStorage.getTwitchUserData();
-    if (!twitchData?.login) {
-      throw new Error('No Twitch username available in persistent storage');
-    }
-    
-    // Fetch rank data from the public by-username endpoint
-    const rankResponse = await fetch(`${RANK_WORKER_API_URL}/api/ranks/lol/${twitchData.login.toLowerCase()}`);
-    
-    if (!rankResponse.ok) {
-      if (rankResponse.status === 404) {
+    if (!response.ok) {
+      if (response.status === 404) {
         return null;
       }
-      throw new Error(`Rank API error: ${rankResponse.status} ${rankResponse.statusText}`);
+      throw new Error(`Rank API error: ${response.status} ${response.statusText}`);
     }
     
-    const rankData = await rankResponse.json();
+    const data = await response.json();
     
-    // Fetch user options from the public options endpoint
-    const optionsResponse = await fetch(`${RANK_WORKER_API_URL}/api/options/${puuid}`);
-    let options = { plus_active: false, show_peak: false, animate_badge: false };
-    
-    if (optionsResponse.ok) {
-      options = await optionsResponse.json();
-    }
-    
-    // Return complete data including all options for frontend sync
+    // Return complete data in expected format for frontend
     return {
-      rank_tier: rankData.rank_tier,
-      rank_division: rankData.rank_division,
-      lp: rankData.lp,
-      summonerName: rankData.riot_id,
-      region: rankData.region,
-      plus_active: options.plus_active || false,
-      show_peak: options.show_peak || false,
-      animate_badge: options.animate_badge || false,
-      twitch_username: rankData.twitch_username
+      rank_tier: data.rank_tier,
+      rank_division: data.rank_division,
+      lp: data.lp,
+      summonerName: data.riot_id,
+      region: data.region,
+      plus_active: data.plus_active || false,
+      show_peak: data.show_peak || false,
+      animate_badge: data.animate_badge || false,
+      twitch_username: data.twitch_username
     };
   } catch (error) {
     console.error('[Background] fetchRankByPuuid error:', error);
