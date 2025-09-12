@@ -1039,8 +1039,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePremiumStar(backendRankData.plus_active || false);
         
         // Update options toggles if they exist (sync UI with backend)
-        const showPeakToggle = document.getElementById('show-peak-toggle');
-        const animateBadgeToggle = document.getElementById('animate-badge-toggle');
+        const showPeakToggle = document.getElementById('use-peak-rank');
+        const animateBadgeToggle = document.getElementById('show-animated-badge');
         if (showPeakToggle && showPeakToggle.checked !== userOptions.show_peak) {
           showPeakToggle.checked = userOptions.show_peak;
         }
