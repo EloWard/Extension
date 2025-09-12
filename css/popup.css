@@ -134,18 +134,13 @@ header h1 {
 
 .tip-content {
   padding: 16px 20px 0;
+}
+
+/* Only animate when explicitly toggled by user */
+.tip-content.animating {
   animation: fadeDown 0.3s ease;
 }
 
-/* Disable animations during initialization */
-.tip-content.no-animation {
-  animation: none !important;
-}
-
-.dropdown-arrow.no-transition,
-.dropdown-arrow.no-transition svg {
-  transition: none !important;
-}
 
 @keyframes fadeDown {
   from {

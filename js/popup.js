@@ -218,7 +218,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle the display of the content
     if (isHidden) {
       optionsContent.style.display = 'block';
+      optionsContent.classList.add('animating');
       optionsDropdownArrow.classList.add('rotated');
+      
+      // Remove animation class after animation completes
+      setTimeout(() => {
+        optionsContent.classList.remove('animating');
+      }, 300);
     } else {
       optionsContent.style.display = 'none';
       optionsDropdownArrow.classList.remove('rotated');
@@ -235,23 +241,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle the display of the content
     if (isHidden) {
       accountContent.style.display = 'block';
+      accountContent.classList.add('animating');
       accountDropdownArrow.classList.add('rotated');
+      
+      // Remove animation class after animation completes
+      setTimeout(() => {
+        accountContent.classList.remove('animating');
+      }, 300);
     } else {
       accountContent.style.display = 'none';
       accountDropdownArrow.classList.remove('rotated');
     }
     
-
     browser.storage.local.set({ 'accountSectionCollapsed': !isHidden });
   });
 
 
   async function initializeAccountSectionState() {
     try {
-      // Disable animations during initialization
-      accountDropdownArrow.classList.add('no-transition');
-      accountContent.classList.add('no-animation');
-      
       const result = await browser.storage.local.get(['accountSectionCollapsed']);
       const isCollapsed = result.accountSectionCollapsed;
       
@@ -262,31 +269,15 @@ document.addEventListener('DOMContentLoaded', () => {
         accountContent.style.display = 'none';
         accountDropdownArrow.classList.remove('rotated');
       }
-      
-      // Re-enable animations after initialization
-      setTimeout(() => {
-        accountDropdownArrow.classList.remove('no-transition');
-        accountContent.classList.remove('no-animation');
-      }, 10);
     } catch (error) {
       // Default to expanded on error
       accountContent.style.display = 'block';
       accountDropdownArrow.classList.add('rotated');
-      
-      // Clean up animation classes
-      setTimeout(() => {
-        accountDropdownArrow.classList.remove('no-transition');
-        accountContent.classList.remove('no-animation');
-      }, 10);
     }
   }
 
   async function initializeOptionsSectionState() {
     try {
-      // Disable animations during initialization
-      optionsDropdownArrow.classList.add('no-transition');
-      optionsContent.classList.add('no-animation');
-      
       const result = await browser.storage.local.get(['optionsSectionCollapsed']);
       const isCollapsed = result.optionsSectionCollapsed;
       
@@ -298,22 +289,10 @@ document.addEventListener('DOMContentLoaded', () => {
         optionsContent.style.display = 'none';
         optionsDropdownArrow.classList.remove('rotated');
       }
-      
-      // Re-enable animations after initialization
-      setTimeout(() => {
-        optionsDropdownArrow.classList.remove('no-transition');
-        optionsContent.classList.remove('no-animation');
-      }, 10);
     } catch (error) {
       // Default to expanded on error
       optionsContent.style.display = 'block';
       optionsDropdownArrow.classList.add('rotated');
-      
-      // Clean up animation classes
-      setTimeout(() => {
-        optionsDropdownArrow.classList.remove('no-transition');
-        optionsContent.classList.remove('no-animation');
-      }, 10);
     }
   }
 
