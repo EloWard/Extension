@@ -218,13 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle the display of the content
     if (isHidden) {
       optionsContent.style.display = 'block';
-      optionsContent.classList.add('animating');
       optionsDropdownArrow.classList.add('rotated');
-      
-      // Remove animation class after animation completes
-      setTimeout(() => {
-        optionsContent.classList.remove('animating');
-      }, 300);
     } else {
       optionsContent.style.display = 'none';
       optionsDropdownArrow.classList.remove('rotated');
@@ -241,13 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle the display of the content
     if (isHidden) {
       accountContent.style.display = 'block';
-      accountContent.classList.add('animating');
       accountDropdownArrow.classList.add('rotated');
-      
-      // Remove animation class after animation completes
-      setTimeout(() => {
-        accountContent.classList.remove('animating');
-      }, 300);
     } else {
       accountContent.style.display = 'none';
       accountDropdownArrow.classList.remove('rotated');

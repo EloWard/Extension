@@ -136,22 +136,6 @@ header h1 {
   padding: 16px 20px 0;
 }
 
-/* Only animate when explicitly toggled by user */
-.tip-content.animating {
-  animation: fadeDown 0.3s ease;
-}
-
-
-@keyframes fadeDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
 /* Card Styling */
 .card {
