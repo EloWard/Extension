@@ -71,6 +71,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Check if user has plus_active status
+  async function checkPlusActiveStatus() {
+    try {
+      const [riotData, twitchData] = await Promise.all([
+        PersistentStorage.getRiotUserData(),
+        PersistentStorage.getTwitchUserData()
+      ]);
+      
+      return riotData?.plus_active || false;
+    } catch (error) {
+      console.warn('[EloWard Popup] Failed to check plus_active status:', error);
+      return false;
+    }
+  }
+
+  // Show plus feature message
+  function showPlusFeatureMessage(featureName) {
+    // Create and show a temporary notification
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 10000;
+      transition: opacity 0.3s ease;
+    `;
+    notification.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">✨</span>
+        <span>${featureName} is a Plus feature</span>
+      </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 3 seconds
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 300);
+    }, 3000);
+    
+    console.log(`[EloWard Popup] ${featureName} requires EloWard+ subscription`);
+  }
+
   // Shared function to fetch and process complete user data from backend
   async function fetchAndProcessUserData(puuid, baseUserData = null) {
     try {
@@ -877,24 +930,34 @@ document.addEventListener('DOMContentLoaded', () => {
     
     currentRank.textContent = rankText;
     
-    // Determine the rank badge image path
+    // Check if we should use animated badges
+    let shouldAnimate = false;
+    try {
+      const userOptions = await browser.storage.local.get(['eloward_user_options']);
+      shouldAnimate = userOptions.eloward_user_options?.animate_badge || false;
+    } catch (_) {
+      shouldAnimate = false;
+    }
+
+    // Determine the rank badge image path with animation support
     const rankImageFileName = formattedTier.toLowerCase();
-    const extension = isPremium ? '.webp' : '.png';
-    const suffix = isPremium ? '_premium' : '';
+    const useAnimated = isPremium && shouldAnimate;
+    const extension = useAnimated ? '.webp' : (isPremium ? '.webp' : '.png');
+    const suffix = useAnimated ? '_premium' : (isPremium ? '_premium' : '');
     const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}`;
 
     // Try cached image first for instant render; fall back to network and prefetch for next time
     try {
-      const cached = await getCachedBadgeDataUrl(rankImageFileName, isPremium);
+      const cached = await getCachedBadgeDataUrl(rankImageFileName, useAnimated);
       if (cached) {
         rankBadgePreview.style.backgroundImage = `url('${cached}')`;
       } else {
         rankBadgePreview.style.backgroundImage = `url('${imageUrl}')`;
-        prefetchAndCacheBadgeImage(rankImageFileName, imageUrl, isPremium);
+        prefetchAndCacheBadgeImage(rankImageFileName, imageUrl, useAnimated);
       }
     } catch (_) {
       rankBadgePreview.style.backgroundImage = `url('${imageUrl}')`;
-      prefetchAndCacheBadgeImage(rankImageFileName, imageUrl, isPremium);
+      prefetchAndCacheBadgeImage(rankImageFileName, imageUrl, useAnimated);
     }
     
     // Apply different positioning based on rank
@@ -1040,6 +1103,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Helper function to update user rank cache with new option values
+  async function updateLocalUserRankCache(twitchUsername, field, value) {
+    try {
+      if (!twitchUsername) return;
+      
+      // Send message to background script to update the cache
+      const response = await browser.runtime.sendMessage({
+        action: 'update_user_cache_option',
+        username: twitchUsername.toLowerCase(),
+        field: field,
+        value: value
+      });
+      
+      if (response?.success) {
+        console.log(`[Popup] Updated user cache ${field} to ${value} for ${twitchUsername}`);
+      }
+    } catch (error) {
+      console.warn(`[Popup] Failed to update user cache for ${field}:`, error);
+    }
+  }
 
   async function updateUserOption(field, value) {
     try {
@@ -1079,6 +1162,15 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Update local storage with the new options
       await saveOptionsToStorage(updatedOptions);
+      
+      // Update user rank cache if it exists
+      await updateLocalUserRankCache(twitchData.login, field, value);
+      
+      // If show_peak changed, trigger a rank refresh to get the correct rank data
+      if (field === 'show_peak') {
+        // Simulate clicking the refresh button - trigger refresh with animation
+        await refreshRank();
+      }
       
       return updatedOptions;
     } catch (error) {
@@ -1195,6 +1287,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
           
+          // Check plus_active status before making backend call
+          const hasPlus = await checkPlusActiveStatus();
+          if (!hasPlus) {
+            e.preventDefault();
+            e.target.checked = !e.target.checked;
+            showPlusFeatureMessage('Peak rank display');
+            return;
+          }
+          
           try {
             await updateUserOption('show_peak', e.target.checked);
           } catch (error) {
@@ -1204,8 +1305,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Show user-friendly error for premium features
             if (error.message?.includes('Premium subscription required')) {
-              // Could add a visual notification here
-              console.warn('Peak rank display requires EloWard+ subscription');
+              showPlusFeatureMessage('Peak rank display');
             }
           }
         });
@@ -1221,8 +1321,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
           
+          // Check plus_active status before making backend call
+          const hasPlus = await checkPlusActiveStatus();
+          if (!hasPlus) {
+            e.preventDefault();
+            e.target.checked = !e.target.checked;
+            showPlusFeatureMessage('Animated badges');
+            return;
+          }
+          
           try {
             await updateUserOption('animate_badge', e.target.checked);
+            // Refresh the rank display to show the updated badge style
+            await refreshLocalUserRankData();
           } catch (error) {
             // Revert toggle on error
             e.target.checked = !e.target.checked;
@@ -1230,8 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Show user-friendly error for premium features
             if (error.message?.includes('Premium subscription required')) {
-              // Could add a visual notification here
-              console.warn('Animated badges require EloWard+ subscription');
+              showPlusFeatureMessage('Animated badges');
             }
           }
         });

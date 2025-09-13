@@ -792,6 +792,39 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === 'update_user_cache_option') {
+    const username = message.username?.toLowerCase();
+    const field = message.field;
+    const value = message.value;
+    
+    if (!username || !field || value === undefined) {
+      sendResponse({ success: false, error: 'Missing required parameters' });
+      return false;
+    }
+    
+    try {
+      const cacheEntry = userRankCache.cache.get(username);
+      if (cacheEntry && cacheEntry.rankData) {
+        // Update the cache entry with the new field value
+        cacheEntry.rankData[field] = value;
+        cacheEntry.timestamp = Date.now(); // Update timestamp to keep it fresh
+        
+        // Re-set to update frequency and persist changes
+        userRankCache.set(username, cacheEntry.rankData);
+        
+        console.log(`[Background] Updated user cache ${field} to ${value} for ${username}`);
+        sendResponse({ success: true });
+      } else {
+        // No cache entry exists, that's fine - it'll be populated when user visits Twitch
+        sendResponse({ success: true, note: 'No cache entry exists yet' });
+      }
+    } catch (error) {
+      console.error(`[Background] Error updating user cache option:`, error);
+      sendResponse({ success: false, error: error.message });
+    }
+    
+    return false; // synchronous response
+  }
   
   sendResponse({ error: 'Unknown action', action: message.action });
   return false; // synchronous response
