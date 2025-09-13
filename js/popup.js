@@ -486,11 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const userData = {
                   riotId: fallbackResult.data.riotId,
                   puuid: fallbackResult.data.puuid,
-                  soloQueueRank: fallbackResult.data.rankInfo ? {
-                    tier: fallbackResult.data.rankInfo.tier,
-                    division: fallbackResult.data.rankInfo.rank,
-                    leaguePoints: fallbackResult.data.rankInfo.leaguePoints
-                  } : null,
+                  soloQueueRank: fallbackResult.data.soloQueueRank,
                   plus_active: fallbackResult.data.plus_active
                 };
                 

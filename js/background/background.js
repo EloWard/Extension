@@ -685,7 +685,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
               ...persistentRiotData,
               soloQueueRank: {
                 tier: refreshedRankData.rank_tier,
-                rank: refreshedRankData.rank_division,
+                division: refreshedRankData.rank_division,
                 leaguePoints: refreshedRankData.lp
               },
               // Store additional options data that might have been updated
