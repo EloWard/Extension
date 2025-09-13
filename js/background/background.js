@@ -12,14 +12,19 @@ import { PersistentStorage } from '../core/persistentStorage.js';
 // Removed RIOT_AUTH_URL constant - no longer needed with server-side auth
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
 const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
-const MAX_RANK_CACHE_SIZE = 1000;
+const MAX_RANK_CACHE_SIZE = 2000;
 const RANK_CACHE_STORAGE_KEY = 'eloward_rank_cache';
 const RANK_CACHE_UPDATED_AT_KEY = 'eloward_rank_cache_last_updated';
 const RANK_CACHE_EXPIRY = 60 * 60 * 1000;
 const RANK_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
- 
+// Special marker to indicate a user has no rank data (negative cache)
+const NO_RANK_MARKER = { __noRank: true, __cacheType: 'negative' };
 
+/**
+ * UserRankCache - LFU cache for rank data with negative caching support
+ * Caches both users with ranks and users without ranks (NO_RANK_MARKER)
+ */
 class UserRankCache {
   constructor(maxSize = MAX_RANK_CACHE_SIZE) {
     this.cache = new Map();
@@ -45,25 +50,31 @@ class UserRankCache {
       }
 
       entry.frequency = (entry.frequency || 0) + 1;
+      
+      // Return the rank data, which could be actual rank data or NO_RANK_MARKER
       return entry.rankData;
     }
 
     return null;
   }
 
+
   set(username, rankData) {
-    if (!username || !rankData) return;
+    if (!username) return;
+    
+    // Allow caching of null/undefined results as negative cache entries
+    const dataToCache = rankData || NO_RANK_MARKER;
 
     const normalizedUsername = username.toLowerCase();
     let entry = this.cache.get(normalizedUsername);
 
     if (entry) {
-      entry.rankData = rankData;
+      entry.rankData = dataToCache;
       entry.frequency = (entry.frequency || 0) + 1;
       entry.timestamp = Date.now();
     } else {
       entry = { 
-        rankData, 
+        rankData: dataToCache, 
         frequency: 1,
         timestamp: Date.now()
       };
@@ -277,8 +288,16 @@ async function maybePersistRankCache(cacheInstance) {
 
     const payload = {};
     for (const [username, entry] of cacheInstance.cache.entries()) {
+      // Handle both positive and negative cache entries
+      let rankData = entry.rankData;
+      
+      // Convert NO_RANK_MARKER to serializable form for storage
+      if (rankData === NO_RANK_MARKER) {
+        rankData = { __noRank: true, __cacheType: 'negative' };
+      }
+      
       payload[username] = {
-        rankData: entry.rankData,
+        rankData: rankData,
         frequency: entry.frequency || 0,
         timestamp: entry.timestamp || Date.now()
       };
@@ -300,9 +319,16 @@ async function restoreRankCacheFromStorage(cacheInstance) {
     if (!stored || typeof stored !== 'object') return;
 
     for (const [username, entry] of Object.entries(stored)) {
-      if (entry && entry.rankData) {
+      if (entry) {
+        let rankData = entry.rankData;
+        
+        // Convert stored negative cache entries back to NO_RANK_MARKER
+        if (rankData && rankData.__noRank && rankData.__cacheType === 'negative') {
+          rankData = NO_RANK_MARKER;
+        }
+        
         cacheInstance.cache.set(username.toLowerCase(), {
-          rankData: entry.rankData,
+          rankData: rankData,
           frequency: entry.frequency || 1,
           timestamp: entry.timestamp || Date.now()
         });
@@ -494,7 +520,18 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Check cache only if not explicitly skipping cache
     if (!skipCache) {
       const cachedRankData = userRankCache.get(username);
-      if (cachedRankData) {
+      if (cachedRankData !== null) {
+        // Check if this is a negative cache hit (user has no rank)
+        if (cachedRankData === NO_RANK_MARKER) {
+          sendResponse({
+            success: true,
+            rankData: null,  // Return null to indicate no rank found
+            source: 'cache'
+          });
+          return true;
+        }
+        
+        // Positive cache hit - user has rank data
         if (channelName && cachedRankData?.tier) {
           incrementSuccessfulLookupCounter(channelName).catch(() => {});
         }
@@ -512,12 +549,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Fetch rank data from database (region is already stored there)
     fetchRankByTwitchUsername(username)
       .then(rankData => {
-        if (rankData) {
-          userRankCache.set(username, rankData);
-          if (channelName && rankData?.tier) {
-            incrementSuccessfulLookupCounter(channelName).catch(() => {});
-          }
+        // Cache both positive and negative results
+        userRankCache.set(username, rankData);
+        
+        if (rankData && channelName && rankData?.tier) {
+          incrementSuccessfulLookupCounter(channelName).catch(() => {});
         }
+        
         sendResponse({ success: true, rankData, source: 'api' });
       })
       .catch(error => {
@@ -617,7 +655,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'get_all_cached_ranks') {
     const allRanks = {};
     for (const [username, entry] of userRankCache.cache.entries()) {
-      allRanks[username] = entry.rankData;
+      // Only include positive cache entries (actual rank data)
+      if (entry.rankData !== NO_RANK_MARKER) {
+        allRanks[username] = entry.rankData;
+      }
     }
     sendResponse({ ranks: allRanks });
     return false; // synchronous response
@@ -626,8 +667,11 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'prune_unranked_rank_cache') {
     try {
       for (const [username, entry] of Array.from(userRankCache.cache.entries())) {
-        const tier = entry?.rankData?.tier;
-        if (!tier || String(tier).toUpperCase() === 'UNRANKED') {
+        const rankData = entry?.rankData;
+        const tier = rankData?.tier;
+        
+        // Remove both negative cache entries and unranked entries
+        if (rankData === NO_RANK_MARKER || !tier || String(tier).toUpperCase() === 'UNRANKED') {
           userRankCache.cache.delete(username);
         }
       }
@@ -1100,7 +1144,6 @@ async function updatePersistentRiotDataFromRankData(rankData) {
       // Store updated data
       await PersistentStorage.storeRiotUserData(updatedData);
       
-      console.log('[Background] Updated persistent riot data from rank cache');
     }
   } catch (error) {
     console.warn('[Background] Error updating persistent riot data:', error);
