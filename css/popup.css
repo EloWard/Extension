@@ -160,7 +160,7 @@ header h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .profile-header h2 {
