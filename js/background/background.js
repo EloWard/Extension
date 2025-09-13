@@ -472,7 +472,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Removed legacy handle_auth_callback action (unused)
   
   if (message.action === 'get_rank_icon_url') {
-    const iconUrl = getRankIconUrl(message.tier, message.isPremium);
+    const iconUrl = getRankIconUrl(message.tier, message.isAnimated);
     sendResponse({ iconUrl: iconUrl });
     return false; // synchronous response
   }
@@ -1007,9 +1007,9 @@ function checkChannelActive(channelName, skipCache = false) {
 
 // Removed deprecated getRankByPuuid function - no longer needed with server-side auth
 
-function getRankIconUrl(tier, isPremium = false) {
+function getRankIconUrl(tier, isAnimated = false) {
   if (!tier) {
-    return isPremium 
+    return isAnimated 
       ? 'https://eloward-cdn.unleashai.workers.dev/lol/unranked_premium.webp'
       : 'https://eloward-cdn.unleashai.workers.dev/lol/unranked.png';
   }
@@ -1031,8 +1031,8 @@ function getRankIconUrl(tier, isPremium = false) {
   };
   
   const iconName = tierIcons[tierLower] || 'unranked';
-  const extension = isPremium ? '.webp' : '.png';
-  const suffix = isPremium ? '_premium' : '';
+  const extension = isAnimated ? '.webp' : '.png';
+  const suffix = isAnimated ? '_premium' : '';  // animated badges use _premium suffix
   
   return `https://eloward-cdn.unleashai.workers.dev/lol/${iconName}${suffix}${extension}`;
 }

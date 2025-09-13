@@ -102,10 +102,10 @@ const ImageCache = (() => {
     } catch (_) {}
   }
 
-  function getSrcSync(tier, isPremium = false) {
+  function getSrcSync(tier, isAnimated = false) {
     const tierKey = String(tier || 'unranked').toLowerCase();
-    const key = isPremium ? `${tierKey}_premium` : tierKey;
-    const extension = isPremium ? '.webp' : '.png';
+    const key = isAnimated ? `${tierKey}_premium` : tierKey;
+    const extension = isAnimated ? '.webp' : '.png';
     return tierToBlobUrl.get(key) || `${CDN_BASE}/lol/${key}${extension}`;
   }
 
@@ -331,7 +331,7 @@ function handleBadgeClick(event) {
 
 function createBadgeElement(rankData) {
   const badge = document.createElement('span');
-  const isPremium = rankData.animate_badge || false;
+  const isAnimated = rankData.animate_badge || false;
   
   badge.className = 'eloward-rank-badge';
   badge.dataset.rankText = formatRankText(rankData);
@@ -341,7 +341,7 @@ function createBadgeElement(rankData) {
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
   badge.dataset.region = rankData.region;
-  badge.dataset.isPremium = isPremium ? 'true' : 'false';
+  badge.dataset.isAnimated = isAnimated ? 'true' : 'false';
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -352,7 +352,7 @@ function createBadgeElement(rankData) {
   img.decoding = 'async';
   try { img.fetchPriority = 'high'; } catch (_) {}
   img.loading = 'eager';
-  img.src = ImageCache.getSrcSync(rankData.tier, isPremium);
+  img.src = ImageCache.getSrcSync(rankData.tier, isAnimated);
   
   badge.appendChild(img);
   badge.addEventListener('mouseenter', showTooltip);
@@ -1691,7 +1691,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
     badge.classList.add('eloward-single-badge');
   }
   
-  const isPremium = rankData.animate_badge || false;
+  const isAnimated = rankData.animate_badge || false;
   
   badge.dataset.rankText = formatRankText(rankData);
   badge.dataset.rank = rankData.tier.toLowerCase();
@@ -1700,7 +1700,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
                      rankData.leaguePoints.toString() : '';
   badge.dataset.username = rankData.summonerName || '';
   badge.dataset.region = rankData.region;
-  badge.dataset.isPremium = isPremium ? 'true' : 'false';
+  badge.dataset.isAnimated = isAnimated ? 'true' : 'false';
   
   const img = document.createElement('img');
   img.alt = rankData.tier;
@@ -1710,7 +1710,7 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
   img.decoding = 'async';
   try { img.fetchPriority = 'high'; } catch (_) {}
   img.loading = 'eager';
-  img.src = ImageCache.getSrcSync(rankData.tier, isPremium);
+  img.src = ImageCache.getSrcSync(rankData.tier, isAnimated);
   
   badge.appendChild(img);
   badge.addEventListener('mouseenter', (e) => showSevenTVTooltip(e, rankData));
@@ -1735,9 +1735,9 @@ function showSevenTVTooltip(event, rankData) {
   tooltipBadge.decoding = 'async';
   tooltipBadge.loading = 'eager';
   
-  // Use premium badge if user has animate_badge
-  const isPremium = rankData.animate_badge || false;
-  tooltipBadge.src = ImageCache.getSrcSync(rankData.tier, isPremium);
+  // Use animated badge if user has animate_badge
+  const isAnimated = rankData.animate_badge || false;
+  tooltipBadge.src = ImageCache.getSrcSync(rankData.tier, isAnimated);
   tooltipBadge.alt = 'Rank Badge';
   
   const tooltipText = document.createElement('div');
@@ -1919,7 +1919,7 @@ function updateBadgeElement(badgeElement, rankData) {
   try {
     if (!badgeElement) return;
     
-    const isPremium = rankData.animate_badge || false;
+    const isAnimated = rankData.animate_badge || false;
     
     badgeElement.dataset.rankText = formatRankText(rankData);
     badgeElement.dataset.rank = rankData.tier.toLowerCase();
@@ -1927,7 +1927,7 @@ function updateBadgeElement(badgeElement, rankData) {
     badgeElement.dataset.lp = rankData.leaguePoints !== undefined && rankData.leaguePoints !== null ? String(rankData.leaguePoints) : '';
     badgeElement.dataset.username = rankData.summonerName || '';
     badgeElement.dataset.region = rankData.region || '';
-    badgeElement.dataset.isPremium = isPremium ? 'true' : 'false';
+    badgeElement.dataset.isAnimated = isAnimated ? 'true' : 'false';
 
     const img = badgeElement.querySelector('img');
     if (img) {
@@ -1935,7 +1935,7 @@ function updateBadgeElement(badgeElement, rankData) {
       try { img.decoding = 'async'; } catch (_) {}
       try { img.fetchPriority = 'high'; } catch (_) {}
       try { img.loading = 'eager'; } catch (_) {}
-      img.src = ImageCache.getSrcSync(rankData.tier, isPremium);
+      img.src = ImageCache.getSrcSync(rankData.tier, isAnimated);
     }
   } catch (_) {}
 }

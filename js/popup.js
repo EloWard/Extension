@@ -874,9 +874,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Simple cache for the current user's rank badge image by tier, stored as a data URL
-  async function getCachedBadgeDataUrl(tierKey, isPremium = false) {
+  async function getCachedBadgeDataUrl(tierKey, isAnimated = false) {
     try {
-      const suffix = isPremium ? '_premium' : '';
+      // Create cache key that distinguishes between animated and static versions
+      const suffix = isAnimated ? '_animated' : '_static';
       const key = `eloward_cached_badge_image_${tierKey}${suffix}`;
       const res = await browser.storage.local.get([key]);
       return res[key] || null;
@@ -885,7 +886,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function cacheBadgeImage(tierKey, imageUrl, isPremium = false) {
+  async function cacheBadgeImage(tierKey, imageUrl, isAnimated = false) {
     try {
       const response = await fetch(imageUrl, { cache: 'force-cache' });
       if (!response.ok) return;
@@ -896,7 +897,8 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.onloadend = () => resolve(reader.result);
         reader.readAsDataURL(blob);
       });
-      const suffix = isPremium ? '_premium' : '';
+      // Create cache key that distinguishes between animated and static versions
+      const suffix = isAnimated ? '_animated' : '_static';
       const key = `eloward_cached_badge_image_${tierKey}${suffix}`;
       await browser.storage.local.set({ [key]: dataUrl });
     } catch (_) {
@@ -904,27 +906,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function prefetchAndCacheBadgeImage(tierKey, imageUrl, isPremium = false) {
-    const existing = await getCachedBadgeDataUrl(tierKey, isPremium);
+  async function prefetchAndCacheBadgeImage(tierKey, imageUrl, isAnimated = false) {
+    const existing = await getCachedBadgeDataUrl(tierKey, isAnimated);
     if (!existing) {
-      cacheBadgeImage(tierKey, imageUrl, isPremium);
+      cacheBadgeImage(tierKey, imageUrl, isAnimated);
+    }
+  }
+
+  // Clean up old cache entries (run once to migrate to new cache key format)
+  async function cleanupOldBadgeCache() {
+    try {
+      const storageData = await browser.storage.local.get();
+      const keysToRemove = [];
+      
+      // Find old cache keys that don't use the new _animated/_static format
+      for (const key of Object.keys(storageData)) {
+        if (key.startsWith('eloward_cached_badge_image_') && 
+            !key.includes('_premium_animated') && 
+            !key.includes('_premium_static')) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      if (keysToRemove.length > 0) {
+        console.log(`[EloWard] Cleaning up ${keysToRemove.length} old badge cache entries`);
+        await browser.storage.local.remove(keysToRemove);
+      }
+    } catch (error) {
+      console.warn('[EloWard] Failed to clean up old badge cache:', error);
     }
   }
 
   async function displayRank(rankData) {
-    // Check premium status from persistent data if not in rankData
-    let isPremium = rankData?.plus_active || false;
-    if (!isPremium) {
+    // Check plus_active status for premium star visibility only
+    let hasPlus = rankData?.plus_active || false;
+    if (!hasPlus) {
       try {
         const riotData = await PersistentStorage.getRiotUserData();
-        isPremium = riotData?.plus_active || false;
+        hasPlus = riotData?.plus_active || false;
       } catch (_) {
-        isPremium = false;
+        hasPlus = false;
       }
     }
     
-    // Update premium star visibility
-    updatePremiumStar(isPremium);
+    // Update premium star visibility based on plus_active
+    updatePremiumStar(hasPlus);
     
     // Properly capitalize the tier
     let formattedTier = rankData.tier.toLowerCase();
@@ -955,10 +981,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Determine the rank badge image path with animation support
     const rankImageFileName = formattedTier.toLowerCase();
-    const useAnimated = isPremium && shouldAnimate;
-    const extension = useAnimated ? '.webp' : (isPremium ? '.webp' : '.png');
-    const suffix = useAnimated ? '_premium' : (isPremium ? '_premium' : '');
+    
+    // FIXED: Correct logic for badge selection - only animate_badge determines animation
+    const useAnimated = shouldAnimate;
+    const extension = useAnimated ? '.webp' : '.png';
+    const suffix = useAnimated ? '_premium' : '';  // animated badges use _premium suffix
     const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}`;
+    
+    // Debug logging to help troubleshoot
+    console.log(`[EloWard] Badge Display Debug:`, {
+      tier: formattedTier,
+      hasPlus,
+      shouldAnimate,
+      useAnimated,
+      extension,
+      suffix,
+      imageUrl,
+      isShowingPeak: rankData.isShowingPeak || false
+    });
 
     // Try cached image first for instant render; fall back to network and prefetch for next time
     try {
@@ -1391,6 +1431,9 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('[EloWard Popup] Error initializing user options:', error);
     }
   }
+
+  // Clean up old cache entries (non-blocking)
+  cleanupOldBadgeCache().catch(() => {});
 
   // Call refresh function after popup loads (non-blocking)
   refreshLocalUserRankData().catch(() => {});
