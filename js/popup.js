@@ -74,11 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Check if user has plus_active status
   async function checkPlusActiveStatus() {
     try {
-      const [riotData, twitchData] = await Promise.all([
-        PersistentStorage.getRiotUserData(),
-        PersistentStorage.getTwitchUserData()
-      ]);
-      
+      const riotData = await PersistentStorage.getRiotUserData();
       return riotData?.plus_active || false;
     } catch (error) {
       console.warn('[EloWard Popup] Failed to check plus_active status:', error);
@@ -86,42 +82,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Show plus feature message
+  // Show plus feature message (with spam protection)
+  let lastNotificationTime = 0;
   function showPlusFeatureMessage(featureName) {
-    // Create and show a temporary notification
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      z-index: 10000;
-      transition: opacity 0.3s ease;
-    `;
-    notification.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 16px;">✨</span>
-        <span>${featureName} is a Plus feature</span>
-      </div>
-    `;
+    // Prevent notification spam (max one every 2 seconds)
+    const now = Date.now();
+    if (now - lastNotificationTime < 2000) return;
+    lastNotificationTime = now;
     
-    document.body.appendChild(notification);
-    
-    // Remove notification after 3 seconds
-    setTimeout(() => {
-      notification.style.opacity = '0';
-      setTimeout(() => {
-        document.body.removeChild(notification);
-      }, 300);
-    }, 3000);
-    
-    console.log(`[EloWard Popup] ${featureName} requires EloWard+ subscription`);
+    try {
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 10000;
+        transition: opacity 0.3s ease;
+      `;
+      notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 16px;">✨</span>
+          <span>${featureName} is a Plus feature</span>
+        </div>
+      `;
+      
+      if (document.body) {
+        document.body.appendChild(notification);
+        
+        // Remove notification after 3 seconds
+        setTimeout(() => {
+          try {
+            if (notification.parentNode) {
+              notification.style.opacity = '0';
+              setTimeout(() => {
+                if (notification.parentNode) {
+                  notification.parentNode.removeChild(notification);
+                }
+              }, 300);
+            }
+          } catch (e) {
+            // Silently handle cleanup errors
+          }
+        }, 3000);
+      }
+    } catch (error) {
+      // Fallback to console if notification fails
+      console.warn(`[EloWard Popup] ${featureName} requires EloWard+ subscription`);
+    }
   }
 
   // Shared function to fetch and process complete user data from backend
@@ -1279,6 +1293,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Step 2: Add event listeners (only add once)
       if (!showPeakToggle.hasAttribute('data-initialized')) {
         showPeakToggle.setAttribute('data-initialized', 'true');
+        let isProcessing = false;
+        
         showPeakToggle.addEventListener('change', async (e) => {
           // Prevent changes if Riot is not connected
           if (showPeakToggle.disabled) {
@@ -1287,16 +1303,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
           
-          // Check plus_active status before making backend call
-          const hasPlus = await checkPlusActiveStatus();
-          if (!hasPlus) {
+          // Prevent concurrent operations
+          if (isProcessing) {
             e.preventDefault();
             e.target.checked = !e.target.checked;
-            showPlusFeatureMessage('Peak rank display');
             return;
           }
           
+          isProcessing = true;
+          
           try {
+            // Check plus_active status before making backend call
+            const hasPlus = await checkPlusActiveStatus();
+            if (!hasPlus) {
+              e.target.checked = !e.target.checked;
+              showPlusFeatureMessage('Peak rank display');
+              return;
+            }
+            
             await updateUserOption('show_peak', e.target.checked);
           } catch (error) {
             // Revert toggle on error
@@ -1307,12 +1331,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error.message?.includes('Premium subscription required')) {
               showPlusFeatureMessage('Peak rank display');
             }
+          } finally {
+            isProcessing = false;
           }
         });
       }
 
       if (!animateBadgeToggle.hasAttribute('data-initialized')) {
         animateBadgeToggle.setAttribute('data-initialized', 'true');
+        let isProcessing = false;
+        
         animateBadgeToggle.addEventListener('change', async (e) => {
           // Prevent changes if Riot is not connected
           if (animateBadgeToggle.disabled) {
@@ -1321,16 +1349,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
           
-          // Check plus_active status before making backend call
-          const hasPlus = await checkPlusActiveStatus();
-          if (!hasPlus) {
+          // Prevent concurrent operations
+          if (isProcessing) {
             e.preventDefault();
             e.target.checked = !e.target.checked;
-            showPlusFeatureMessage('Animated badges');
             return;
           }
           
+          isProcessing = true;
+          
           try {
+            // Check plus_active status before making backend call
+            const hasPlus = await checkPlusActiveStatus();
+            if (!hasPlus) {
+              e.target.checked = !e.target.checked;
+              showPlusFeatureMessage('Animated badges');
+              return;
+            }
+            
             await updateUserOption('animate_badge', e.target.checked);
             // Refresh the rank display to show the updated badge style
             await refreshLocalUserRankData();
@@ -1343,6 +1379,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error.message?.includes('Premium subscription required')) {
               showPlusFeatureMessage('Animated badges');
             }
+          } finally {
+            isProcessing = false;
           }
         });
       }
