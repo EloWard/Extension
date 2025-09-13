@@ -160,7 +160,7 @@ header h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .profile-header h2 {
@@ -570,7 +570,7 @@ footer {
 }
 
 .tip-card .tip-content {
-  padding: 6px 4px 8px 4px;
+  padding: 4px 4px 8px 4px;
 }
 
 #options-content {
