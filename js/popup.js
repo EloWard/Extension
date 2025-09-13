@@ -1019,7 +1019,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Batch DOM updates for better performance
         requestAnimationFrame(() => {
-          // Update UI with fresh data (extract standardized rank data)
           const rankDataForDisplay = extractRankDataForDisplay(updatedUserData);
           if (rankDataForDisplay) {
             displayRank(rankDataForDisplay);
