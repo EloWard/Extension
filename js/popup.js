@@ -987,18 +987,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const extension = useAnimated ? '.webp' : '.png';
     const suffix = useAnimated ? '_premium' : '';  // animated badges use _premium suffix
     const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}`;
-    
-    // Debug logging to help troubleshoot
-    console.log(`[EloWard] Badge Display Debug:`, {
-      tier: formattedTier,
-      hasPlus,
-      shouldAnimate,
-      useAnimated,
-      extension,
-      suffix,
-      imageUrl,
-      isShowingPeak: rankData.isShowingPeak || false
-    });
 
     // Try cached image first for instant render; fall back to network and prefetch for next time
     try {
