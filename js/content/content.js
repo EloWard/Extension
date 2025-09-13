@@ -1316,10 +1316,10 @@ function handleCurrentUserMessages(messageData) {
     const riotData = data.eloward_persistent_riot_user_data;
     const userOptions = data.eloward_user_options || {};
     
-    const userRankData = riotData?.rankInfo ? {
-      tier: riotData.rankInfo.tier,
-      division: riotData.rankInfo.rank,
-      leaguePoints: riotData.rankInfo.leaguePoints,
+    const userRankData = riotData?.soloQueueRank ? {
+      tier: riotData.soloQueueRank.tier,
+      division: riotData.soloQueueRank.division,
+      leaguePoints: riotData.soloQueueRank.leaguePoints,
       summonerName: riotData.riotId,
       region: riotData.region,
       animate_badge: userOptions.animate_badge || false
@@ -1452,10 +1452,10 @@ function processNewMessage(messageNode) {
         const riotData = data.eloward_persistent_riot_user_data;
         const userOptions = data.eloward_user_options || {};
         
-        const userRankData = riotData?.rankInfo ? {
-          tier: riotData.rankInfo.tier,
-          division: riotData.rankInfo.rank,
-          leaguePoints: riotData.rankInfo.leaguePoints,
+        const userRankData = riotData?.soloQueueRank ? {
+          tier: riotData.soloQueueRank.tier,
+          division: riotData.soloQueueRank.division,
+          leaguePoints: riotData.soloQueueRank.leaguePoints,
           summonerName: riotData.riotId,
           region: riotData.region,
           animate_badge: userOptions.animate_badge || false

@@ -480,7 +480,7 @@ export const RiotAuth = {
       if (userData) {
         return {
           ...userData,
-          soloQueueRank: userData.rankInfo
+          soloQueueRank: userData.soloQueueRank
         };
       }
       
@@ -785,7 +785,7 @@ RiotAuth._waitForStoredRiotUserData = async function(timeoutMs = 2000) {
       if (userData && userData.puuid) {
         return {
           ...userData,
-          soloQueueRank: userData.rankInfo
+          soloQueueRank: userData.soloQueueRank
         };
       }
     } catch (_) {}

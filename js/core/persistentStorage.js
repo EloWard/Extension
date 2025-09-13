@@ -142,7 +142,7 @@ export const PersistentStorage = {
       return {
         hasTwitchData: !!twitchData?.login,
         hasRiotData: !!(riotData?.riotId && riotData?.puuid),
-        hasRankData: !!riotData?.rankInfo,
+        hasRankData: !!riotData?.soloQueueRank,
         canAccessDatabase: !!(twitchData?.login && riotData?.puuid)
       };
     } catch (error) {

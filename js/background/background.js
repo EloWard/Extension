@@ -1056,9 +1056,9 @@ async function updatePersistentRiotDataFromRankData(rankData) {
       // Create updated data with new rank info 
       const updatedData = {
         ...existingData,
-        rankInfo: {
+        soloQueueRank: {
           tier: rankData.tier,
-          rank: rankData.division,
+          division: rankData.division,
           leaguePoints: rankData.leaguePoints
         },
         region: rankData.region || existingData.region
