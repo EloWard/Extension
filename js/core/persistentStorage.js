@@ -26,24 +26,9 @@ export const PersistentStorage = {
       riotId: userData.riotId,
       puuid: userData.puuid,
       region: userData.region || currentData.selectedRegion,
-      rankInfo: null,
+      soloQueueRank: userData.soloQueueRank || null, // Store in same format we use
       plus_active: userData.plus_active || false
     };
-    
-          if (userData.soloQueueRank) {
-        persistentData.rankInfo = {
-          tier: userData.soloQueueRank.tier,
-          rank: userData.soloQueueRank.rank,
-          leaguePoints: userData.soloQueueRank.leaguePoints
-        };
-      } else if (userData.rankInfo) {
-        // Handle fallback format from backend
-        persistentData.rankInfo = {
-          tier: userData.rankInfo.tier,
-          rank: userData.rankInfo.rank,
-          leaguePoints: userData.rankInfo.leaguePoints
-        };
-      }
     
     await browser.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,

@@ -71,47 +71,86 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Standardize rank data extraction from user data
-  function extractRankDataForDisplay(userData) {
-    let rankInfo = null;
-    
-    // Check for soloQueueRank structure (from persistent storage)
-    if (userData.soloQueueRank) {
-      rankInfo = {
-        tier: userData.soloQueueRank.tier,
-        division: userData.soloQueueRank.rank,
-        leaguePoints: userData.soloQueueRank.leaguePoints,
-        plus_active: userData.plus_active || false
-      };
-    }
-    // Check for direct rank structure (from backend)
-    else if (userData.tier) {
-      rankInfo = {
-        tier: userData.tier,
-        division: userData.division,
-        leaguePoints: userData.leaguePoints,
-        plus_active: userData.plus_active || false
-      };
-    }
-    // Check for legacy ranks array structure
-    else if (userData.ranks && userData.ranks.length > 0) {
-      const soloQueueEntry = userData.ranks.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-      if (soloQueueEntry) {
-        rankInfo = {
-          tier: soloQueueEntry.tier,
-          division: soloQueueEntry.rank,
-          leaguePoints: soloQueueEntry.leaguePoints,
-          plus_active: userData.plus_active || false
-        };
+  // Shared function to fetch and process complete user data from backend
+  async function fetchAndProcessUserData(puuid, baseUserData = null) {
+    try {
+      // Input validation
+      if (!puuid || typeof puuid !== 'string' || puuid.length < 10) {
+        console.warn('[EloWard Popup] Invalid PUUID provided to fetchAndProcessUserData');
+        return baseUserData;
       }
+
+      const response = await browser.runtime.sendMessage({
+        action: 'fetch_rank_by_puuid',
+        puuid: puuid
+      });
+
+      // Validate response structure
+      if (!response) {
+        throw new Error('No response from background script');
+      }
+      
+      if (response.error) {
+        throw new Error(`Background script error: ${response.error}`);
+      }
+
+      if (response?.success && response?.rankData) {
+        const backendData = response.rankData;
+        
+        // Create updated user data structure
+        const updatedUserData = baseUserData ? {
+          ...baseUserData,
+          plus_active: backendData.plus_active || false,
+          show_peak: backendData.show_peak || false,
+          animate_badge: backendData.animate_badge || false,
+          soloQueueRank: {
+            tier: backendData.rank_tier,
+            division: backendData.rank_division,
+            leaguePoints: backendData.lp
+          }
+        } : {
+          puuid: puuid,
+          riotId: backendData.summonerName,
+          region: backendData.region,
+          plus_active: backendData.plus_active || false,
+          show_peak: backendData.show_peak || false,
+          animate_badge: backendData.animate_badge || false,
+          soloQueueRank: {
+            tier: backendData.rank_tier,
+            division: backendData.rank_division,
+            leaguePoints: backendData.lp
+          }
+        };
+
+        // Update user options storage with fresh backend data
+        await saveOptionsToStorage({
+          show_peak: backendData.show_peak || false,
+          animate_badge: backendData.animate_badge || false,
+          plus_active: backendData.plus_active || false
+        });
+
+        return updatedUserData;
+      }
+
+      return baseUserData;
+    } catch (error) {
+      console.warn('[EloWard Popup] Failed to fetch complete user data:', error);
+      return baseUserData;
     }
-    // Check for rankInfo structure
-    else if (userData.rankInfo) {
-      rankInfo = {
-        ...userData.rankInfo,
-        plus_active: userData.plus_active || false
-      };
+  }
+
+  // Extract rank data for display - simplified since we now use consistent structure
+  function extractRankDataForDisplay(userData) {
+    if (!userData?.soloQueueRank?.tier) {
+      return null;
     }
+    
+    const rankInfo = {
+      tier: userData.soloQueueRank.tier,
+      division: userData.soloQueueRank.division,
+      leaguePoints: userData.soloQueueRank.leaguePoints,
+      plus_active: userData.plus_active || false
+    };
     
     // Ensure tier is properly capitalized
     const tierUpper = rankInfo.tier.toUpperCase();
@@ -288,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     if (message.type === 'auth_callback' && message.params) {
       processAuthCallback(message.params);
@@ -359,14 +398,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 
-  async function showAuthError(message) {
+  async function showAuthError(_message) {
     riotConnectionStatus.textContent = 'Not Connected';
     riotConnectionStatus.classList.remove('error', 'connected');
     
     // Update options to disabled state since Riot connection failed
     updateOptionsBasedOnRiotConnection();
     
-    const firstTime = await isFirstTimeUser();
+    await isFirstTimeUser(); // Check for side effects but don't use return value
     updateRiotButtonText('Connect');
     connectRiotBtn.disabled = false;
   }
@@ -400,7 +439,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const userData = {
           riotId: storedRiotData.riotId,
           puuid: storedRiotData.puuid,
-          soloQueueRank: storedRiotData.rankInfo
+          soloQueueRank: storedRiotData.soloQueueRank,
+          plus_active: storedRiotData.plus_active || false
         };
         
         // Always show user as connected if we have valid stored data
@@ -446,7 +486,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const userData = {
                   riotId: fallbackResult.data.riotId,
                   puuid: fallbackResult.data.puuid,
-                  soloQueueRank: fallbackResult.data.rankInfo,
+                  soloQueueRank: fallbackResult.data.rankInfo ? {
+                    tier: fallbackResult.data.rankInfo.tier,
+                    division: fallbackResult.data.rankInfo.rank,
+                    leaguePoints: fallbackResult.data.rankInfo.leaguePoints
+                  } : null,
                   plus_active: fallbackResult.data.plus_active
                 };
                 
@@ -492,7 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Helper function to show the not connected UI state
   async function showNotConnectedUI() {
     // Check if first-time user to determine button text only
-    const firstTime = await isFirstTimeUser();
+    await isFirstTimeUser(); // Check for side effects but don't use return value
     
     // Reset Riot connection UI - always show "Not Connected" for consistency
     riotConnectionStatus.textContent = 'Not Connected';
@@ -620,36 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use the Riot RSO authentication module
         const userData = await RiotAuth.authenticate(region);
         
-        // Fetch complete user data from backend using the correct by-puuid endpoint
-        let updatedUserData = userData;
-        try {
-          if (userData?.puuid) {
-            const response = await browser.runtime.sendMessage({
-              action: 'fetch_rank_by_puuid',
-              puuid: userData.puuid
-            });
-            
-            if (response?.success && response?.rankData) {
-              updatedUserData = {
-                ...userData,
-                plus_active: response.rankData.plus_active || false,
-                // Store additional options that come from the backend
-                show_peak: response.rankData.show_peak || false,
-                animate_badge: response.rankData.animate_badge || false
-              };
-              
-              // Update user options storage with fresh backend data
-              await saveOptionsToStorage({
-                show_peak: response.rankData.show_peak || false,
-                animate_badge: response.rankData.animate_badge || false,
-                plus_active: response.rankData.plus_active || false
-              });
-            }
-          }
-        } catch (error) {
-          console.warn('[EloWard Popup] Failed to fetch complete user data:', error);
-          // Continue with original userData if backend fetch fails
-        }
+        // Fetch complete user data from backend using shared function
+        const updatedUserData = await fetchAndProcessUserData(userData?.puuid, userData);
         
         // Store user data in persistent storage (with plus_active if fetched)
         await PersistentStorage.storeRiotUserData(updatedUserData);
@@ -741,35 +757,8 @@ document.addEventListener('DOMContentLoaded', () => {
         await RiotAuth.authenticate(region);
         const userData = await RiotAuth.getUserDataFromStorage();
         
-        // Fetch complete user data from backend using the correct by-puuid endpoint
-        let updatedUserData = userData;
-        try {
-          if (userData?.puuid) {
-            const response = await browser.runtime.sendMessage({
-              action: 'fetch_rank_by_puuid',
-              puuid: userData.puuid
-            });
-            
-            if (response?.success && response?.rankData) {
-              updatedUserData = {
-                ...userData,
-                plus_active: response.rankData.plus_active || false,
-                // Store additional options that come from the backend
-                show_peak: response.rankData.show_peak || false,
-                animate_badge: response.rankData.animate_badge || false
-              };
-              
-              // Update user options storage with fresh backend data
-              await saveOptionsToStorage({
-                show_peak: response.rankData.show_peak || false,
-                animate_badge: response.rankData.animate_badge || false,
-                plus_active: response.rankData.plus_active || false
-              });
-            }
-          }
-        } catch (error) {
-          console.warn('[EloWard Popup] Failed to fetch complete user data during re-auth:', error);
-        }
+        // Fetch complete user data from backend using shared function
+        const updatedUserData = await fetchAndProcessUserData(userData?.puuid, userData);
         
         try { await PersistentStorage.storeRiotUserData(updatedUserData); } catch (_) {}
         updateUserInterface(updatedUserData);
@@ -810,7 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ...persistentRiotData,
       soloQueueRank: {
         tier: refreshedRankData.rank_tier,
-        rank: refreshedRankData.rank_division,
+        division: refreshedRankData.rank_division,
         leaguePoints: refreshedRankData.lp
       },
       // Store additional options data that might have been updated
@@ -1021,54 +1010,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // Fetch complete rank + options data using PUUID endpoint (gets all data in one call)
-      const response = await browser.runtime.sendMessage({
-        action: 'fetch_rank_by_puuid',
-        puuid: riotData.puuid
-      });
-
-      if (response?.success && response?.rankData) {
-        const backendRankData = response.rankData;
-        
-        // Update stored persistent data with fresh backend data including plus_active
-        const updatedUserData = {
-          ...riotData,
-          soloQueueRank: {
-            tier: backendRankData.rank_tier,
-            rank: backendRankData.rank_division,
-            leaguePoints: backendRankData.lp
-          },
-          region: backendRankData.region || riotData.region,
-          plus_active: backendRankData.plus_active || false
-        };
-
+      // Fetch complete rank + options data using shared function
+      const updatedUserData = await fetchAndProcessUserData(riotData.puuid, riotData);
+      
+      if (updatedUserData !== riotData) {
         // Store updated riot data
         await PersistentStorage.storeRiotUserData(updatedUserData);
         
-        // Update user options storage with fresh backend options data
-        const userOptions = {
-          show_peak: backendRankData.show_peak || false,
-          animate_badge: backendRankData.animate_badge || false,
-          cached_at: Date.now()
-        };
-        await browser.storage.local.set({ eloward_user_options: userOptions });
-        
-        // Update UI with fresh data (extract standardized rank data)
-        const rankDataForDisplay = extractRankDataForDisplay(updatedUserData);
-        displayRank(rankDataForDisplay);
-        
-        // Update premium star based on fresh plus_active data
-        updatePremiumStar(backendRankData.plus_active || false);
-        
-        // Update options toggles if they exist (sync UI with backend)
-        const showPeakToggle = document.getElementById('use-peak-rank');
-        const animateBadgeToggle = document.getElementById('show-animated-badge');
-        if (showPeakToggle && showPeakToggle.checked !== userOptions.show_peak) {
-          showPeakToggle.checked = userOptions.show_peak;
-        }
-        if (animateBadgeToggle && animateBadgeToggle.checked !== userOptions.animate_badge) {
-          animateBadgeToggle.checked = userOptions.animate_badge;
-        }
+        // Batch DOM updates for better performance
+        requestAnimationFrame(() => {
+          // Update UI with fresh data (extract standardized rank data)
+          const rankDataForDisplay = extractRankDataForDisplay(updatedUserData);
+          if (rankDataForDisplay) {
+            displayRank(rankDataForDisplay);
+          }
+          
+          // Update premium star based on fresh plus_active data
+          updatePremiumStar(updatedUserData.plus_active || false);
+          
+          // Update options toggles if they exist (sync UI with backend)
+          const showPeakToggle = document.getElementById('use-peak-rank');
+          const animateBadgeToggle = document.getElementById('show-animated-badge');
+          if (showPeakToggle && showPeakToggle.checked !== updatedUserData.show_peak) {
+            showPeakToggle.checked = updatedUserData.show_peak;
+          }
+          if (animateBadgeToggle && animateBadgeToggle.checked !== updatedUserData.animate_badge) {
+            animateBadgeToggle.checked = updatedUserData.animate_badge;
+          }
+        });
       }
     } catch (error) {
       // Silently fail - popup will show existing data
