@@ -642,6 +642,23 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false; // synchronous response
   }
   
+  if (message.action === 'clear_rank_cache_except_current_user') {
+    // Clear all cached entries except current user to allow detection of newly joined EloWard users
+    const currentUser = userRankCache.currentUser;
+    const currentUserData = currentUser ? userRankCache.cache.get(currentUser) : null;
+    
+    userRankCache.cache.clear();
+    
+    // Restore current user's data if it exists
+    if (currentUser && currentUserData) {
+      userRankCache.cache.set(currentUser, currentUserData);
+    }
+    
+    // Don't persist mostly-empty cache - let natural cache population trigger persistence
+    sendResponse({ success: true });
+    return false; // synchronous response
+  }
+  
   if (message.action === 'clear_user_rank_cache' && message.username) {
     const username = message.username.toLowerCase();
     if (userRankCache.cache.has(username)) {

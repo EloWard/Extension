@@ -1056,7 +1056,11 @@ function setupUrlChangeObserver() {
       extensionState.isVod = isVodNow;
       extensionState.lastPathname = currentPathname;
       extensionState.initializationComplete = false;
-      try { chrome.runtime.sendMessage({ action: 'prune_unranked_rank_cache' }); } catch (_) {}
+      
+      // On navigation, only prune unranked entries but preserve ranked users (performance optimization)
+      try { 
+        chrome.runtime.sendMessage({ action: 'prune_unranked_rank_cache' });
+      } catch (_) {}
       
       setTimeout(() => {
         const verifyChannel = getCurrentChannelName();
@@ -2044,6 +2048,12 @@ setupUrlChangeObserver();
 detectChatMode();
 setupCompatibilityMonitor();
 setupFallbackInitialization();
+
+// Clear cache on page load (refresh/direct navigation) to detect newly joined EloWard users
+try {
+  chrome.runtime.sendMessage({ action: 'clear_rank_cache_except_current_user' });
+} catch (_) {}
+
 initializeExtension();
 
 
@@ -2053,6 +2063,11 @@ window.addEventListener('blur', () => {
 });
 
 window.addEventListener('popstate', function() {
+  // Clear cache on page refresh/navigation to detect newly joined EloWard users
+  try {
+    chrome.runtime.sendMessage({ action: 'clear_rank_cache_except_current_user' });
+  } catch (_) {}
+  
   if (!extensionState.initializationInProgress) {
     initializeExtension();
   }
