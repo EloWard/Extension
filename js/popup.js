@@ -82,141 +82,94 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Plus Feature Tooltip System
+  // Plus Feature Tooltip System - Leveraging existing tooltip infrastructure
   let currentPlusTooltip = null;
+  let plusTooltipTimer = null;
 
-  function createPlusFeatureTooltip() {
+  function createPlusTooltip() {
     const tooltip = document.createElement('div');
     tooltip.className = 'plus-feature-tooltip';
-    
-    const title = document.createElement('div');
-    title.className = 'plus-feature-tooltip-title';
-    title.textContent = 'EloWard Plus';
-    
-    const description = document.createElement('div');
-    description.className = 'plus-feature-tooltip-description';
-    description.textContent = 'Unlock premium customizations';
-    
-    const link = document.createElement('a');
-    link.className = 'plus-feature-tooltip-link';
-    link.href = 'https://www.eloward.com/dashboard';
-    link.target = '_blank';
-    link.textContent = 'Subscribe';
-    
-    tooltip.appendChild(title);
-    tooltip.appendChild(description);
-    tooltip.appendChild(link);
-    
+    tooltip.innerHTML = `
+      <div class="plus-feature-tooltip-title">EloWard Plus</div>
+      <div class="plus-feature-tooltip-description">Unlock premium customizations</div>
+      <a href="https://www.eloward.com/dashboard" target="_blank" class="plus-feature-tooltip-link">Subscribe</a>
+    `;
     return tooltip;
   }
 
-  // Tooltip hover management
-  let tooltipHideTimeout = null;
-  let tooltipShowTimeout = null;
-
-  function showPlusFeatureTooltip(targetElement) {
-    // Clear any pending hide timeout
-    clearTimeout(tooltipHideTimeout);
-    clearTimeout(tooltipShowTimeout);
+  function showPlusTooltip(targetElement) {
+    clearTimeout(plusTooltipTimer);
     
-    // If tooltip already exists and visible, don't recreate
-    if (currentPlusTooltip && currentPlusTooltip.classList.contains('visible')) {
-      return;
-    }
+    if (currentPlusTooltip) return; // Already showing
     
-    // Remove any existing tooltip
-    hidePlusFeatureTooltipImmediate();
+    currentPlusTooltip = createPlusTooltip();
+    document.body.appendChild(currentPlusTooltip);
     
-    const tooltip = createPlusFeatureTooltip();
-    document.body.appendChild(tooltip);
-    
-    // Position tooltip above the target element
-    const rect = targetElement.getBoundingClientRect();
-    const tooltipRect = tooltip.getBoundingClientRect();
-    
-    const left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
-    const top = rect.top - tooltipRect.height - 8; // Reduced gap for easier mouse movement
-    
-    // Ensure tooltip stays within viewport with proper margins
-    const finalLeft = Math.max(10, Math.min(left, window.innerWidth - tooltipRect.width - 10));
-    const finalTop = Math.max(10, top);
-    
-    tooltip.style.left = finalLeft + 'px';
-    tooltip.style.top = finalTop + 'px';
-    
-    // Add hover listeners to tooltip itself
-    tooltip.addEventListener('mouseenter', () => {
-      clearTimeout(tooltipHideTimeout);
-    });
-    
-    tooltip.addEventListener('mouseleave', () => {
-      schedulePlusFeatureTooltipHide();
-    });
-    
-    // Show tooltip with animation
+    // Position tooltip after it's rendered for accurate dimensions
     requestAnimationFrame(() => {
-      tooltip.classList.add('visible');
-    });
-    
-    currentPlusTooltip = tooltip;
-  }
-
-  function schedulePlusFeatureTooltipHide() {
-    clearTimeout(tooltipHideTimeout);
-    tooltipHideTimeout = setTimeout(() => {
-      hidePlusFeatureTooltip();
-    }, 300); // 300ms grace period for mouse movement
-  }
-
-  function hidePlusFeatureTooltip() {
-    if (currentPlusTooltip) {
-      currentPlusTooltip.classList.remove('visible');
-      setTimeout(() => {
-        if (currentPlusTooltip && currentPlusTooltip.parentNode) {
-          currentPlusTooltip.parentNode.removeChild(currentPlusTooltip);
-        }
-        currentPlusTooltip = null;
-      }, 200);
-    }
-  }
-
-  function hidePlusFeatureTooltipImmediate() {
-    clearTimeout(tooltipHideTimeout);
-    clearTimeout(tooltipShowTimeout);
-    if (currentPlusTooltip && currentPlusTooltip.parentNode) {
-      currentPlusTooltip.parentNode.removeChild(currentPlusTooltip);
-      currentPlusTooltip = null;
-    }
-  }
-
-  function wrapPlusFeature(element, isPlusActive) {
-    if (isPlusActive) {
-      return element; // Don't wrap if user has Plus
-    }
-
-    const container = document.createElement('div');
-    container.className = 'plus-feature-container plus-locked';
-    
-    // Move element into container
-    element.parentNode.insertBefore(container, element);
-    container.appendChild(element);
-    
-    // Add hover listeners with proper timeout management
-    container.addEventListener('mouseenter', () => {
-      clearTimeout(tooltipHideTimeout);
-      clearTimeout(tooltipShowTimeout);
+      if (!currentPlusTooltip) return;
       
-      tooltipShowTimeout = setTimeout(() => {
-        showPlusFeatureTooltip(container);
-      }, 150); // Slight delay for better UX
+      const rect = targetElement.getBoundingClientRect();
+      const tooltipRect = currentPlusTooltip.getBoundingClientRect();
+      
+      // Center horizontally above the target
+      const left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      const top = rect.top - tooltipRect.height - 12;
+      
+      // Ensure tooltip stays within viewport
+      const finalLeft = Math.max(10, Math.min(left, window.innerWidth - tooltipRect.width - 10));
+      const finalTop = Math.max(10, top);
+      
+      currentPlusTooltip.style.left = `${finalLeft}px`;
+      currentPlusTooltip.style.top = `${finalTop}px`;
+      currentPlusTooltip.classList.add('visible');
     });
     
-    container.addEventListener('mouseleave', () => {
-      clearTimeout(tooltipShowTimeout);
-      schedulePlusFeatureTooltipHide();
-    });
+    // Add interaction listeners for smooth hover behavior
+    const hideTooltip = () => {
+      plusTooltipTimer = setTimeout(() => {
+        if (currentPlusTooltip) {
+          currentPlusTooltip.remove();
+          currentPlusTooltip = null;
+        }
+      }, 300);
+    };
+
+    currentPlusTooltip.addEventListener('mouseenter', () => clearTimeout(plusTooltipTimer));
+    currentPlusTooltip.addEventListener('mouseleave', hideTooltip);
+    targetElement.addEventListener('mouseleave', hideTooltip, { once: true });
+  }
+
+  function initializePlusFeatures(isPlusActive) {
+    const toggles = ['use-peak-rank', 'show-animated-badge'];
     
-    return container;
+    toggles.forEach(toggleId => {
+      const toggle = document.getElementById(toggleId);
+      if (!toggle) return;
+      
+      const label = toggle.parentElement;
+      const isWrapped = label.parentElement.classList.contains('plus-feature-container');
+      
+      if (isPlusActive && isWrapped) {
+        // Remove wrapper for Plus users
+        const wrapper = label.parentElement;
+        wrapper.parentElement.insertBefore(label, wrapper);
+        wrapper.remove();
+      } else if (!isPlusActive && !isWrapped) {
+        // Add wrapper for non-Plus users
+        const wrapper = document.createElement('div');
+        wrapper.className = 'plus-feature-container';
+        label.parentElement.insertBefore(wrapper, label);
+        wrapper.appendChild(label);
+        
+        // Add hover behavior
+        wrapper.addEventListener('mouseenter', () => {
+          clearTimeout(plusTooltipTimer);
+          plusTooltipTimer = setTimeout(() => showPlusTooltip(wrapper), 150);
+        });
+        wrapper.addEventListener('mouseleave', () => clearTimeout(plusTooltipTimer));
+      }
+    });
   }
 
   // Shared function to fetch and process complete user data from backend
@@ -270,11 +223,11 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         };
 
-        // Update user options storage with fresh backend data
+        // Update local storage with effective options from backend
         await saveOptionsToStorage({
-          show_peak: backendData.show_peak || false,
-          animate_badge: backendData.animate_badge || false,
-          plus_active: backendData.plus_active || false
+          show_peak: updatedUserData.show_peak,
+          animate_badge: updatedUserData.animate_badge,
+          plus_active: updatedUserData.plus_active
         });
 
         return updatedUserData;
@@ -296,8 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rankInfo = {
       tier: userData.soloQueueRank.tier,
       division: userData.soloQueueRank.division,
-      leaguePoints: userData.soloQueueRank.leaguePoints,
-      plus_active: userData.plus_active || false
+      leaguePoints: userData.soloQueueRank.leaguePoints
     };
     
     // Ensure tier is properly capitalized
@@ -1051,20 +1003,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     currentRank.textContent = rankText;
     
-    // Check if we should use animated badges
-    let shouldAnimate = false;
+    // Check if we should use animated badges - simply check local storage
+    let useAnimated = false;
     try {
-      const userOptions = await browser.storage.local.get(['eloward_user_options']);
-      shouldAnimate = userOptions.eloward_user_options?.animate_badge || false;
+      const userOptions = await loadOptionsFromStorage();
+      useAnimated = userOptions?.animate_badge || false;
     } catch (_) {
-      shouldAnimate = false;
+      useAnimated = false;
     }
 
     // Determine the rank badge image path with animation support
     const rankImageFileName = formattedTier.toLowerCase();
-    
-    // FIXED: Correct logic for badge selection - only animate_badge determines animation
-    const useAnimated = shouldAnimate;
     const extension = useAnimated ? '.webp' : '.png';
     const suffix = useAnimated ? '_premium' : '';  // animated badges use _premium suffix
     const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}`;
@@ -1209,15 +1158,14 @@ document.addEventListener('DOMContentLoaded', () => {
           // Update premium star based on fresh plus_active data
           updatePremiumStar(updatedUserData.plus_active || false);
           
-          // Update options toggles if they exist (sync UI with backend)
+          // Update Plus feature wrappers based on fresh plus_active data
+          initializePlusFeatures(updatedUserData.plus_active || false);
+          
+          // Update toggle states to match effective options
           const showPeakToggle = document.getElementById('use-peak-rank');
           const animateBadgeToggle = document.getElementById('show-animated-badge');
-          if (showPeakToggle && showPeakToggle.checked !== updatedUserData.show_peak) {
-            showPeakToggle.checked = updatedUserData.show_peak;
-          }
-          if (animateBadgeToggle && animateBadgeToggle.checked !== updatedUserData.animate_badge) {
-            animateBadgeToggle.checked = updatedUserData.animate_badge;
-          }
+          if (showPeakToggle) showPeakToggle.checked = updatedUserData.show_peak;
+          if (animateBadgeToggle) animateBadgeToggle.checked = updatedUserData.animate_badge;
         });
       }
     } catch (error) {
@@ -1283,8 +1231,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const updatedOptions = await response.json();
       
-      // Update local storage with the new options
-      await saveOptionsToStorage(updatedOptions);
+      // Update only the specific field in local storage to avoid overwriting other preferences
+      const currentOptions = await loadOptionsFromStorage() || {};
+      currentOptions[field] = value;
+      await saveOptionsToStorage(currentOptions);
       
       // Update user rank cache if it exists
       await updateLocalUserRankCache(twitchData.login, field, value);
@@ -1381,11 +1331,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Check Plus status to determine if we need to wrap Plus features
       const hasPlus = await checkPlusActiveStatus();
       
-      // Wrap Plus features with hover tooltips if user doesn't have Plus
-      if (!hasPlus) {
-        wrapPlusFeature(showPeakToggle.parentElement, hasPlus);
-        wrapPlusFeature(animateBadgeToggle.parentElement, hasPlus);
-      }
+      // Initialize Plus feature wrappers based on current status
+      initializePlusFeatures(hasPlus);
 
       // Update options state based on Riot connection first
       updateOptionsBasedOnRiotConnection();
@@ -1397,7 +1344,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showPeakToggle.parentElement.classList.add('no-transition');
         animateBadgeToggle.parentElement.classList.add('no-transition');
         
-        // Set states immediately from cache
+        // Set states immediately from cache - no calculations, just display what's stored
         showPeakToggle.checked = cachedOptions.show_peak;
         animateBadgeToggle.checked = cachedOptions.animate_badge;
         

@@ -175,11 +175,7 @@ header h1 {
   transition: opacity 0.2s ease;
 }
 
-.premium-star:hover {
-  opacity: 1;
-  transform: scale(1.1);
-  transition: all 0.2s ease;
-}
+/* Removed hover effect for cleaner UI */
 
 /* Connection Item Styling */
 .connection-item {
@@ -857,17 +853,4 @@ select:disabled {
   display: inline-block;
 }
 
-.plus-feature-container.plus-locked .toggle-switch {
-  pointer-events: none;
-  opacity: 0.7;
-}
-
-.plus-feature-container.plus-locked .toggle-slider {
-  background-color: rgba(44, 62, 80, 0.6);
-  border-color: rgba(217, 163, 54, 0.4);
-  cursor: not-allowed;
-}
-
-.plus-feature-container.plus-locked .toggle-slider:before {
-  background-color: rgba(217, 163, 54, 0.6);
-}
+/* Keep original toggle styling - no visual changes when Plus locked */
