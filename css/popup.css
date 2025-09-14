@@ -777,3 +777,97 @@ select:disabled {
 .option-item.disabled .toggle-switch input:checked + .toggle-slider:before {
   background-color: rgba(255, 255, 255, 0.4);
 }
+
+/* Plus Feature Tooltip Styling */
+.plus-feature-tooltip {
+  position: absolute;
+  z-index: 10001;
+  pointer-events: auto;
+  background-color: var(--surface);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-5px);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.plus-feature-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.plus-feature-tooltip-title {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Cinzel', serif;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+.plus-feature-tooltip-description {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+
+.plus-feature-tooltip-link {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.2s ease;
+  pointer-events: auto;
+  cursor: pointer;
+  position: relative;
+}
+
+.plus-feature-tooltip-link::before {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background-color: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.plus-feature-tooltip-link:hover::before {
+  width: 100%;
+}
+
+/* Removed arrow for cleaner subscribe button */
+
+/* Removed triangle pointers for cleaner design */
+
+/* Plus Feature Container */
+.plus-feature-container {
+  position: relative;
+  display: inline-block;
+}
+
+.plus-feature-container.plus-locked .toggle-switch {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.plus-feature-container.plus-locked .toggle-slider {
+  background-color: rgba(44, 62, 80, 0.6);
+  border-color: rgba(217, 163, 54, 0.4);
+  cursor: not-allowed;
+}
+
+.plus-feature-container.plus-locked .toggle-slider:before {
+  background-color: rgba(217, 163, 54, 0.6);
+}

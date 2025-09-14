@@ -82,60 +82,141 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Show plus feature message (with spam protection)
-  let lastNotificationTime = 0;
-  function showPlusFeatureMessage(featureName) {
-    // Prevent notification spam (max one every 2 seconds)
-    const now = Date.now();
-    if (now - lastNotificationTime < 2000) return;
-    lastNotificationTime = now;
+  // Plus Feature Tooltip System
+  let currentPlusTooltip = null;
+
+  function createPlusFeatureTooltip() {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'plus-feature-tooltip';
     
-    try {
-      const notification = document.createElement('div');
-      notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        padding: 12px 16px;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        z-index: 10000;
-        transition: opacity 0.3s ease;
-      `;
-      notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 16px;">✨</span>
-          <span>${featureName} is a Plus feature</span>
-        </div>
-      `;
-      
-      if (document.body) {
-        document.body.appendChild(notification);
-        
-        // Remove notification after 3 seconds
-        setTimeout(() => {
-          try {
-            if (notification.parentNode) {
-              notification.style.opacity = '0';
-              setTimeout(() => {
-                if (notification.parentNode) {
-                  notification.parentNode.removeChild(notification);
-                }
-              }, 300);
-            }
-          } catch (e) {
-            // Silently handle cleanup errors
-          }
-        }, 3000);
-      }
-    } catch (error) {
-      // Fallback to console if notification fails
-      console.warn(`[EloWard Popup] ${featureName} requires EloWard+ subscription`);
+    const title = document.createElement('div');
+    title.className = 'plus-feature-tooltip-title';
+    title.textContent = 'EloWard Plus';
+    
+    const description = document.createElement('div');
+    description.className = 'plus-feature-tooltip-description';
+    description.textContent = 'Unlock premium customizations';
+    
+    const link = document.createElement('a');
+    link.className = 'plus-feature-tooltip-link';
+    link.href = 'https://www.eloward.com/dashboard';
+    link.target = '_blank';
+    link.textContent = 'Subscribe';
+    
+    tooltip.appendChild(title);
+    tooltip.appendChild(description);
+    tooltip.appendChild(link);
+    
+    return tooltip;
+  }
+
+  // Tooltip hover management
+  let tooltipHideTimeout = null;
+  let tooltipShowTimeout = null;
+
+  function showPlusFeatureTooltip(targetElement) {
+    // Clear any pending hide timeout
+    clearTimeout(tooltipHideTimeout);
+    clearTimeout(tooltipShowTimeout);
+    
+    // If tooltip already exists and visible, don't recreate
+    if (currentPlusTooltip && currentPlusTooltip.classList.contains('visible')) {
+      return;
     }
+    
+    // Remove any existing tooltip
+    hidePlusFeatureTooltipImmediate();
+    
+    const tooltip = createPlusFeatureTooltip();
+    document.body.appendChild(tooltip);
+    
+    // Position tooltip above the target element
+    const rect = targetElement.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    
+    const left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+    const top = rect.top - tooltipRect.height - 8; // Reduced gap for easier mouse movement
+    
+    // Ensure tooltip stays within viewport with proper margins
+    const finalLeft = Math.max(10, Math.min(left, window.innerWidth - tooltipRect.width - 10));
+    const finalTop = Math.max(10, top);
+    
+    tooltip.style.left = finalLeft + 'px';
+    tooltip.style.top = finalTop + 'px';
+    
+    // Add hover listeners to tooltip itself
+    tooltip.addEventListener('mouseenter', () => {
+      clearTimeout(tooltipHideTimeout);
+    });
+    
+    tooltip.addEventListener('mouseleave', () => {
+      schedulePlusFeatureTooltipHide();
+    });
+    
+    // Show tooltip with animation
+    requestAnimationFrame(() => {
+      tooltip.classList.add('visible');
+    });
+    
+    currentPlusTooltip = tooltip;
+  }
+
+  function schedulePlusFeatureTooltipHide() {
+    clearTimeout(tooltipHideTimeout);
+    tooltipHideTimeout = setTimeout(() => {
+      hidePlusFeatureTooltip();
+    }, 300); // 300ms grace period for mouse movement
+  }
+
+  function hidePlusFeatureTooltip() {
+    if (currentPlusTooltip) {
+      currentPlusTooltip.classList.remove('visible');
+      setTimeout(() => {
+        if (currentPlusTooltip && currentPlusTooltip.parentNode) {
+          currentPlusTooltip.parentNode.removeChild(currentPlusTooltip);
+        }
+        currentPlusTooltip = null;
+      }, 200);
+    }
+  }
+
+  function hidePlusFeatureTooltipImmediate() {
+    clearTimeout(tooltipHideTimeout);
+    clearTimeout(tooltipShowTimeout);
+    if (currentPlusTooltip && currentPlusTooltip.parentNode) {
+      currentPlusTooltip.parentNode.removeChild(currentPlusTooltip);
+      currentPlusTooltip = null;
+    }
+  }
+
+  function wrapPlusFeature(element, isPlusActive) {
+    if (isPlusActive) {
+      return element; // Don't wrap if user has Plus
+    }
+
+    const container = document.createElement('div');
+    container.className = 'plus-feature-container plus-locked';
+    
+    // Move element into container
+    element.parentNode.insertBefore(container, element);
+    container.appendChild(element);
+    
+    // Add hover listeners with proper timeout management
+    container.addEventListener('mouseenter', () => {
+      clearTimeout(tooltipHideTimeout);
+      clearTimeout(tooltipShowTimeout);
+      
+      tooltipShowTimeout = setTimeout(() => {
+        showPlusFeatureTooltip(container);
+      }, 150); // Slight delay for better UX
+    });
+    
+    container.addEventListener('mouseleave', () => {
+      clearTimeout(tooltipShowTimeout);
+      schedulePlusFeatureTooltipHide();
+    });
+    
+    return container;
   }
 
   // Shared function to fetch and process complete user data from backend
@@ -1297,6 +1378,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // Check Plus status to determine if we need to wrap Plus features
+      const hasPlus = await checkPlusActiveStatus();
+      
+      // Wrap Plus features with hover tooltips if user doesn't have Plus
+      if (!hasPlus) {
+        wrapPlusFeature(showPeakToggle.parentElement, hasPlus);
+        wrapPlusFeature(animateBadgeToggle.parentElement, hasPlus);
+      }
+
       // Update options state based on Riot connection first
       updateOptionsBasedOnRiotConnection();
 
@@ -1345,7 +1435,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasPlus = await checkPlusActiveStatus();
             if (!hasPlus) {
               e.target.checked = !e.target.checked;
-              showPlusFeatureMessage('Peak rank display');
               return;
             }
             
@@ -1355,10 +1444,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.checked = !e.target.checked;
             console.error('Failed to update show_peak option:', error);
             
-            // Show user-friendly error for premium features
-            if (error.message?.includes('Premium subscription required')) {
-              showPlusFeatureMessage('Peak rank display');
-            }
+            // For premium features, the hover tooltip already handles messaging
           } finally {
             isProcessing = false;
           }
@@ -1391,7 +1477,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasPlus = await checkPlusActiveStatus();
             if (!hasPlus) {
               e.target.checked = !e.target.checked;
-              showPlusFeatureMessage('Animated badges');
               return;
             }
             
@@ -1403,10 +1488,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.checked = !e.target.checked;
             console.error('Failed to update animate_badge option:', error);
             
-            // Show user-friendly error for premium features
-            if (error.message?.includes('Premium subscription required')) {
-              showPlusFeatureMessage('Animated badges');
-            }
+            // For premium features, the hover tooltip already handles messaging
           } finally {
             isProcessing = false;
           }
