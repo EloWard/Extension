@@ -340,16 +340,20 @@ async function restoreRankCacheFromStorage(cacheInstance) {
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'increment_db_reads' && message.channel) {
-    incrementDbReadCounter(message.channel)
-      .then(success => sendResponse({ success }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+    // METRICS DISABLED: Comment out backend metrics calls
+    // incrementDbReadCounter(message.channel)
+    //   .then(success => sendResponse({ success }))
+    //   .catch(error => sendResponse({ success: false, error: error.message }));
+    sendResponse({ success: true });
     return true;
   }
   
   if (message.action === 'increment_successful_lookups' && message.channel) {
-    incrementSuccessfulLookupCounter(message.channel)
-      .then(success => sendResponse({ success }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+    // METRICS DISABLED: Comment out backend metrics calls
+    // incrementSuccessfulLookupCounter(message.channel)
+    //   .then(success => sendResponse({ success }))
+    //   .catch(error => sendResponse({ success: false, error: error.message }));
+    sendResponse({ success: true });
     return true;
   }
   
@@ -513,9 +517,11 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
-    if (channelName) {
-      incrementDbReadCounter(channelName).catch(() => {});
-    }
+    // METRICS DISABLED: Always increment DB read counter for ALL rank lookup attempts
+    // This tracks the total percentage of users in chat being checked for ranks
+    // if (channelName) {
+    //   incrementDbReadCounter(channelName).catch(() => {});
+    // }
     
     // Check cache only if not explicitly skipping cache
     if (!skipCache) {
@@ -532,9 +538,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         // Positive cache hit - user has rank data
-        if (channelName && cachedRankData?.tier) {
-          incrementSuccessfulLookupCounter(channelName).catch(() => {});
-        }
+        // METRICS DISABLED: Only increment successful lookups for positive cache hits with actual rank data
+        // if (channelName && cachedRankData?.tier) {
+        //   incrementSuccessfulLookupCounter(channelName).catch(() => {});
+        // }
         
         sendResponse({
           success: true,
@@ -552,9 +559,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Cache both positive and negative results
         userRankCache.set(username, rankData);
         
-        if (rankData && channelName && rankData?.tier) {
-          incrementSuccessfulLookupCounter(channelName).catch(() => {});
-        }
+        // METRICS DISABLED: Only increment successful lookups for backend hits with actual rank data
+        // if (rankData && channelName && rankData?.tier) {
+        //   incrementSuccessfulLookupCounter(channelName).catch(() => {});
+        // }
         
         sendResponse({ success: true, rankData, source: 'api' });
       })
@@ -1043,7 +1051,8 @@ function checkChannelActive(channelName, skipCache = false) {
   
   const normalizedName = channelName.toLowerCase();
   
-  incrementDbReadCounter(normalizedName).catch(() => {});
+  // METRICS DISABLED: Channel active check metrics
+  // incrementDbReadCounter(normalizedName).catch(() => {});
   
   return fetch(`${STATUS_API_URL}/channelstatus/verify`, {
     method: 'POST',
@@ -1264,26 +1273,30 @@ async function incrementDbReadCounter(channelName) {
     return false;
   }
   
-  try {
-    const normalizedName = channelName.toLowerCase();
-    
-    const response = await fetch(`${STATUS_API_URL}/metrics/db_read`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ channel_name: normalizedName })
-    });
-    
-    if (!response.ok) {
-      return false;
-    }
-    
-    const data = await response.json();
-    return !!data.success;
-  } catch (error) {
-    return false;
-  }
+  // METRICS DISABLED: Comment out backend call
+  // try {
+  //   const normalizedName = channelName.toLowerCase();
+  //   
+  //   const response = await fetch(`${STATUS_API_URL}/metrics/db_read`, {
+  //     method: 'POST',
+  //     headers: {
+  //       'Content-Type': 'application/json'
+  //     },
+  //     body: JSON.stringify({ channel_name: normalizedName })
+  //   });
+  //   
+  //   if (!response.ok) {
+  //     return false;
+  //   }
+  //   
+  //   const data = await response.json();
+  //   return !!data.success;
+  // } catch (error) {
+  //   return false;
+  // }
+  
+  // Return success without making backend call
+  return true;
 }
 
 async function incrementSuccessfulLookupCounter(channelName) {
@@ -1291,26 +1304,30 @@ async function incrementSuccessfulLookupCounter(channelName) {
     return false;
   }
   
-  try {
-    const normalizedName = channelName.toLowerCase();
-    
-    const response = await fetch(`${STATUS_API_URL}/metrics/successful_lookup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ channel_name: normalizedName })
-    });
-    
-    if (!response.ok) {
-      return false;
-    }
-    
-    const data = await response.json();
-    return !!data.success;
-  } catch (error) {
-    return false;
-  }
+  // METRICS DISABLED: Comment out backend call
+  // try {
+  //   const normalizedName = channelName.toLowerCase();
+  //   
+  //   const response = await fetch(`${STATUS_API_URL}/metrics/successful_lookup`, {
+  //     method: 'POST',
+  //     headers: {
+  //       'Content-Type': 'application/json'
+  //     },
+  //     body: JSON.stringify({ channel_name: normalizedName })
+  //   });
+  //   
+  //   if (!response.ok) {
+  //     return false;
+  //   }
+  //   
+  //   const data = await response.json();
+  //   return !!data.success;
+  // } catch (error) {
+  //   return false;
+  // }
+  
+  // Return success without making backend call
+  return true;
 }
 
 
