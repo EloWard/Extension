@@ -380,7 +380,7 @@ export const RiotAuth = {
         'eloward_signin_attempted'
       ];
 
-      // Clear cached badge images (all rank badges)
+      // Clear cached badge images (popup only - content badges are generic assets)
       const allKeys = await browser.storage.local.get(null);
       const badgeKeys = Object.keys(allKeys).filter(key => 
         key.startsWith('eloward_cached_badge_image_')
