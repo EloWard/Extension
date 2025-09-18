@@ -34,6 +34,52 @@ function injectPreconnectLinks() {
 const ImageCache = (() => {
   const tierToBlobUrl = new Map();
   const inFlight = new Map();
+  const persistentCache = new Map(); // Store data URLs from persistent storage
+  
+  // Badge cache versioning - increment when CDN images are updated  
+  const BADGE_CACHE_VERSION = '2';
+
+  // Persistent cache functions
+
+  async function setCachedBadgeBlob(tierKey, blob, isAnimated = false) {
+    try {
+      const suffix = isAnimated ? '_premium' : '';
+      const storageKey = `eloward_content_badge_${tierKey}${suffix}_v${BADGE_CACHE_VERSION}`;
+      
+      // Convert blob to data URL for storage
+      const dataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+      
+      await browser.storage.local.set({
+        [storageKey]: {
+          dataUrl,
+          timestamp: Date.now()
+        }
+      });
+    } catch (_) {
+      // Ignore storage errors
+    }
+  }
+
+  // Clean up old cached badges
+  async function cleanupOldContentBadgeCache() {
+    try {
+      const allData = await browser.storage.local.get();
+      const keysToRemove = Object.keys(allData).filter(key => 
+        key.startsWith('eloward_content_badge_') && 
+        !key.includes(`_v${BADGE_CACHE_VERSION}`)
+      );
+      
+      if (keysToRemove.length > 0) {
+        await browser.storage.local.remove(keysToRemove);
+      }
+    } catch (_) {
+      // Ignore cleanup errors
+    }
+  }
 
   async function preloadTier(tierLower) {
     const key = String(tierLower || '').toLowerCase();
@@ -45,21 +91,33 @@ const ImageCache = (() => {
     
     const promises = [];
     
-    // Preload regular variant
+    // Preload regular variant  
     if (!tierToBlobUrl.has(regularKey) && !inFlight.has(regularKey)) {
-      const regularUrl = `${CDN_BASE}/lol/${key}.png`;
       const regularPromise = (async () => {
         try {
+          // Check if we have it in persistent cache first
+          if (persistentCache.has(regularKey)) {
+            const blobUrl = await convertCachedDataUrlToBlobUrl(regularKey);
+            if (blobUrl) return blobUrl;
+          }
+          
+          // Not in persistent cache - fetch from CDN
+          const regularUrl = `${CDN_BASE}/lol/${key}.png`;
           const resp = await fetch(regularUrl, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
           if (!resp.ok) throw new Error(String(resp.status));
           const blob = await resp.blob();
           const blobUrl = URL.createObjectURL(blob);
+          
+          // Store in both memory and persistent cache
           tierToBlobUrl.set(regularKey, blobUrl);
+          setCachedBadgeBlob(key, blob, false).catch(() => {}); // Non-blocking
+          
           return blobUrl;
         } catch (_) {
           // Fallback to CDN URL on failure
-          tierToBlobUrl.set(regularKey, regularUrl);
-          return regularUrl;
+          const fallbackUrl = `${CDN_BASE}/lol/${key}.png`;
+          tierToBlobUrl.set(regularKey, fallbackUrl);
+          return fallbackUrl;
         } finally {
           inFlight.delete(regularKey);
         }
@@ -70,19 +128,31 @@ const ImageCache = (() => {
     
     // Preload premium variant
     if (!tierToBlobUrl.has(premiumKey) && !inFlight.has(premiumKey)) {
-      const premiumUrl = `${CDN_BASE}/lol/${key}_premium.webp`;
       const premiumPromise = (async () => {
         try {
+          // Check if we have it in persistent cache first
+          if (persistentCache.has(premiumKey)) {
+            const blobUrl = await convertCachedDataUrlToBlobUrl(premiumKey);
+            if (blobUrl) return blobUrl;
+          }
+          
+          // Not in persistent cache - fetch from CDN
+          const premiumUrl = `${CDN_BASE}/lol/${key}_premium.webp`;
           const resp = await fetch(premiumUrl, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
           if (!resp.ok) throw new Error(String(resp.status));
           const blob = await resp.blob();
           const blobUrl = URL.createObjectURL(blob);
+          
+          // Store in both memory and persistent cache
           tierToBlobUrl.set(premiumKey, blobUrl);
+          setCachedBadgeBlob(key, blob, true).catch(() => {}); // Non-blocking
+          
           return blobUrl;
         } catch (_) {
           // Fallback to CDN URL on failure
-          tierToBlobUrl.set(premiumKey, premiumUrl);
-          return premiumUrl;
+          const fallbackUrl = `${CDN_BASE}/lol/${key}_premium.webp`;
+          tierToBlobUrl.set(premiumKey, fallbackUrl);
+          return fallbackUrl;
         } finally {
           inFlight.delete(premiumKey);
         }
@@ -97,16 +167,86 @@ const ImageCache = (() => {
 
   async function init() {
     injectPreconnectLinks();
+    
+    // Load persistent cache data URLs into memory (fast, non-blocking)
+    loadPersistentCacheData().catch(() => {});
+    
+    // Clean up old badge cache entries (non-blocking)
+    cleanupOldContentBadgeCache().catch(() => {});
+    
+    // Preload common badges (now more efficient since it checks persistent cache first)
     try {
       await Promise.all(RANK_TIERS.map(preloadTier));
     } catch (_) {}
+  }
+  
+  // Load persistent cache data URLs into memory for fast access
+  async function loadPersistentCacheData() {
+    try {
+      const allData = await browser.storage.local.get();
+      const cacheKeys = Object.keys(allData).filter(key => 
+        key.startsWith('eloward_content_badge_') && 
+        key.includes(`_v${BADGE_CACHE_VERSION}`)
+      );
+      
+      for (const storageKey of cacheKeys) {
+        const cached = allData[storageKey];
+        if (cached && cached.dataUrl) {
+          // Extract tier key from storage key format: eloward_content_badge_{tier}_{suffix}_v{version}
+          const match = storageKey.match(/^eloward_content_badge_(.+)_v\d+$/);
+          if (match) {
+            const key = match[1]; // e.g., "gold" or "gold_premium"
+            // Store data URL for lazy conversion to blob URL when needed
+            persistentCache.set(key, cached.dataUrl);
+          }
+        }
+      }
+    } catch (_) {
+      // Continue if persistent cache loading fails
+    }
+  }
+  
+  // Convert cached data URL to blob URL (lazy conversion)
+  async function convertCachedDataUrlToBlobUrl(key) {
+    try {
+      const dataUrl = persistentCache.get(key);
+      if (dataUrl) {
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        tierToBlobUrl.set(key, blobUrl);
+        return blobUrl;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   function getSrcSync(tier, isAnimated = false) {
     const tierKey = String(tier || 'unranked').toLowerCase();
     const key = isAnimated ? `${tierKey}_premium` : tierKey;
     const extension = isAnimated ? '.webp' : '.png';
-    return tierToBlobUrl.get(key) || `${CDN_BASE}/lol/${key}${extension}`;
+    
+    // Check memory cache first (blob URLs - fastest)
+    const cachedBlobUrl = tierToBlobUrl.get(key);
+    if (cachedBlobUrl) {
+      return cachedBlobUrl;
+    }
+    
+    // Check persistent cache (data URLs - fast)  
+    if (persistentCache.has(key)) {
+      // Convert to blob URL in background for next time
+      convertCachedDataUrlToBlobUrl(key).catch(() => {});
+      // Return data URL immediately (works for img.src)
+      return persistentCache.get(key);
+    }
+    
+    // Cache miss - trigger preloading for future use
+    preloadTier(tierKey).catch(() => {});
+    
+    // Return CDN URL as immediate fallback
+    return `${CDN_BASE}/lol/${key}${extension}`;
   }
 
   function revokeAll() {
@@ -117,6 +257,7 @@ const ImageCache = (() => {
         }
       }
       tierToBlobUrl.clear();
+      persistentCache.clear(); // Also clear persistent cache data
     } catch (_) {}
   }
 

@@ -906,12 +906,15 @@ document.addEventListener('DOMContentLoaded', () => {
     await PersistentStorage.storeRiotUserData(updatedUserData);
   }
 
+  // Badge cache versioning - increment this when badge images are updated on CDN
+  const BADGE_CACHE_VERSION = '2';
+
   // Simple cache for the current user's rank badge image by tier, stored as a data URL
   async function getCachedBadgeDataUrl(tierKey, isAnimated = false) {
     try {
       // Create cache key that distinguishes between animated and static versions
       const suffix = isAnimated ? '_animated' : '_static';
-      const key = `eloward_cached_badge_image_${tierKey}${suffix}`;
+      const key = `eloward_cached_badge_image_${tierKey}${suffix}_v${BADGE_CACHE_VERSION}`;
       const res = await browser.storage.local.get([key]);
       return res[key] || null;
     } catch (_) {
@@ -932,7 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       // Create cache key that distinguishes between animated and static versions
       const suffix = isAnimated ? '_animated' : '_static';
-      const key = `eloward_cached_badge_image_${tierKey}${suffix}`;
+      const key = `eloward_cached_badge_image_${tierKey}${suffix}_v${BADGE_CACHE_VERSION}`;
       await browser.storage.local.set({ [key]: dataUrl });
     } catch (_) {
       // ignore cache errors
@@ -946,25 +949,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Clean up old cache entries (run once to migrate to new cache key format)
+  // Track cleanup completion in memory (more efficient than storage-based tracking)
+  let badgeCacheCleanupCompleted = false;
+
+  // Clean up old badge cache entries (removes outdated versions)
   async function cleanupOldBadgeCache() {
+    // Skip if already cleaned this session
+    if (badgeCacheCleanupCompleted) {
+      return;
+    }
+    
     try {
-      const storageData = await browser.storage.local.get();
-      const keysToRemove = [];
-      
-      // Find old cache keys that don't use the new _animated/_static format
-      for (const key of Object.keys(storageData)) {
-        if (key.startsWith('eloward_cached_badge_image_') && 
-            !key.includes('_premium_animated') && 
-            !key.includes('_premium_static')) {
-          keysToRemove.push(key);
-        }
-      }
+      // Get all storage data to find badge cache keys  
+      const allData = await browser.storage.local.get();
+      const keysToRemove = Object.keys(allData).filter(key => 
+        key.startsWith('eloward_cached_badge_image_') && 
+        !key.includes(`_v${BADGE_CACHE_VERSION}`)
+      );
       
       if (keysToRemove.length > 0) {
-        console.log(`[EloWard] Cleaning up ${keysToRemove.length} old badge cache entries`);
         await browser.storage.local.remove(keysToRemove);
       }
+      
+      // Mark cleanup as completed for this session
+      badgeCacheCleanupCompleted = true;
     } catch (error) {
       console.warn('[EloWard] Failed to clean up old badge cache:', error);
     }
