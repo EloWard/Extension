@@ -830,6 +830,11 @@ function initializeStorage() {
             }
           });
         }
+        
+        // Refresh options data for current user to sync options
+        chrome.runtime.sendMessage({
+          action: 'refresh_options_data'
+        });
       });
     }
   });

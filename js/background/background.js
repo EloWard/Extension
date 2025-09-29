@@ -745,11 +745,17 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
               throw new Error('Missing PUUID in persistent storage');
             }
 
-            // Use simplified PUUID-only refresh
+            // Fetch options data FIRST to ensure backend has latest settings
+            const optionsData = await fetchOptionsDataByPuuid(persistentRiotData.puuid);
+            if (optionsData) {
+              await updateLocalOptionsData(optionsData);
+            }
+            
+            // Now refresh rank data - backend will return correct rank (current/peak) based on database settings
             const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
             
             // Backend returns the correct rank (current or peak) based on user's show_peak setting
-            // Update the persistent data with new rank information
+            // Update the persistent data with new rank information  
             const updatedUserData = {
               ...persistentRiotData,
               soloQueueRank: {
@@ -757,44 +763,37 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 division: refreshedRankData.rank_division,
                 leaguePoints: refreshedRankData.lp
               },
-              // Store additional options data that might have been updated
-              plus_active: refreshedRankData.plus_active
+              plus_active: optionsData.plus_active ? 1 : 0,
+              show_peak: optionsData.show_peak,
+              animate_badge: optionsData.animate_badge
             };
             
             await PersistentStorage.storeRiotUserData(updatedUserData);
 
             // Update background cache entry for local user (if we know Twitch username)
-            try {
-              const twitchData = await PersistentStorage.getTwitchUserData();
-              const twitchUsername = twitchData?.login?.toLowerCase();
-              const region = refreshedRankData.region || 'na1';
-              if (twitchUsername && updatedUserData) {
-                // Get user's animate_badge preference for consistent cache entry
-                let animateBadge = false;
-                try {
-                  const userOptions = await browser.storage.local.get(['eloward_user_options']);
-                  animateBadge = userOptions.eloward_user_options?.animate_badge || false;
-                } catch (_) {}
-                
-                const solo = updatedUserData.soloQueueRank || null;
-                const rankData = solo ? {
-                  tier: solo.tier,
-                  division: solo.rank,
-                  leaguePoints: solo.leaguePoints,
-                  summonerName: updatedUserData.riotId,
-                  region,
-                  animate_badge: animateBadge
-                } : {
-                  tier: 'UNRANKED',
-                  division: '',
-                  leaguePoints: null,
-                  summonerName: updatedUserData.riotId,
-                  region,
-                  animate_badge: animateBadge
-                };
-                userRankCache.set(twitchUsername, rankData);
-              }
-            } catch (_) { /* ignore cache update errors */ }
+            const twitchData = await PersistentStorage.getTwitchUserData();
+            const twitchUsername = twitchData.login.toLowerCase();
+            const region = refreshedRankData.region;
+            
+            if (twitchUsername && updatedUserData) {
+              const solo = updatedUserData.soloQueueRank;
+              const rankData = solo ? {
+                tier: solo.tier,
+                division: solo.rank,
+                leaguePoints: solo.leaguePoints,
+                summonerName: updatedUserData.riotId,
+                region,
+                animate_badge: optionsData.animate_badge
+              } : {
+                tier: 'UNRANKED',
+                division: '',
+                leaguePoints: null,
+                summonerName: updatedUserData.riotId,
+                region,
+                animate_badge: optionsData.animate_badge
+              };
+              userRankCache.set(twitchUsername, rankData);
+            }
 
             await browser.storage.local.set({ eloward_last_rank_refresh_at: now });
             
@@ -856,6 +855,86 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } catch (e) {
         console.log('[EloWard] Auto rank refresh error:', e?.message || 'unexpected error');
         sendResponse({ success: false, refreshed: false, error: e?.message || 'unexpected' });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'refresh_options_data') {
+    (async () => {
+      try {
+        const persistentRiotData = await PersistentStorage.getRiotUserData();
+        if (!persistentRiotData || !persistentRiotData.puuid) {
+          throw new Error('Missing PUUID in persistent storage');
+        }
+
+        const optionsData = await fetchOptionsDataByPuuid(persistentRiotData.puuid);
+        
+        if (optionsData) {
+          await updateLocalOptionsData(optionsData);
+          
+          // Check if settings changed that affect rank display - refresh rank data and update cache
+          const currentShowPeak = persistentRiotData.show_peak;
+          const newShowPeak = optionsData.show_peak;
+          const currentAnimateBadge = persistentRiotData.animate_badge;  
+          const newAnimateBadge = optionsData.animate_badge;
+          
+          if (currentShowPeak !== newShowPeak || currentAnimateBadge !== newAnimateBadge) {
+            // Refresh rank data to get correct current/peak rank
+            const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
+            
+            // Update persistent storage with new rank
+            const updatedUserData = {
+              ...persistentRiotData,
+              soloQueueRank: {
+                tier: refreshedRankData.rank_tier,
+                division: refreshedRankData.rank_division,
+                leaguePoints: refreshedRankData.lp
+              },
+              plus_active: optionsData.plus_active ? 1 : 0,
+              show_peak: optionsData.show_peak,
+              animate_badge: optionsData.animate_badge
+            };
+            
+            await PersistentStorage.storeRiotUserData(updatedUserData);
+            
+            // Update user rank cache for current user
+            const twitchData = await PersistentStorage.getTwitchUserData();
+            const twitchUsername = twitchData.login.toLowerCase();
+            
+            if (twitchUsername) {
+              const rankData = {
+                tier: refreshedRankData.rank_tier,
+                division: refreshedRankData.rank_division,
+                leaguePoints: refreshedRankData.lp,
+                summonerName: updatedUserData.riotId,
+                region: updatedUserData.region,
+                animate_badge: optionsData.animate_badge
+              };
+              
+              userRankCache.set(twitchUsername, rankData);
+            }
+          } else {
+            // Update animate_badge in existing cache entry if needed
+            const twitchData = await PersistentStorage.getTwitchUserData();
+            const twitchUsername = twitchData.login.toLowerCase();
+            
+            if (twitchUsername && userRankCache.has(twitchUsername)) {
+              const existingRankData = userRankCache.get(twitchUsername);
+              if (existingRankData && existingRankData !== NO_RANK_MARKER) {
+                existingRankData.animate_badge = optionsData.animate_badge;
+                userRankCache.set(twitchUsername, existingRankData);
+              }
+            }
+          }
+          
+          sendResponse({ success: true, data: optionsData });
+        } else {
+          sendResponse({ success: false, error: 'No options data found' });
+        }
+      } catch (error) {
+        console.error('[Background] Options data refresh error:', error);
+        sendResponse({ success: false, error: error.message });
       }
     })();
     return true;
@@ -1242,6 +1321,72 @@ async function fetchRankByPuuid(puuid) {
   } catch (error) {
     console.error('[Background] fetchRankByPuuid error:', error);
     return null;
+  }
+}
+
+/**
+ * Fetch user options from backend using PUUID for security
+ * @param {string} puuid - User's PUUID
+ * @returns {Promise<Object|null>} Options data or null
+ */
+async function fetchOptionsDataByPuuid(puuid) {
+  if (!puuid) return null;
+  
+  try {
+    const response = await fetch(`${RANK_WORKER_API_URL}/api/options/${encodeURIComponent(puuid)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      throw new Error(`Options API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    return {
+      plus_active: data.plus_active,
+      show_peak: data.show_peak,
+      animate_badge: data.animate_badge
+    };
+  } catch (error) {
+    console.error('[Background] fetchOptionsDataByPuuid error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update local storage with user options
+ * @param {Object} optionsData - The options data
+ */
+async function updateLocalOptionsData(optionsData) {
+  try {
+    // Update eloward_user_options in local storage
+    const currentOptions = await browser.storage.local.get(['eloward_user_options']);
+    const updatedOptions = {
+      ...(currentOptions.eloward_user_options || {}),
+      ...optionsData,
+      cached_at: Date.now()
+    };
+    
+    await browser.storage.local.set({
+      eloward_user_options: updatedOptions
+    });
+    
+    // Update persistent riot data with options data
+    await PersistentStorage.updateRiotOptionsData({
+      plus_active: optionsData.plus_active ? 1 : 0,
+      show_peak: optionsData.show_peak,
+      animate_badge: optionsData.animate_badge
+    });
+  } catch (error) {
+    console.error('[Background] Error updating local options data:', error);
+    throw error;
   }
 }
 

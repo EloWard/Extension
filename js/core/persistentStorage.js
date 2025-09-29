@@ -27,7 +27,9 @@ export const PersistentStorage = {
       puuid: userData.puuid,
       region: userData.region || currentData.selectedRegion,
       soloQueueRank: userData.soloQueueRank || null, // Store in same format we use
-      plus_active: userData.plus_active || false
+      plus_active: userData.plus_active,
+      show_peak: userData.show_peak,
+      animate_badge: userData.animate_badge
     };
     
     await browser.storage.local.set({
@@ -41,6 +43,27 @@ export const PersistentStorage = {
   async getRiotUserData() {
     const data = await browser.storage.local.get([STORAGE_KEYS.RIOT_USER_DATA]);
     return data[STORAGE_KEYS.RIOT_USER_DATA] || null;
+  },
+  
+  async updateRiotOptionsData(optionsData) {
+    if (!optionsData) return;
+    
+    const existingData = await this.getRiotUserData();
+    if (!existingData || !existingData.puuid) {
+      console.warn('[PersistentStorage] Cannot update options data: no existing Riot user data');
+      return;
+    }
+    
+    const updatedData = {
+      ...existingData,
+      plus_active: optionsData.plus_active,
+      show_peak: optionsData.show_peak,
+      animate_badge: optionsData.animate_badge
+    };
+    
+    await browser.storage.local.set({
+      [STORAGE_KEYS.RIOT_USER_DATA]: updatedData
+    });
   },
   
   async storeTwitchUserData(userData) {

@@ -886,7 +886,17 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error('Account information not available. Please reconnect your Riot account.');
     }
     
-    // Use simplified PUUID-only refresh
+    // Refresh options data FIRST to ensure backend has latest settings
+    let optionsData = null;
+    const optionsRefresh = await browser.runtime.sendMessage({
+      action: 'refresh_options_data'
+    });
+    
+    if (optionsRefresh.success) {
+      optionsData = optionsRefresh.data;
+    }
+    
+    // Now refresh rank data - backend will return correct rank (current/peak) based on database settings
     const refreshedRankData = await RiotAuth.refreshRank(persistentRiotData.puuid);
     
     // Backend already returns the correct rank (current or peak) based on user's show_peak setting
@@ -898,8 +908,9 @@ document.addEventListener('DOMContentLoaded', () => {
         division: refreshedRankData.rank_division,
         leaguePoints: refreshedRankData.lp
       },
-      // Store additional options data that might have been updated
-      plus_active: refreshedRankData.plus_active
+      plus_active: optionsData.plus_active ? 1 : 0,
+      show_peak: optionsData.show_peak,
+      animate_badge: optionsData.animate_badge
     };
     
     updateUserInterface(updatedUserData);
