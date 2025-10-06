@@ -393,6 +393,51 @@ function getVodGameFromDom() {
   } catch (_) {}
   return null;
 }
+// Turn /directory/category/league-of-legends into "League of Legends"
+function _eloward_extractGameFromHref(href) {
+  try {
+    if (!href) return null;
+    const m = href.match(/\/directory\/category\/([^\/?#]+)/i);
+    if (!m) return null;
+    const slug = decodeURIComponent(m[1]).replace(/-/g, ' ').trim();
+    // Title-case safely without allocating huge maps
+    return slug.split(' ')
+      .filter(Boolean)
+      .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+      .join(' ');
+  } catch (_) { return null; }
+}
+
+// Crawl the channel header/info areas for a category link or visible text
+function getOfflineChannelGameFromDom() {
+  try {
+    // Priority 1: canonical Twitch selector in channel header
+    // e.g. <a data-a-target="stream-game-link" href="/directory/category/league-of-legends"><span>League of Legends</span></a>
+    const header = document.querySelector('#live-channel-stream-information, .channel-info-content');
+    const link = header?.querySelector('a[data-a-target="stream-game-link"]');
+    const text = link?.textContent?.trim();
+    if (text) return text;
+
+    // Priority 2: any visible category link in the header/content
+    // Works even if Twitch changes data-a-target but keeps directory path
+    const anyCat = header?.querySelector('a[href^="/directory/category/"]');
+    const text2 = anyCat?.textContent?.trim();
+    if (text2) return text2;
+
+    // Priority 3: derive from href slug if text is empty or virtualized
+    const byHref = _eloward_extractGameFromHref(link?.getAttribute('href') || anyCat?.getAttribute('href') || '');
+    if (byHref) return byHref;
+
+    // Priority 4: broader search (late-loading layouts, experiments)
+    const globalCat = document.querySelector('a[data-a-target="stream-game-link"], a[href^="/directory/category/"]');
+    const globalText = globalCat?.textContent?.trim();
+    if (globalText) return globalText;
+
+    const byHrefGlobal = _eloward_extractGameFromHref(globalCat?.getAttribute('href') || '');
+    if (byHrefGlobal) return byHrefGlobal;
+  } catch (_) {}
+  return null;
+}
 
 
 const SUPPORTED_GAMES = { 'League of Legends': true };
@@ -1031,6 +1076,16 @@ async function getCurrentGame() {
     }
   } catch (_) {}
 
+  // 3) NEW: Offline channel header/about panel scan
+  // Covers offline channel pages and offline popout when parent DOM is present.
+  try {
+    const offlineGame = getOfflineChannelGameFromDom();
+    if (offlineGame) {
+      console.log(`🎮 EloWard: Offline category detected via DOM - ${offlineGame}`);
+      return offlineGame;
+    }
+  } catch (_) {}
+
   console.log('🎮 EloWard: Game category detected - Not streaming');
   return null;
 }
@@ -1091,16 +1146,27 @@ function setupGameChangeObserver() {
   const gameObserver = new MutationObserver(checkGameChange);
   const streamInfoTarget = document.querySelector('[data-a-target="stream-info-card"], [data-test-selector="stream-info-card"]');
   
+  // NEW: also observe offline channel header section
+  const offlineInfoTarget = document.querySelector('#live-channel-stream-information, .channel-info-content');
+  
   if (streamInfoTarget) {
     gameObserver.observe(streamInfoTarget, { 
       subtree: true, 
       childList: true,
       attributes: true,
-      attributeFilter: ['data-a-target']
+      attributeFilter: ['data-a-target', 'class', 'style']
     });
-    
-    window._eloward_game_observer = gameObserver;
   }
+  if (offlineInfoTarget) {
+    gameObserver.observe(offlineInfoTarget, { 
+      subtree: true, 
+      childList: true,
+      attributes: true,
+      attributeFilter: ['class', 'style']
+    });
+  }
+  
+  window._eloward_game_observer = gameObserver;
 }
 
 function initializeExtension() {
