@@ -37,7 +37,7 @@ const ImageCache = (() => {
   const persistentCache = new Map(); // Store data URLs from persistent storage
   
   // Badge cache versioning - increment when CDN images are updated  
-  const BADGE_CACHE_VERSION = '2';
+  const BADGE_CACHE_VERSION = '3';
 
   // Persistent cache functions
 
@@ -102,8 +102,8 @@ const ImageCache = (() => {
           }
           
           // Not in persistent cache - fetch from CDN
-          const regularUrl = `${CDN_BASE}/lol/${key}.png`;
-          const resp = await fetch(regularUrl, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
+          const regularUrl = `${CDN_BASE}/lol/${key}.png?v=${BADGE_CACHE_VERSION}`;
+          const resp = await fetch(regularUrl, { mode: 'cors', cache: 'default', credentials: 'omit' });
           if (!resp.ok) throw new Error(String(resp.status));
           const blob = await resp.blob();
           const blobUrl = URL.createObjectURL(blob);
@@ -113,11 +113,11 @@ const ImageCache = (() => {
           setCachedBadgeBlob(key, blob, false).catch(() => {}); // Non-blocking
           
           return blobUrl;
-        } catch (_) {
-          // Fallback to CDN URL on failure
-          const fallbackUrl = `${CDN_BASE}/lol/${key}.png`;
-          tierToBlobUrl.set(regularKey, fallbackUrl);
-          return fallbackUrl;
+          } catch (_) {
+            // Fallback to CDN URL on failure
+            const fallbackUrl = `${CDN_BASE}/lol/${key}.png?v=${BADGE_CACHE_VERSION}`;
+            tierToBlobUrl.set(regularKey, fallbackUrl);
+            return fallbackUrl;
         } finally {
           inFlight.delete(regularKey);
         }
@@ -137,8 +137,8 @@ const ImageCache = (() => {
           }
           
           // Not in persistent cache - fetch from CDN
-          const premiumUrl = `${CDN_BASE}/lol/${key}_premium.webp`;
-          const resp = await fetch(premiumUrl, { mode: 'cors', cache: 'force-cache', credentials: 'omit' });
+          const premiumUrl = `${CDN_BASE}/lol/${key}_premium.webp?v=${BADGE_CACHE_VERSION}`;
+          const resp = await fetch(premiumUrl, { mode: 'cors', cache: 'default', credentials: 'omit' });
           if (!resp.ok) throw new Error(String(resp.status));
           const blob = await resp.blob();
           const blobUrl = URL.createObjectURL(blob);
@@ -148,11 +148,11 @@ const ImageCache = (() => {
           setCachedBadgeBlob(key, blob, true).catch(() => {}); // Non-blocking
           
           return blobUrl;
-        } catch (_) {
-          // Fallback to CDN URL on failure
-          const fallbackUrl = `${CDN_BASE}/lol/${key}_premium.webp`;
-          tierToBlobUrl.set(premiumKey, fallbackUrl);
-          return fallbackUrl;
+          } catch (_) {
+            // Fallback to CDN URL on failure
+            const fallbackUrl = `${CDN_BASE}/lol/${key}_premium.webp?v=${BADGE_CACHE_VERSION}`;
+            tierToBlobUrl.set(premiumKey, fallbackUrl);
+            return fallbackUrl;
         } finally {
           inFlight.delete(premiumKey);
         }
@@ -245,8 +245,9 @@ const ImageCache = (() => {
     // Cache miss - trigger preloading for future use
     preloadTier(tierKey).catch(() => {});
     
-    // Return CDN URL as immediate fallback
-    return `${CDN_BASE}/lol/${key}${extension}`;
+    // Return CDN URL as immediate fallback with cache-busting
+    const baseUrl = isAnimated ? `${CDN_BASE}/lol/${tierKey}_premium.webp` : `${CDN_BASE}/lol/${tierKey}.png`;
+    return `${baseUrl}?v=${BADGE_CACHE_VERSION}`;
   }
 
   function revokeAll() {

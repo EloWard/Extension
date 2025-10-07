@@ -484,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
           displayRank(rankInfo);
         } else {
           currentRank.textContent = 'Unranked';
-          rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
+          rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png?v=${BADGE_CACHE_VERSION}')`;
           rankBadgePreview.style.transform = 'translateY(-3px)';
         }
       } else {
@@ -567,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateRiotButtonText('Connect');
         connectRiotBtn.disabled = false;
         currentRank.textContent = 'Unranked';
-        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
+        rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png?v=${BADGE_CACHE_VERSION}')`;
         rankBadgePreview.style.transform = 'translateY(-3px)';
         refreshRankBtn.classList.add('hidden');
         
@@ -669,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Reset rank display and show unranked graphic
     currentRank.textContent = 'Unranked';
-    rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
+    rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png?v=${BADGE_CACHE_VERSION}')`;
     rankBadgePreview.style.transform = 'translateY(-3px)';
     
     // Ensure region selector is visible when not connected
@@ -714,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Show unranked rank display
             currentRank.textContent = 'Unranked';
-            rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png')`;
+            rankBadgePreview.style.backgroundImage = `url('https://eloward-cdn.unleashai.workers.dev/lol/unranked.png?v=${BADGE_CACHE_VERSION}')`;
             rankBadgePreview.style.transform = 'translateY(-3px)';
             refreshRankBtn.classList.add('hidden'); // Hide refresh button on disconnect
             // Show region selector again after disconnect
@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Badge cache versioning - increment this when badge images are updated on CDN
-  const BADGE_CACHE_VERSION = '2';
+  const BADGE_CACHE_VERSION = '3';
 
   // Simple cache for the current user's rank badge image by tier, stored as a data URL
   async function getCachedBadgeDataUrl(tierKey, isAnimated = false) {
@@ -935,7 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function cacheBadgeImage(tierKey, imageUrl, isAnimated = false) {
     try {
-      const response = await fetch(imageUrl, { cache: 'force-cache' });
+      const response = await fetch(imageUrl, { cache: 'default' });
       if (!response.ok) return;
       const blob = await response.blob();
       // Convert to data URL for instant subsequent loads
@@ -1035,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rankImageFileName = formattedTier.toLowerCase();
     const extension = useAnimated ? '.webp' : '.png';
     const suffix = useAnimated ? '_premium' : '';  // animated badges use _premium suffix
-    const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}`;
+    const imageUrl = `https://eloward-cdn.unleashai.workers.dev/lol/${rankImageFileName}${suffix}${extension}?v=${BADGE_CACHE_VERSION}`;
 
     // Try cached image first for instant render; fall back to network and prefetch for next time
     try {
