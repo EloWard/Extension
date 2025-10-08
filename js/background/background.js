@@ -11,7 +11,6 @@ import { PersistentStorage } from '../core/persistentStorage.js';
 
 // Removed RIOT_AUTH_URL constant - no longer needed with server-side auth
 const RANK_WORKER_API_URL = 'https://eloward-ranks.unleashai.workers.dev';
-const STATUS_API_URL = 'https://eloward-users.unleashai.workers.dev';
 const MAX_RANK_CACHE_SIZE = 2000;
 const RANK_CACHE_STORAGE_KEY = 'eloward_rank_cache';
 const RANK_CACHE_UPDATED_AT_KEY = 'eloward_rank_cache_last_updated';
@@ -593,19 +592,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  if (message.action === 'check_channel_active') {
-    const streamer = message.streamer;
-    const skipCache = !!message.skipCache;
-    
-    checkChannelActive(streamer, skipCache)
-      .then(active => {
-        sendResponse({ active: active });
-      })
-      .catch(error => {
-        sendResponse({ active: false, error: error.message });
-      });
-    return true;
-  }
   
   if (message.action === 'set_current_user') {
     userRankCache.setCurrentUser(message.username);
@@ -1123,36 +1109,6 @@ function clearAllStoredData() {
   });
 }
 
-function checkChannelActive(channelName, skipCache = false) {
-  if (!channelName) {
-    return Promise.resolve(false);
-  }
-  
-  const normalizedName = channelName.toLowerCase();
-  
-  // METRICS DISABLED: Channel active check metrics
-  // incrementDbReadCounter(normalizedName).catch(() => {});
-  
-  return fetch(`${STATUS_API_URL}/channelstatus/verify`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ channel_name: normalizedName })
-  })
-  .then(response => {
-    if (!response.ok) {
-      throw new Error(`Channel API returned ${response.status}`);
-    }
-    return response.json();
-  })
-  .then(data => {
-    return !!data.active;
-  })
-  .catch(error => {
-    return false;
-  });
-}
 
 // Removed deprecated getRankByPuuid function - no longer needed with server-side auth
 

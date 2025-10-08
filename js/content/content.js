@@ -274,7 +274,6 @@ const extensionState = {
   currentGame: null,
   currentUser: null,
   observerInitialized: false,
-  lastChannelActiveCheck: null,
   initializationInProgress: false,
   currentInitializationId: null,
   compatibilityMode: false,
@@ -284,12 +283,6 @@ const extensionState = {
   chatMode: 'standard',
   isVod: false,
   lastPathname: ''
-};
-
-const channelState = {
-  activeChannels: new Set(),
-  currentChannel: null,
-  activeAbortController: null
 };
 
 const SELECTORS = {
@@ -798,52 +791,8 @@ function cleanupChannel(channelName) {
   extensionState.isChannelActive = false;
   extensionState.currentGame = null;
   extensionState.currentUser = null;
-  
-  if (channelState.activeAbortController) {
-    channelState.activeAbortController.abort();
-    channelState.activeAbortController = null;
-  }
-  
-  channelState.activeChannels.delete(channelName);
 }
 
-async function initializeChannel(channelName, initializationId) {
-  if (!channelName) return false;
-  
-  const normalizedChannel = channelName.toLowerCase();
-  const abortController = new AbortController();
-  channelState.activeAbortController = abortController;
-  
-  try {
-    if (extensionState.currentInitializationId !== initializationId) {
-      return false;
-    }
-    
-    channelState.activeChannels.add(normalizedChannel);
-    channelState.currentChannel = normalizedChannel;
-    
-    const isActive = await checkChannelActive(channelName, true, abortController.signal);
-    
-    if (extensionState.currentInitializationId !== initializationId || abortController.signal.aborted) {
-      return false;
-    }
-    
-    if (isActive) {
-      channelState.activeChannels.add(normalizedChannel);
-      extensionState.isChannelActive = true;
-    } else {
-      channelState.activeChannels.delete(normalizedChannel);
-      extensionState.isChannelActive = false;
-    }
-    
-    return isActive;
-  } catch (error) {
-    if (error.name !== 'AbortError') {
-      console.error('EloWard: Channel initialization error:', error);
-    }
-    return false;
-  }
-}
 
 function initializeStorage() {
   // Read only the keys we actually need to determine current user
@@ -898,75 +847,6 @@ function findCurrentUser(allData) {
   return null;
 }
 
-async function checkChannelActive(channelName, forceCheck = false, signal = null) {
-  if (!channelName) return false;
-  
-  if (signal?.aborted) {
-    throw new DOMException('Operation aborted', 'AbortError');
-  }
-  
-  const now = Date.now();
-  if (!forceCheck && 
-      extensionState.lastChannelActiveCheck && 
-      extensionState.channelName === channelName && 
-      (now - extensionState.lastChannelActiveCheck) < 30000) {
-    return extensionState.isChannelActive;
-  }
-  
-  try {
-    return new Promise((resolve, reject) => {
-      if (signal?.aborted) {
-        reject(new DOMException('Operation aborted', 'AbortError'));
-        return;
-      }
-      
-      const abortListener = () => {
-        reject(new DOMException('Operation aborted', 'AbortError'));
-      };
-      
-      if (signal) {
-        signal.addEventListener('abort', abortListener, { once: true });
-      }
-      
-      chrome.runtime.sendMessage(
-        { 
-          action: 'check_channel_active', 
-          streamer: channelName,
-          skipCache: true
-        },
-        (response) => {
-          if (signal) {
-            signal.removeEventListener('abort', abortListener);
-          }
-          
-          if (signal?.aborted) {
-            reject(new DOMException('Operation aborted', 'AbortError'));
-            return;
-          }
-          
-          if (chrome.runtime.lastError) {
-            resolve(false);
-            return;
-          }
-          
-          const isActive = response && response.active === true;
-          console.log(`${isActive ? '✅' : '❌'} EloWard: Channel ${channelName} is ${isActive ? 'active' : 'not active'}`);
-          
-          if (!signal?.aborted) {
-            extensionState.lastChannelActiveCheck = now;
-          }
-          
-          resolve(isActive);
-        }
-      );
-    });
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw error;
-    }
-    return false;
-  }
-}
 
 function getCurrentChannelName() {
   const pathname = window.location.pathname;
@@ -1136,9 +1016,8 @@ function setupGameChangeObserver() {
           extensionState.observerInitialized = false;
           extensionState.isChannelActive = false;
         } else if (isGameSupported(extensionState.currentGame) && !isGameSupported(oldGame)) {
-          if (extensionState.channelName && !extensionState.initializationInProgress) {
-            initializeExtension();
-          }
+          extensionState.isChannelActive = true;
+          if (!extensionState.initializationInProgress) initializeExtension();
         }
       }
     }, 1000);
@@ -1202,43 +1081,24 @@ function initializeExtension() {
       return;
     }
     
-    initializeChannel(extensionState.channelName, initializationId)
-      .then(channelActive => {
-        if (extensionState.currentInitializationId !== initializationId) return;
-        
-        if (channelActive) {
-          console.log(`🚀 EloWard: Extension active for ${extensionState.channelName} (${extensionState.chatMode} mode)`);
-          if (!extensionState.observerInitialized) {
-            initializeObserver();
+    if (isGameSupported(extensionState.currentGame)) {
+      extensionState.isChannelActive = true;
+      console.log(`🚀 EloWard: Active for ${extensionState.channelName} (${extensionState.chatMode} mode)`);
+      if (!extensionState.observerInitialized) {
+        initializeObserver();
+      }
+      try {
+        chrome.storage.local.get(['eloward_persistent_connected_state','eloward_persistent_riot_user_data'], (data) => {
+          const connected = !!data?.eloward_persistent_connected_state?.riot;
+          const hasRiotData = !!data?.eloward_persistent_riot_user_data?.puuid;
+          if (connected || hasRiotData) {
+            chrome.runtime.sendMessage({ action: 'auto_refresh_rank' }, () => {});
           }
-          try {
-            // Only auto-refresh if Riot appears connected or we have stored Riot data
-            chrome.storage.local.get(['eloward_persistent_connected_state','eloward_persistent_riot_user_data'], (data) => {
-              const connected = !!data?.eloward_persistent_connected_state?.riot;
-              const hasRiotData = !!data?.eloward_persistent_riot_user_data?.puuid;
-              if (connected || hasRiotData) {
-                chrome.runtime.sendMessage({ action: 'auto_refresh_rank' }, (resp) => {
-                  if (resp?.refreshed) {
-                    console.log('EloWard: Rank auto-refreshed on activation');
-                  }
-                });
-              }
-            });
-          } catch (_) {}
-        } else {
-          console.log(`🚀 EloWard: Extension not active - channel ${extensionState.channelName} not subscribed`);
-        }
-        
-        extensionState.initializationInProgress = false;
-        extensionState.initializationComplete = true;
-      })
-      .catch(error => {
-        if (error.name !== 'AbortError') {
-          console.error('EloWard: Initialization error:', error);
-        }
-        extensionState.initializationInProgress = false;
-        extensionState.initializationComplete = true;
-      });
+        });
+      } catch (_) {}
+    }
+    extensionState.initializationInProgress = false;
+    extensionState.initializationComplete = true;
   }, 1500);
 }
 
