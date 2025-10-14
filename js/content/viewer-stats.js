@@ -285,9 +285,9 @@
       const response = await fetch(`${BACKEND_URL}/view/qualify`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          // Add auth headers if available from extension
+          'Content-Type': 'application/json'
         },
+        credentials: 'omit',
         body: JSON.stringify(payload)
       });
       
