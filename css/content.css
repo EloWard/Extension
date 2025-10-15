@@ -297,26 +297,26 @@
   filter: brightness(1.05) contrast(1.1) !important;
 }
 
-/* Tooltips */
+/* Tooltips - Unified with 7TV Module Style */
 .eloward-tooltip {
   position: absolute !important;
   z-index: 99999 !important;
   pointer-events: none !important;
   transform: translate(-50%, -100%) !important;
   font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-  padding: 8px !important;
+  padding: 8px 12px !important;
   border-radius: 8px !important;
   opacity: 0 !important;
   visibility: hidden !important;
-  text-align: center !important;
   border: none !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
   margin-top: -8px !important;
   display: flex !important;
-  flex-direction: column !important;
+  flex-direction: row !important;
   align-items: center !important;
-  gap: 6px !important;
-  background-color: #0e0e10 !important;
+  gap: 12px !important;
+  max-width: 280px !important;
+  background-color: #18181b !important;
   color: #efeff1 !important;
 }
 
@@ -326,25 +326,50 @@
 }
 
 .eloward-tooltip-badge {
-  width: 90px !important;
-  height: 90px !important;
+  width: 48px !important;
+  height: 48px !important;
+  flex-shrink: 0 !important;
   object-fit: contain !important;
   display: block !important;
 }
 
 .eloward-tooltip-text {
-  font-size: 13px !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  text-align: left !important;
+}
+
+.eloward-tooltip-text .eloward-rank-line {
   font-weight: 600 !important;
-  line-height: 1.2 !important;
+  font-size: 14px !important;
+  margin-bottom: 4px !important;
+  color: #efeff1 !important;
+}
+
+.eloward-tooltip-text .eloward-summoner-line {
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  color: #adadb8 !important;
+  margin-bottom: 2px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
 
-/* Region (first line) shown lighter than rank text */
-.eloward-tooltip-text .eloward-region-line,
-.eloward-7tv-tooltip-text .eloward-region-line {
-  font-weight: 300 !important;
-  font-size: 12px !important;
-  color: inherit !important;
+.eloward-tooltip-text .eloward-region-line {
+  font-weight: 400 !important;
+  font-size: 11px !important;
+  color: #848494 !important;
+  margin-bottom: 6px !important;
+}
+
+.eloward-tooltip-text .eloward-hint {
+  font-size: 10px !important;
+  color: #848494 !important;
+  font-style: italic !important;
+  margin-top: 4px !important;
+  padding-top: 4px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .eloward-tooltip::after {
@@ -355,42 +380,75 @@
   margin-left: -4px !important;
   border-width: 4px 4px 0 4px !important;
   border-style: solid !important;
-  border-color: #0e0e10 transparent transparent transparent !important;
+  border-color: #18181b transparent transparent transparent !important;
 }
 
-/* 7TV Tooltips */
+/* 7TV Tooltips - Unified Style */
 .eloward-7tv-tooltip {
   position: absolute !important;
   z-index: 99999 !important;
   pointer-events: none !important;
   transform: translate(-50%, -100%) !important;
   font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-  padding: 8px !important;
+  padding: 8px 12px !important;
   border-radius: 8px !important;
-  text-align: center !important;
   border: none !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
   margin-top: -8px !important;
   display: flex !important;
-  flex-direction: column !important;
+  flex-direction: row !important;
   align-items: center !important;
-  gap: 6px !important;
-  background-color: #0e0e10 !important;
+  gap: 12px !important;
+  max-width: 280px !important;
+  background-color: #18181b !important;
   color: #efeff1 !important;
 }
 
 .eloward-7tv-tooltip-badge {
-  width: 90px !important;
-  height: 90px !important;
+  width: 48px !important;
+  height: 48px !important;
+  flex-shrink: 0 !important;
   object-fit: contain !important;
   display: block !important;
 }
 
 .eloward-7tv-tooltip-text {
-  font-size: 13px !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  text-align: left !important;
+}
+
+.eloward-7tv-tooltip-text .eloward-rank-line {
   font-weight: 600 !important;
-  line-height: 1.2 !important;
+  font-size: 14px !important;
+  margin-bottom: 4px !important;
+  color: #efeff1 !important;
+}
+
+.eloward-7tv-tooltip-text .eloward-summoner-line {
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  color: #adadb8 !important;
+  margin-bottom: 2px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   white-space: nowrap !important;
+}
+
+.eloward-7tv-tooltip-text .eloward-region-line {
+  font-weight: 400 !important;
+  font-size: 11px !important;
+  color: #848494 !important;
+  margin-bottom: 6px !important;
+}
+
+.eloward-7tv-tooltip-text .eloward-hint {
+  font-size: 10px !important;
+  color: #848494 !important;
+  font-style: italic !important;
+  margin-top: 4px !important;
+  padding-top: 4px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .eloward-7tv-tooltip::after {
@@ -401,50 +459,69 @@
   margin-left: -4px !important;
   border-width: 4px 4px 0 4px !important;
   border-style: solid !important;
-  border-color: #0e0e10 transparent transparent transparent !important;
+  border-color: #18181b transparent transparent transparent !important;
 }
 
-/* Dark theme tooltip adjustments (dark bg, light text) */
+/* Dark theme tooltip adjustments */
 html.tw-root--theme-dark .eloward-tooltip,
 .tw-root--theme-dark .eloward-tooltip,
 body[data-a-theme="dark"] .eloward-tooltip,
 body.dark-theme .eloward-tooltip {
-  background-color: #0e0e10 !important;
+  background-color: #18181b !important;
   color: #efeff1 !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
 }
 
 html.tw-root--theme-dark .eloward-tooltip::after,
 .tw-root--theme-dark .eloward-tooltip::after,
 body[data-a-theme="dark"] .eloward-tooltip::after,
 body.dark-theme .eloward-tooltip::after {
-  border-color: #0e0e10 transparent transparent transparent !important;
+  border-color: #18181b transparent transparent transparent !important;
 }
 
 html.tw-root--theme-dark .eloward-7tv-tooltip,
 .tw-root--theme-dark .eloward-7tv-tooltip,
 body[data-a-theme="dark"] .eloward-7tv-tooltip,
 body.dark-theme .eloward-7tv-tooltip {
-  background-color: #0e0e10 !important;
+  background-color: #18181b !important;
   color: #efeff1 !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
 }
 
 html.tw-root--theme-dark .eloward-7tv-tooltip::after,
 .tw-root--theme-dark .eloward-7tv-tooltip::after,
 body[data-a-theme="dark"] .eloward-7tv-tooltip::after,
 body.dark-theme .eloward-7tv-tooltip::after {
-  border-color: #0e0e10 transparent transparent transparent !important;
+  border-color: #18181b transparent transparent transparent !important;
 }
 
-/* Light theme tooltip adjustments (light bg, dark text) */
+/* Light theme tooltip adjustments */
 html.tw-root--theme-light .eloward-tooltip,
 .tw-root--theme-light .eloward-tooltip,
 body[data-a-theme="light"] .eloward-tooltip,
 body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-tooltip {
   background-color: white !important;
   color: #0e0e10 !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.tw-root--theme-light .eloward-tooltip .eloward-rank-line,
+.tw-root--theme-light .eloward-tooltip .eloward-rank-line {
+  color: #0e0e10 !important;
+}
+
+html.tw-root--theme-light .eloward-tooltip .eloward-summoner-line,
+.tw-root--theme-light .eloward-tooltip .eloward-summoner-line {
+  color: #53535f !important;
+}
+
+html.tw-root--theme-light .eloward-tooltip .eloward-region-line,
+html.tw-root--theme-light .eloward-tooltip .eloward-hint,
+.tw-root--theme-light .eloward-tooltip .eloward-region-line,
+.tw-root--theme-light .eloward-tooltip .eloward-hint {
+  color: #848494 !important;
+}
+
+html.tw-root--theme-light .eloward-tooltip .eloward-hint,
+.tw-root--theme-light .eloward-tooltip .eloward-hint {
+  border-top-color: rgba(0, 0, 0, 0.1) !important;
 }
 
 html.tw-root--theme-light .eloward-tooltip::after,
@@ -460,7 +537,28 @@ body[data-a-theme="light"] .eloward-7tv-tooltip,
 body:not(.dark-theme):not([data-a-theme="dark"]) .eloward-7tv-tooltip {
   background-color: white !important;
   color: #0e0e10 !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.tw-root--theme-light .eloward-7tv-tooltip .eloward-rank-line,
+.tw-root--theme-light .eloward-7tv-tooltip .eloward-rank-line {
+  color: #0e0e10 !important;
+}
+
+html.tw-root--theme-light .eloward-7tv-tooltip .eloward-summoner-line,
+.tw-root--theme-light .eloward-7tv-tooltip .eloward-summoner-line {
+  color: #53535f !important;
+}
+
+html.tw-root--theme-light .eloward-7tv-tooltip .eloward-region-line,
+html.tw-root--theme-light .eloward-7tv-tooltip .eloward-hint,
+.tw-root--theme-light .eloward-7tv-tooltip .eloward-region-line,
+.tw-root--theme-light .eloward-7tv-tooltip .eloward-hint {
+  color: #848494 !important;
+}
+
+html.tw-root--theme-light .eloward-7tv-tooltip .eloward-hint,
+.tw-root--theme-light .eloward-7tv-tooltip .eloward-hint {
+  border-top-color: rgba(0, 0, 0, 0.1) !important;
 }
 
 html.tw-root--theme-light .eloward-7tv-tooltip::after,

@@ -1800,46 +1800,59 @@ function addBadgeToSevenTVMessage(messageContainer, _usernameElement, rankData) 
 
 function showSevenTVTooltip(event, rankData) {
   hideSevenTVTooltip();
-  
+
   if (!rankData?.tier) return;
-  
+
   const tooltip = document.createElement('div');
   tooltip.className = 'eloward-7tv-tooltip';
   tooltip.id = 'eloward-7tv-tooltip-active';
-  
+
   const tooltipBadge = document.createElement('img');
   tooltipBadge.className = 'eloward-7tv-tooltip-badge';
   tooltipBadge.decoding = 'async';
   tooltipBadge.loading = 'eager';
-  
-  // Use animated badge if user has animate_badge
+
   const isAnimated = rankData.animate_badge || false;
   tooltipBadge.src = ImageCache.getSrcSync(rankData.tier, isAnimated);
   tooltipBadge.alt = 'Rank Badge';
-  
+
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-7tv-tooltip-text';
-  tooltipText.style.textAlign = 'center';
-  const regionLine = getDisplayRegion(rankData.region);
-  if (regionLine) {
-    const regionDiv = document.createElement('div');
-    regionDiv.className = 'eloward-region-line';
-    regionDiv.textContent = regionLine;
-    tooltipText.appendChild(regionDiv);
-  }
+
   const rankDiv = document.createElement('div');
+  rankDiv.className = 'eloward-rank-line';
   rankDiv.textContent = formatRankTextForTooltip(rankData);
   tooltipText.appendChild(rankDiv);
-  
+
+  if (rankData.summonerName) {
+    const summonerDiv = document.createElement('div');
+    summonerDiv.className = 'eloward-summoner-line';
+    summonerDiv.textContent = rankData.summonerName;
+    tooltipText.appendChild(summonerDiv);
+  }
+
+  const displayRegion = getDisplayRegion(rankData.region);
+  if (displayRegion) {
+    const regionDiv = document.createElement('div');
+    regionDiv.className = 'eloward-region-line';
+    regionDiv.textContent = displayRegion;
+    tooltipText.appendChild(regionDiv);
+  }
+
+  const hintDiv = document.createElement('div');
+  hintDiv.className = 'eloward-hint';
+  hintDiv.textContent = 'Click to view OP.GG';
+  tooltipText.appendChild(hintDiv);
+
   tooltip.appendChild(tooltipBadge);
   tooltip.appendChild(tooltipText);
-  
+
   const rect = event.target.getBoundingClientRect();
   const badgeCenter = rect.left + (rect.width / 2);
-  
+
   tooltip.style.left = `${badgeCenter}px`;
   tooltip.style.top = `${rect.top - 5}px`;
-  
+
   document.body.appendChild(tooltip);
 }
 
@@ -2048,23 +2061,23 @@ function showTooltip(event) {
     tooltipElement.className = 'eloward-tooltip';
     document.body.appendChild(tooltipElement);
   }
-  
+
   const badge = event.currentTarget;
   const rankTier = badge.dataset.rank || 'UNRANKED';
   const division = badge.dataset.division || '';
   let lp = badge.dataset.lp || '';
   const regionCode = badge.dataset.region || '';
+  const summonerName = badge.dataset.username || '';
   const displayRegion = getDisplayRegion(regionCode);
-  
+
   if (lp && !isNaN(Number(lp))) {
     lp = Number(lp).toString();
   }
-  
-  // Clear previous tooltip content safely
+
   while (tooltipElement.firstChild) {
     tooltipElement.removeChild(tooltipElement.firstChild);
   }
-  
+
   const tooltipBadge = document.createElement('img');
   tooltipBadge.className = 'eloward-tooltip-badge';
   const originalImg = badge.querySelector('img');
@@ -2073,22 +2086,16 @@ function showTooltip(event) {
     tooltipBadge.alt = 'Rank Badge';
   }
   tooltipElement.appendChild(tooltipBadge);
-  
+
   const tooltipText = document.createElement('div');
   tooltipText.className = 'eloward-tooltip-text';
-  tooltipText.style.textAlign = 'center';
-  if (displayRegion) {
-    const regionDiv = document.createElement('div');
-    regionDiv.className = 'eloward-region-line';
-    regionDiv.textContent = displayRegion;
-    tooltipText.appendChild(regionDiv);
-  }
+
   const rankDiv = document.createElement('div');
+  rankDiv.className = 'eloward-rank-line';
   if (!rankTier || rankTier.toUpperCase() === 'UNRANKED') {
-    rankDiv.textContent = 'Unranked';
+    rankDiv.textContent = 'UNRANKED';
   } else {
-    let formattedTier = rankTier.toLowerCase();
-    formattedTier = formattedTier.charAt(0).toUpperCase() + formattedTier.slice(1);
+    let formattedTier = rankTier.toUpperCase();
     let rankText = formattedTier;
     if (division && !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rankTier.toUpperCase())) {
       rankText += ' ' + division;
@@ -2099,12 +2106,31 @@ function showTooltip(event) {
     rankDiv.textContent = rankText;
   }
   tooltipText.appendChild(rankDiv);
-  
+
+  if (summonerName) {
+    const summonerDiv = document.createElement('div');
+    summonerDiv.className = 'eloward-summoner-line';
+    summonerDiv.textContent = summonerName;
+    tooltipText.appendChild(summonerDiv);
+  }
+
+  if (displayRegion) {
+    const regionDiv = document.createElement('div');
+    regionDiv.className = 'eloward-region-line';
+    regionDiv.textContent = displayRegion;
+    tooltipText.appendChild(regionDiv);
+  }
+
+  const hintDiv = document.createElement('div');
+  hintDiv.className = 'eloward-hint';
+  hintDiv.textContent = 'Click to view OP.GG';
+  tooltipText.appendChild(hintDiv);
+
   tooltipElement.appendChild(tooltipText);
-  
+
   const rect = badge.getBoundingClientRect();
   const badgeCenter = rect.left + (rect.width / 2);
-  
+
   tooltipElement.style.left = `${badgeCenter}px`;
   tooltipElement.style.top = `${rect.top - 5}px`;
   tooltipElement.classList.add('visible');
