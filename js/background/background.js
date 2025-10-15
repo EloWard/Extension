@@ -765,7 +765,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
               const solo = updatedUserData.soloQueueRank;
               const rankData = solo ? {
                 tier: solo.tier,
-                division: solo.rank,
+                division: solo.division,
                 leaguePoints: solo.leaguePoints,
                 summonerName: updatedUserData.riotId,
                 region,

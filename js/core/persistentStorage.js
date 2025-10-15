@@ -19,30 +19,55 @@ export const PersistentStorage = {
   
   async storeRiotUserData(userData) {
     if (!userData || !userData.puuid) return;
-    
+
     const currentData = await browser.storage.local.get(['selectedRegion']);
-    
+
+    // Normalize soloQueueRank structure before storing to ensure consistency
+    let normalizedRank = null;
+    if (userData.soloQueueRank && typeof userData.soloQueueRank === 'object') {
+      const rank = userData.soloQueueRank;
+      normalizedRank = {
+        tier: rank.tier || rank.rank_tier || null,
+        division: rank.division || rank.rank_division || null,
+        leaguePoints: rank.leaguePoints !== undefined ? rank.leaguePoints : rank.lp
+      };
+    }
+
     const persistentData = {
       riotId: userData.riotId,
       puuid: userData.puuid,
       region: userData.region || currentData.selectedRegion,
-      soloQueueRank: userData.soloQueueRank || null, // Store in same format we use
+      soloQueueRank: normalizedRank,
       plus_active: userData.plus_active,
       show_peak: userData.show_peak,
       animate_badge: userData.animate_badge
     };
-    
+
     await browser.storage.local.set({
       [STORAGE_KEYS.RIOT_USER_DATA]: persistentData,
       [STORAGE_KEYS.DATA_PERSISTENCE_ENABLED]: true
     });
-    
+
     await this.updateConnectedState('riot', true);
   },
   
   async getRiotUserData() {
     const data = await browser.storage.local.get([STORAGE_KEYS.RIOT_USER_DATA]);
-    return data[STORAGE_KEYS.RIOT_USER_DATA] || null;
+    const storedData = data[STORAGE_KEYS.RIOT_USER_DATA];
+
+    if (!storedData) return null;
+
+    // Normalize soloQueueRank structure to ensure consistency
+    if (storedData.soloQueueRank && typeof storedData.soloQueueRank === 'object') {
+      const rank = storedData.soloQueueRank;
+      storedData.soloQueueRank = {
+        tier: rank.tier || rank.rank_tier || null,
+        division: rank.division || rank.rank_division || null,
+        leaguePoints: rank.leaguePoints !== undefined ? rank.leaguePoints : rank.lp
+      };
+    }
+
+    return storedData;
   },
   
   async updateRiotOptionsData(optionsData) {
