@@ -302,7 +302,7 @@
   position: absolute !important;
   z-index: 99999 !important;
   pointer-events: none !important;
-  transform: translate(-50%, -100%) !important;
+  transform: translate(-50%, -85%) !important;
   font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
   padding: 8px 12px !important;
   border-radius: 8px !important;
@@ -376,7 +376,7 @@
   content: "" !important;
   position: absolute !important;
   bottom: -4px !important;
-  left: 50% !important;
+  left: 49.35% !important;
   margin-left: -4px !important;
   border-width: 4px 4px 0 4px !important;
   border-style: solid !important;
@@ -388,7 +388,7 @@
   position: absolute !important;
   z-index: 99999 !important;
   pointer-events: none !important;
-  transform: translate(-50%, -100%) !important;
+  transform: translate(-50%, -85%) !important;
   font-family: Roobert, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
   padding: 8px 12px !important;
   border-radius: 8px !important;
@@ -455,7 +455,7 @@
   content: "" !important;
   position: absolute !important;
   bottom: -4px !important;
-  left: 50% !important;
+  left: 49.35% !important;
   margin-left: -4px !important;
   border-width: 4px 4px 0 4px !important;
   border-style: solid !important;
