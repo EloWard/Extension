@@ -244,58 +244,46 @@
       logWarn('Cannot send qualification - missing channel or PUUID', { hasChannel: !!currentChannel, hasPuuid: !!riotPuuid });
       return;
     }
-    
+
     const qualKey = `${currentChannel}_${getCurrentWindow()}_${riotPuuid}`;
-    
+
     // Don't send if already sent this session
     if (qualificationSent.has(qualKey)) {
       logDebug('Qualification already sent this session', { qualKey });
       return;
     }
-    
+
     const payload = {
       stat_date: getCurrentWindow(),
       channel_twitch_id: currentChannel,
       riot_puuid: riotPuuid
     };
-    
-    logInfo('Sending viewer qualification', { 
-      channel: currentChannel, 
+
+    logInfo('Sending viewer qualification', {
+      channel: currentChannel,
       window: payload.stat_date,
       puuid: riotPuuid.substring(0, 8) + '...',
-      playTimeSeconds 
+      playTimeSeconds
     });
-    
+
     try {
-      // Try sendBeacon first for reliability
-      if (navigator.sendBeacon) {
-        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-        const sent = navigator.sendBeacon(`${BACKEND_URL}/view/qualify`, blob);
-        if (sent) {
-          qualificationSent.add(qualKey);
-          logInfo('Viewer qualification sent via beacon', { qualKey });
-          return;
-        } else {
-          logWarn('sendBeacon failed, trying fetch fallback');
-        }
-      }
-      
-      // Fallback to fetch
-      logDebug('Using fetch fallback for qualification');
+      // Use fetch for better error handling and CORS support
       const response = await fetch(`${BACKEND_URL}/view/qualify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        credentials: 'omit',
         body: JSON.stringify(payload)
       });
-      
+
       if (response.ok) {
         qualificationSent.add(qualKey);
-        logInfo('Viewer qualification sent via fetch', { status: response.status, qualKey });
+        // Mark as qualified in localStorage
+        savePlayTime();
+        logInfo('Viewer qualification sent successfully', { status: response.status, qualKey });
       } else {
-        logError('Failed to send qualification', { status: response.status, statusText: response.statusText });
+        const errorText = await response.text();
+        logError('Failed to send qualification', { status: response.status, statusText: response.statusText, error: errorText });
       }
     } catch (error) {
       logError('Failed to send qualification', error);
@@ -424,26 +412,32 @@
    */
   function handleUnload() {
     logInfo('Page unloading, checking for final qualification');
-    
+
     if (isTracking) {
       updatePlayTime();
       savePlayTime();
       logDebug('Final play time update on unload', { totalSeconds: Math.floor(playTimeSeconds) });
     }
-    
+
     // Send qualification if threshold met but not sent
-    if (playTimeSeconds >= QUALIFY_THRESHOLD_SECONDS && !isAlreadyQualified()) {
+    if (playTimeSeconds >= QUALIFY_THRESHOLD_SECONDS && !isAlreadyQualified() && currentChannel && riotPuuid) {
       logInfo('Sending final qualification on page unload');
+      const payload = {
+        stat_date: getCurrentWindow(),
+        channel_twitch_id: currentChannel,
+        riot_puuid: riotPuuid
+      };
+
       // Use sendBeacon for reliability on page unload
-      if (navigator.sendBeacon && currentChannel && riotPuuid) {
-        const payload = JSON.stringify({
-          stat_date: getCurrentWindow(),
-          channel_twitch_id: currentChannel,
-          riot_puuid: riotPuuid
-        });
-        const blob = new Blob([payload], { type: 'application/json' });
+      // sendBeacon is synchronous and doesn't get cancelled when page unloads
+      if (navigator.sendBeacon) {
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
         const sent = navigator.sendBeacon(`${BACKEND_URL}/view/qualify`, blob);
-        logInfo('Final qualification beacon sent', { sent, playTimeSeconds: Math.floor(playTimeSeconds) });
+        if (sent) {
+          logInfo('Final qualification beacon sent', { playTimeSeconds: Math.floor(playTimeSeconds) });
+        } else {
+          logWarn('sendBeacon failed on unload');
+        }
       }
     }
   }

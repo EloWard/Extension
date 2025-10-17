@@ -1,0 +1,220 @@
+# North Star
+
+Build a public, trustworthy **Leaderboard of Streams by Viewer Rank Quality** with per‑channel stats pages. The system should:
+
+* Compute **daily** viewer sets per channel (one 24h window starting **07:00 UTC**).
+* Produce **daily metrics** (avg/median/top‑10 rank, % Master+, rank distribution, qualified viewer count).
+* Surface **leaderboards** (daily, monthly, all‑time) and **channel pages** with trend charts.
+* Be lightweight, privacy‑respectful, and resilient—**extension‑only** signal (no IRC dependency).
+
+---
+
+# Chunk 1 — Track Daily Viewers of Channels (Ground Truth) ✅ IMPLEMENTED
+
+**Goal:** Determine which EloWard users count as viewers of channel *X* for a given window **[07:00 UTC…06:59:59 UTC next day]**.
+
+**Viewer Definition (V1):** A user qualifies for channel *X* if they have a Twitch tab open on channel *X* and accrue **≥ 300 seconds (5 minutes)** during the window. Tab tracking is independent of video play/pause state or tab focus.
+
+**Client (Extension) - IMPLEMENTED:**
+
+* **File:** `EloWardApp/js/content/viewer-stats.js`
+* **Injection:** Content script injected into all `*.twitch.tv/*` pages via manifest.json
+* **Tracking Logic:**
+  * Detects channel from URL pathname (e.g., `/channelname`)
+  * Loads viewer's `riot_puuid` from Chrome extension storage (`eloward_persistent_riot_user_data`)
+  * Computes current window start using `getCurrentWindow()` which calculates stat_date based on 07:00 UTC reset
+  * Tracks play time in seconds using 1-second interval timer
+  * Persists progress to `localStorage` with key `eloward_viewer_{channel}_{stat_date}`
+  * When 300 seconds threshold is reached, sends POST to backend via `fetch()`
+  * Session-level deduplication using `qualificationSent` Set to prevent multiple sends per window
+  * Backup: sends qualification on `pagehide/beforeunload` events using `sendBeacon()` if threshold met but not sent
+* **Multi-tab support:** Each tab tracks independently; users can qualify for multiple channels simultaneously
+* **Debug helpers:** `window.elowardViewerDebug()` and `window.elowardCheckStorage()` for console debugging
+
+**API (Workers) - IMPLEMENTED:**
+
+**Endpoint:** `POST /view/qualify`
+* **Worker:** `Backend/workers/users/users-worker.js`
+* **Handler:** `handleViewerQualify()` (line 548-599)
+* **Request Body:** `{ stat_date, channel_twitch_id, riot_puuid }`
+* **Validation:**
+  * `stat_date` must be current or previous window (YYYY-MM-DD format)
+  * `channel_twitch_id` must be lowercase alphanumeric with underscores, max 25 chars
+  * `riot_puuid` must be valid UUID format (36-78 chars, hex/dashes)
+* **Database Operation:** Upsert into `channel_viewers_daily` using `ON CONFLICT DO NOTHING`
+* **Auth:** No auth required for viewer qualification endpoint (public write)
+* **CORS:** Supports Chrome/Firefox/Safari extension origins + configured domains
+* **Response:** `{ ok: true }` on success
+
+**Health Check Endpoint:** `GET /view/health`
+* **Handler:** `handleViewerHealth()` (line 605-637)
+* **Response:** Current window stats including total qualifications, unique channels, unique viewers
+
+**D1 Table - IMPLEMENTED:**
+
+**Table:** `channel_viewers_daily`
+* **Schema File:** `Backend/db-tables/channel_viewers_daily.sql`
+* **Columns:**
+  * `stat_date TEXT NOT NULL` - Window start date in YYYY-MM-DD format
+  * `channel_twitch_id TEXT NOT NULL` - Twitch channel login (lowercase)
+  * `riot_puuid TEXT NOT NULL` - Riot PUUID of the viewer
+  * `created_at INTEGER NOT NULL` - Unix timestamp (defaults to unixepoch('now'))
+* **Primary Key:** `(stat_date, channel_twitch_id, riot_puuid)`
+* **Indexes:**
+  * `idx_cvd_channel_date` on `(channel_twitch_id, stat_date)`
+  * `idx_cvd_puuid_date` on `(riot_puuid, stat_date)`
+  * `idx_cvd_created_at` on `(created_at)`
+
+**Notes:**
+
+* Simultaneous multi‑channel viewing is allowed; each channel can qualify independently
+* We only store qualified viewers; no per‑minute traces
+* Column naming uses `channel_twitch_id` for consistency across the system
+* Extension uses persistent storage to survive tab reloads within the same window
+
+**Exit Criteria:** ✅ COMPLETE
+
+* ✅ Rows appear in database when users hit 5 minutes (verified via `/view/health`)
+* ✅ Duplicates do not create multiple rows (enforced by PRIMARY KEY constraint)
+* ✅ CORS properly configured for Chrome extension origins
+* ✅ Window calculation correctly handles 07:00 UTC reset boundary
+
+---
+
+# Chunk 2 — Daily Metrics Materialization
+
+**Goal:** Precompute per‑channel metrics **once per window** for fast reads.
+
+**Cron (Workers) @ 07:05 UTC:**
+
+* For the window that just ended (`stat_date`), pull all qualified `{channel_login, riot_puuid}` from `channel_viewers_daily`.
+* Join with `lol_ranks` to compute a **numeric score** per viewer (current vs peak toggle added later).
+
+  * Tier→score mapping:
+
+    * Iron=0, Bronze=200, Silver=400, Gold=600, Plat=800, Emerald=1000, Diamond=1200, Master=1400, GM=1600, Challenger=1800
+    * Div offsets (I/II/III/IV): +150/+100/+50/+0 (Iron–Diamond)
+    * LP bonus: `+LP/10` capped at +10
+* Aggregate per channel:
+
+  * `qualified_viewers` (distinct PUUIds)
+  * `avg_rank_score`, `median_rank_score`, `top10_avg_score`
+  * `tier_counts_json` (counts by tier)
+  * `top_viewers_json` (top N viewers by score; N=10–25)
+* Upsert to `channel_metrics_daily`.
+
+**D1 Table:** `channel_metrics_daily`
+
+* Columns: `stat_date TEXT`, `channel_login TEXT`, `qualified_viewers INTEGER`, `avg_rank_score REAL`, `median_rank_score REAL`, `top10_avg_score REAL`, `tier_counts_json TEXT`, `top_viewers_json TEXT`
+* PK: `(stat_date, channel_login)`
+* Indexes: `(stat_date)`, `(avg_rank_score DESC)`, `(qualified_viewers DESC)`
+
+**Exit Criteria:**
+
+* A single fast query returns daily stats for any channel.
+
+---
+
+# Chunk 3 — Monthly & All‑Time Rollups
+
+**Goal:** Serve leaderboards without scanning many daily rows at request time.
+
+**Monthly Cron @ 07:10 UTC:**
+
+* For `YYYY‑MM`, combine the month’s `channel_metrics_daily` rows per channel.
+* Averages: **viewer‑weighted mean** across days.
+* Medians / Top‑10: V1 can average daily medians/top‑10 as an approximation (upgrade path below).
+* Sum tier counts.
+
+**All‑Time Cron @ 07:15 UTC:**
+
+* Fold in the latest day into `channel_metrics_all_time` (and subtract expired days if you enforce a moving window).
+
+**D1 Tables:**
+
+* `channel_metrics_monthly(year_month, channel_login, qualified_viewers, avg_rank_score, median_rank_score, top10_avg_score, tier_counts_json)`; PK `(year_month, channel_login)`
+* `channel_metrics_all_time(channel_login PK, qualified_viewers, avg_rank_score, median_rank_score, top10_avg_score, tier_counts_json, updated_at INTEGER)`
+
+**Upgrade Path:** Add an optional `score_sketch_b64` (KLL/t‑digest) to `channel_metrics_daily` for accurate month/all‑time medians/top‑K without raw data.
+
+---
+
+# Chunk 4 — Public APIs & Caching
+
+**Goal:** Simple, cacheable endpoints reading materialized tables only.
+
+**Endpoints:**
+
+* `GET /leaderboard/daily?date=YYYY‑MM‑DD&metric=avg_rank&min_viewers=10&limit=100`
+* `GET /leaderboard/monthly?month=YYYY‑MM&metric=avg_rank&min_viewers=100&limit=100`
+* `GET /leaderboard/all‑time?metric=avg_rank&min_viewers=100&limit=100`
+* `GET /channel/:login/daily?start=YYYY‑MM‑DD&end=YYYY‑MM‑DD` (time‑series)
+* `GET /channel/:login/top‑viewers?date=YYYY‑MM‑DD`
+
+**Caching:**
+
+* Use CF Cache with cache tags per `stat_date`, `month`, and channel.
+* Daily endpoints cache for 24h; purge when new rollup writes complete.
+
+---
+
+# Chunk 5 — Frontend (MVP)
+
+**Leaderboard:**
+
+* Columns: Channel, Avg Rank, Median, Top‑10 Avg, % Master+, Qualified Viewers.
+* Filters: Window (Daily/Monthly/All‑Time), min viewers.
+
+**Channel Page:**
+
+* Cards: Avg, Median, Top‑10 Avg, Qualified Viewers, % Master+.
+* Rank distribution bar (Iron→Challenger).
+* Time‑series (daily) for Avg Rank and Viewer Count.
+* Top Viewers list (PUUID‑keyed; show LoL name if available).
+
+---
+
+# Chunk 6 — Observability, Ops, and Guards
+
+**Monitoring:**
+
+* Metrics: POST volume, insert vs duplicate rate, daily qualified counts per channel.
+* Cron logs: duration, rows processed, last success time.
+
+**Guards:**
+
+* API validation (length/format checks), soft rate limits per PUUID/IP.
+* Denylist for obvious bot/test accounts (optional).
+
+**Privacy:**
+
+* Store only `{stat_date, channel_login, riot_puuid}` as ground truth + aggregated stats.
+* No per‑minute event trails in V1.
+
+---
+
+# Roles & Responsibilities
+
+* **Extension**: detect playing, local 5‑minute counter, single POST per `{stat_date, channel}`.
+* **Ingest Worker**: idempotent upsert into `channel_viewers_daily`.
+* **Rollup Worker (Cron)**: compute `channel_metrics_daily`, then monthly and all‑time.
+* **API Worker**: read‑only endpoints backed by materialized tables, with CF caching.
+* **Frontend**: leaderboard and channel pages consuming the APIs.
+
+---
+
+# Acceptance Criteria (V1)
+
+1. When a user watches a channel for ≥5 minutes within a window, a single row exists in `channel_viewers_daily`.
+2. At ~07:05 UTC, `channel_metrics_daily` contains one row per channel with correct aggregates.
+3. Leaderboard API for a given day returns ordered channels by Avg Rank in O(1) table reads.
+4. Channel page API returns rank distribution and top viewers for the day.
+
+---
+
+# V1.1+ Roadmap (optional next steps)
+
+* Add **Current vs Peak** toggle to rollups.
+* Add **region** filters and category benchmarks.
+* Store a compact **score sketch** in daily rows for accurate month/all‑time medians.
+* Live‑only mode (gate by Twitch isLive) if you want strictly per‑stream stats.
