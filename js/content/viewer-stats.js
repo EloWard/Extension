@@ -25,6 +25,7 @@
   let isTracking = false;
   let lastUpdateTime = null;
   let qualificationSent = new Set(); // Track sent qualifications per session
+  let trackingIntervalId = null; // Store interval ID to clear when done
 
   // Enhanced logging
   function log(level, message, data = null) {
@@ -64,6 +65,12 @@
       qualificationSent: Array.from(qualificationSent),
       currentWindow: getCurrentWindow(),
       threshold: QUALIFY_THRESHOLD_SECONDS,
+      // Game detection state from content.js
+      gameDetection: {
+        isChannelActive: window.elowardExtensionState?.isChannelActive || false,
+        currentGame: window.elowardExtensionState?.currentGame || 'unknown',
+        isLoL: window.elowardExtensionState?.currentGame === 'League of Legends'
+      },
       localStorage: Object.keys(localStorage).filter(k => k.includes('eloward')),
       extensionStorage: 'Use chrome.storage.local.get() to check extension data'
     };
@@ -106,11 +113,21 @@
 
   /**
    * Get channel name from current URL
+   * Uses the same robust logic as content.js to handle all Twitch URL patterns
    */
   function getChannelFromUrl() {
-    const match = window.location.pathname.match(/^\/([^\/]+)$/);
-    const channel = match ? match[1].toLowerCase() : null;
-    logDebug('Extracted channel from URL', { pathname: window.location.pathname, channel });
+    const pathname = window.location.pathname;
+    const pathSegments = pathname.split('/');
+
+    // Handle normal channel view: /[channel] or /[channel]/videos etc.
+    // Same logic as content.js getCurrentChannelName()
+    let channel = null;
+    if (pathSegments[1] &&
+        pathSegments[1] !== 'oauth2' &&
+        !pathSegments[1].includes('auth')) {
+      channel = pathSegments[1].toLowerCase();
+    }
+
     return channel;
   }
 
@@ -118,27 +135,20 @@
    * Load viewer's PUUID from extension storage or API
    */
   async function loadViewerPuuid() {
-    logDebug('Loading viewer PUUID from extension storage');
     try {
-      // Use chrome.storage.local to get Riot user data (same as content.js)
       return new Promise((resolve) => {
         chrome.storage.local.get(['eloward_persistent_riot_user_data'], (data) => {
           const riotData = data?.eloward_persistent_riot_user_data;
           if (riotData?.puuid) {
-            logInfo('Found PUUID in extension storage', { puuid: riotData.puuid.substring(0, 8) + '...' });
             resolve(riotData.puuid);
           } else {
-            logWarn('No PUUID found in extension storage', { 
-              hasData: !!data,
-              hasRiotData: !!riotData,
-              riotDataKeys: riotData ? Object.keys(riotData) : []
-            });
+            logWarn('No Riot account connected - viewer tracking unavailable');
             resolve(null);
           }
         });
       });
     } catch (error) {
-      logError('Failed to load PUUID from extension storage', error);
+      logError('Failed to load PUUID', error);
       return null;
     }
   }
@@ -259,12 +269,7 @@
       riot_puuid: riotPuuid
     };
 
-    logInfo('Sending viewer qualification', {
-      channel: currentChannel,
-      window: payload.stat_date,
-      puuid: riotPuuid.substring(0, 8) + '...',
-      playTimeSeconds
-    });
+    logInfo('Sending viewer qualification', { channel: currentChannel });
 
     try {
       // Use fetch for better error handling and CORS support
@@ -277,16 +282,32 @@
       });
 
       if (response.ok) {
+        const responseData = await response.json();
         qualificationSent.add(qualKey);
-        // Mark as qualified in localStorage
         savePlayTime();
-        logInfo('Viewer qualification sent successfully', { status: response.status, qualKey });
+
+        // Stop tracking after successful qualification
+        stopTracking();
+
+        logInfo('✅ Viewer qualified successfully', {
+          channel: currentChannel,
+          window: payload.stat_date
+        });
       } else {
         const errorText = await response.text();
-        logError('Failed to send qualification', { status: response.status, statusText: response.statusText, error: errorText });
+        logError('❌ Failed to send qualification - Bad response', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          payload
+        });
       }
     } catch (error) {
-      logError('Failed to send qualification', error);
+      logError('❌ Failed to send qualification - Network error', {
+        error: error.message,
+        stack: error.stack,
+        payload
+      });
     }
   }
 
@@ -297,11 +318,22 @@
     if (!isTracking || !lastUpdateTime) {
       return; // Silent return - no need to log this constantly
     }
-    
+
+    // Check if League of Legends is still being played
+    if (!window.elowardExtensionState?.isChannelActive) {
+      logInfo('Game changed, stopping tracking', {
+        channel: currentChannel,
+        currentGame: window.elowardExtensionState?.currentGame || 'unknown'
+      });
+      savePlayTime();
+      stopTracking();
+      return;
+    }
+
     const now = Date.now();
     const deltaSeconds = (now - lastUpdateTime) / 1000;
     lastUpdateTime = now;
-    
+
     // Check for window rollover
     const currentWindow = getCurrentWindow();
     const savedKey = getStorageKey();
@@ -311,21 +343,11 @@
       playTimeSeconds = 0;
       qualificationSent.clear();
     }
-    
+
     playTimeSeconds += deltaSeconds;
-    
-    // Log progress every 60 seconds
-    if (Math.floor(playTimeSeconds) % 60 === 0 && playTimeSeconds > 0) {
-      logDebug('Play time progress', { seconds: Math.floor(playTimeSeconds), threshold: QUALIFY_THRESHOLD_SECONDS });
-    }
-    
+
     // Check if we've hit the threshold
     if (playTimeSeconds >= QUALIFY_THRESHOLD_SECONDS && !isAlreadyQualified()) {
-      logInfo('Qualification threshold reached!', { 
-        playTimeSeconds: Math.floor(playTimeSeconds), 
-        threshold: QUALIFY_THRESHOLD_SECONDS,
-        channel: currentChannel 
-      });
       sendQualification();
     }
     
@@ -339,24 +361,34 @@
    * Find and monitor the video element
    */
   function findVideoElement() {
-    logDebug('Looking for video element');
-    // Look for main Twitch video player
     const video = document.querySelector('video[src*="twitch.tv"], video.video-player__video, video');
-    
+
     if (!video) {
-      logDebug('Video element not found, will retry');
       // Retry after a delay if not found
       setTimeout(findVideoElement, 1000);
       return null;
     }
-    
-    logInfo('Found video element', { 
-      src: video.src ? video.src.substring(0, 50) + '...' : 'no src',
-      paused: video.paused,
-      ended: video.ended,
-      duration: video.duration || 'unknown'
-    });
+
     return video;
+  }
+
+  /**
+   * Check if we can start tracking (League of Legends is being played)
+   */
+  function canStartTracking() {
+    return window.elowardExtensionState?.isChannelActive === true;
+  }
+
+  /**
+   * Stop tracking and clean up
+   */
+  function stopTracking() {
+    if (trackingIntervalId) {
+      clearInterval(trackingIntervalId);
+      trackingIntervalId = null;
+    }
+    isTracking = false;
+    logInfo('Tracking stopped', { channel: currentChannel });
   }
 
   /**
@@ -364,47 +396,36 @@
    */
   function startTracking(video) {
     if (!video || !currentChannel || !riotPuuid) {
-      logWarn('Cannot start tracking - missing requirements', { 
-        hasVideo: !!video, 
-        hasChannel: !!currentChannel, 
-        hasPuuid: !!riotPuuid 
+      logWarn('Cannot start tracking - missing requirements', {
+        hasVideo: !!video,
+        hasChannel: !!currentChannel,
+        hasPuuid: !!riotPuuid
       });
-      return;
+      return false;
     }
-    
-    logInfo('Starting video tracking', { channel: currentChannel, puuid: riotPuuid.substring(0, 8) + '...' });
+
+    // Check if League of Legends is currently being played
+    if (!canStartTracking()) {
+      return false;
+    }
     
     // Load saved play time
     playTimeSeconds = loadPlayTime();
     
     // Check if already qualified
     if (isAlreadyQualified()) {
-      logInfo('Already qualified for this window, skipping tracking');
-      return;
+      return true; // Already qualified, no need to track
     }
-    
-    // Start tracking immediately - don't wait for play/pause events
-    // This allows tracking even when tab is not in focus
+
+    // Start tracking immediately - tracks even when tab is not in focus
     isTracking = true;
     lastUpdateTime = Date.now();
-    logInfo('Started continuous tracking (tab-based, not video-based)');
-    
-    // Optional: Still listen for video events for logging purposes
-    video.addEventListener('play', () => {
-      logDebug('Video resumed playing');
-    });
-    
-    video.addEventListener('pause', () => {
-      logDebug('Video paused (but tracking continues)');
-    });
-    
-    video.addEventListener('ended', () => {
-      logDebug('Video ended (but tracking continues)');
-    });
-    
-    // Update play time every second
-    setInterval(updatePlayTime, 1000);
-    logDebug('Set up 1-second interval for play time updates');
+    logInfo('Viewer tracking started', { channel: currentChannel });
+
+    // Update play time every second and save interval ID
+    trackingIntervalId = setInterval(updatePlayTime, 1000);
+
+    return true; // Successfully started tracking
   }
 
   /**
@@ -451,79 +472,47 @@
     // Get channel from URL
     currentChannel = getChannelFromUrl();
     if (!currentChannel) {
-      logInfo('Not on a channel page, skipping viewer tracking', { pathname: window.location.pathname });
-      return;
+      return; // Not on a channel page
     }
     
     // Load viewer PUUID
     riotPuuid = await loadViewerPuuid();
     if (!riotPuuid) {
-      logWarn('No PUUID available, skipping viewer tracking', { 
-        channel: currentChannel,
-        localStorageKeys: Object.keys(localStorage).filter(k => k.includes('eloward'))
-      });
-      return;
+      return; // No PUUID, can't track
     }
-    
-    logInfo('Viewer tracking initialized successfully', { 
-      channel: currentChannel,
-      puuid: riotPuuid.substring(0, 8) + '...',
-      window: getCurrentWindow(),
-      threshold: QUALIFY_THRESHOLD_SECONDS
-    });
     
     // Find and start monitoring video
     const video = findVideoElement();
     if (video) {
-      startTracking(video);
+      // Try to start tracking immediately
+      const started = startTracking(video);
+
+      // If tracking didn't start (game not detected yet), poll until it does
+      if (!started) {
+        let pollAttempts = 0;
+        const maxPollAttempts = 30; // Poll for up to 30 seconds
+        const pollInterval = setInterval(() => {
+          pollAttempts++;
+
+          if (canStartTracking()) {
+            clearInterval(pollInterval);
+            startTracking(video);
+          } else if (pollAttempts >= maxPollAttempts) {
+            clearInterval(pollInterval);
+          }
+        }, 1000); // Check every second
+      }
     }
-    
+
     // Set up unload handlers
     window.addEventListener('pagehide', handleUnload);
     window.addEventListener('beforeunload', handleUnload);
-    logDebug('Set up page unload handlers');
-    
-    // Handle navigation changes (for SPA navigation)
-    let lastPath = window.location.pathname;
-    setInterval(() => {
-      if (window.location.pathname !== lastPath) {
-        lastPath = window.location.pathname;
-        const newChannel = getChannelFromUrl();
-        if (newChannel !== currentChannel) {
-          logInfo('Channel changed, resetting tracking', { 
-            oldChannel: currentChannel, 
-            newChannel: newChannel 
-          });
-          // Channel changed, reset tracking
-          if (isTracking) {
-            updatePlayTime();
-            savePlayTime();
-          }
-          currentChannel = newChannel;
-          playTimeSeconds = 0;
-          isTracking = false;
-          qualificationSent.clear();
-          
-          if (currentChannel) {
-            const video = findVideoElement();
-            if (video) {
-              startTracking(video);
-            }
-          }
-        }
-      }
-    }, 1000);
-    logDebug('Set up navigation change monitoring');
   }
 
   // Start when DOM is ready
-  logInfo('EloWard viewer tracking script loaded');
-  
   if (document.readyState === 'loading') {
-    logDebug('DOM still loading, waiting for DOMContentLoaded');
     document.addEventListener('DOMContentLoaded', initialize);
   } else {
-    logDebug('DOM already ready, initializing immediately');
     initialize();
   }
 })();
