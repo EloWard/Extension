@@ -14,7 +14,7 @@
   'use strict';
 
   // Configuration
-  const QUALIFY_THRESHOLD_SECONDS = 300; // 5 minutes
+  const QUALIFY_THRESHOLD_SECONDS = 10; // TESTING: 10 seconds (change to 300 for production)
   const BACKEND_URL = 'https://eloward-users.unleashai.workers.dev';
   const STORAGE_KEY_PREFIX = 'eloward_viewer_';
 
