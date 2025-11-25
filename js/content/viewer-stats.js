@@ -269,7 +269,12 @@
       riot_puuid: riotPuuid
     };
 
-    logInfo('Sending viewer qualification', { channel: currentChannel });
+    logInfo('📤 Sending viewer qualification...', {
+      channel: currentChannel,
+      window: payload.stat_date,
+      puuid: riotPuuid.substring(0, 8) + '...',
+      payload: payload
+    });
 
     try {
       // Use fetch for better error handling and CORS support
@@ -281,6 +286,12 @@
         body: JSON.stringify(payload)
       });
 
+      logInfo('📥 Response received', {
+        status: response.status,
+        ok: response.ok,
+        statusText: response.statusText
+      });
+
       if (response.ok) {
         const responseData = await response.json();
         qualificationSent.add(qualKey);
@@ -289,9 +300,10 @@
         // Stop tracking after successful qualification
         stopTracking();
 
-        logInfo('✅ Viewer qualified successfully', {
+        logInfo('✅ Viewer qualified successfully!', {
           channel: currentChannel,
-          window: payload.stat_date
+          window: payload.stat_date,
+          response: responseData
         });
       } else {
         const errorText = await response.text();
@@ -346,11 +358,25 @@
 
     playTimeSeconds += deltaSeconds;
 
+    // Log progress every 5 seconds for debugging
+    if (Math.floor(playTimeSeconds) % 5 === 0 && playTimeSeconds > 0) {
+      logInfo('⏱️  Tracking progress', {
+        seconds: Math.floor(playTimeSeconds),
+        threshold: QUALIFY_THRESHOLD_SECONDS,
+        remaining: Math.max(0, QUALIFY_THRESHOLD_SECONDS - Math.floor(playTimeSeconds)),
+        isAlreadyQualified: isAlreadyQualified()
+      });
+    }
+
     // Check if we've hit the threshold
     if (playTimeSeconds >= QUALIFY_THRESHOLD_SECONDS && !isAlreadyQualified()) {
+      logInfo('🎯 Threshold reached, sending qualification', {
+        playTimeSeconds: Math.floor(playTimeSeconds),
+        channel: currentChannel
+      });
       sendQualification();
     }
-    
+
     // Save progress every 10 seconds
     if (Math.floor(playTimeSeconds) % 10 === 0) {
       savePlayTime();
@@ -406,21 +432,30 @@
 
     // Check if League of Legends is currently being played
     if (!canStartTracking()) {
+      logInfo('⏳ Game not detected yet, will retry...');
       return false;
     }
-    
+
     // Load saved play time
     playTimeSeconds = loadPlayTime();
-    
+
     // Check if already qualified
     if (isAlreadyQualified()) {
+      logInfo('✅ Already qualified for this window', {
+        channel: currentChannel,
+        window: getCurrentWindow()
+      });
       return true; // Already qualified, no need to track
     }
 
     // Start tracking immediately - tracks even when tab is not in focus
     isTracking = true;
     lastUpdateTime = Date.now();
-    logInfo('Viewer tracking started', { channel: currentChannel });
+    logInfo('🚀 Viewer tracking started!', {
+      channel: currentChannel,
+      threshold: QUALIFY_THRESHOLD_SECONDS + 's',
+      window: getCurrentWindow()
+    });
 
     // Update play time every second and save interval ID
     trackingIntervalId = setInterval(updatePlayTime, 1000);
