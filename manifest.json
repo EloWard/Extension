@@ -15,8 +15,7 @@
       ],
       "js": [
         "vendor/browser-polyfill.js",
-        "js/content/content.js",
-        "js/content/viewer-stats.js"
+        "js/content/content.js"
       ],
       "css": [
         "css/content.css"

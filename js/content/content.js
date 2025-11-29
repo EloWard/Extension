@@ -289,6 +289,179 @@ const extensionState = {
 // This allows viewer tracking to check if League of Legends is currently being played
 window.elowardExtensionState = extensionState;
 
+// ============================================================================
+// VIEWER TRACKING INTEGRATION
+// Triggers whenever channel becomes active (streaming League of Legends)
+// ============================================================================
+
+let viewerTrackingState = {
+  isTracking: false,
+  trackingIntervalId: null,
+  playTimeSeconds: 0,
+  lastUpdateTime: null,
+  qualificationsSentToday: new Set(), // Track by channel_date
+  currentTrackingChannel: null
+};
+
+const VIEWER_QUALIFY_THRESHOLD = 10; // TESTING: 10 seconds (change to 300 for production)
+const VIEWER_BACKEND_URL = 'https://eloward-users.unleashai.workers.dev';
+
+/**
+ * Start viewer tracking for current channel
+ * Called automatically when extensionState.isChannelActive = true
+ */
+function startViewerTracking() {
+  // Don't track if already tracking the same channel
+  if (viewerTrackingState.isTracking &&
+      viewerTrackingState.currentTrackingChannel === extensionState.channelName) {
+    return;
+  }
+
+  // Get viewer's Riot PUUID from storage
+  chrome.storage.local.get(['eloward_persistent_riot_user_data'], async (data) => {
+    const riotPuuid = data?.eloward_persistent_riot_user_data?.puuid;
+
+    if (!riotPuuid) {
+      // No PUUID - user hasn't connected Riot account, skip silently
+      return;
+    }
+
+    // Check if already qualified today for this channel
+    const today = getViewerWindow();
+    const qualKey = `${extensionState.channelName}_${today}`;
+
+    if (viewerTrackingState.qualificationsSentToday.has(qualKey)) {
+      console.log(`[EloWard Viewer] Already qualified today for ${extensionState.channelName}`);
+      return;
+    }
+
+    // Start tracking
+    stopViewerTracking(); // Stop any previous tracking
+    viewerTrackingState.isTracking = true;
+    viewerTrackingState.currentTrackingChannel = extensionState.channelName;
+    viewerTrackingState.playTimeSeconds = 0;
+    viewerTrackingState.lastUpdateTime = Date.now();
+
+    console.log(`[EloWard Viewer] 🚀 Started tracking: ${extensionState.channelName}`);
+
+    // Update every second
+    viewerTrackingState.trackingIntervalId = setInterval(() => {
+      updateViewerPlayTime(riotPuuid);
+    }, 1000);
+  });
+}
+
+/**
+ * Stop viewer tracking and clean up
+ */
+function stopViewerTracking() {
+  if (viewerTrackingState.trackingIntervalId) {
+    clearInterval(viewerTrackingState.trackingIntervalId);
+    viewerTrackingState.trackingIntervalId = null;
+  }
+  viewerTrackingState.isTracking = false;
+  viewerTrackingState.playTimeSeconds = 0;
+  viewerTrackingState.lastUpdateTime = null;
+  viewerTrackingState.currentTrackingChannel = null;
+}
+
+/**
+ * Update play time and check for qualification
+ */
+function updateViewerPlayTime(riotPuuid) {
+  if (!viewerTrackingState.isTracking || !viewerTrackingState.lastUpdateTime) {
+    return;
+  }
+
+  // Check if still on LoL stream
+  if (!extensionState.isChannelActive) {
+    console.log('[EloWard Viewer] Game changed, stopping tracking');
+    stopViewerTracking();
+    return;
+  }
+
+  // Check if channel changed
+  if (viewerTrackingState.currentTrackingChannel !== extensionState.channelName) {
+    console.log('[EloWard Viewer] Channel changed, restarting tracking');
+    stopViewerTracking();
+    startViewerTracking();
+    return;
+  }
+
+  const now = Date.now();
+  const deltaSeconds = (now - viewerTrackingState.lastUpdateTime) / 1000;
+  viewerTrackingState.lastUpdateTime = now;
+  viewerTrackingState.playTimeSeconds += deltaSeconds;
+
+  // Log progress every 5 seconds
+  if (Math.floor(viewerTrackingState.playTimeSeconds) % 5 === 0 &&
+      viewerTrackingState.playTimeSeconds >= 5) {
+    console.log(`[EloWard Viewer] ⏱️  ${Math.floor(viewerTrackingState.playTimeSeconds)}s / ${VIEWER_QUALIFY_THRESHOLD}s`);
+  }
+
+  // Check if qualified
+  if (viewerTrackingState.playTimeSeconds >= VIEWER_QUALIFY_THRESHOLD) {
+    sendViewerQualification(riotPuuid);
+  }
+}
+
+/**
+ * Send viewer qualification to backend
+ */
+async function sendViewerQualification(riotPuuid) {
+  const channel = viewerTrackingState.currentTrackingChannel;
+  const today = getViewerWindow();
+  const qualKey = `${channel}_${today}`;
+
+  // Stop tracking first (we're done)
+  stopViewerTracking();
+
+  const payload = {
+    stat_date: today,
+    channel_twitch_id: channel.toLowerCase(),
+    riot_puuid: riotPuuid
+  };
+
+  console.log(`[EloWard Viewer] 📤 Sending qualification for ${channel}...`);
+
+  try {
+    const response = await fetch(`${VIEWER_BACKEND_URL}/view/qualify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      viewerTrackingState.qualificationsSentToday.add(qualKey);
+      console.log(`[EloWard Viewer] ✅ Qualified successfully for ${channel}`);
+    } else {
+      const error = await response.text();
+      console.error(`[EloWard Viewer] ❌ Failed to qualify:`, error);
+    }
+  } catch (error) {
+    console.error(`[EloWard Viewer] ❌ Network error:`, error);
+  }
+}
+
+/**
+ * Get viewer window (07:00 UTC daily reset)
+ */
+function getViewerWindow() {
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+
+  // If before 07:00 UTC, use yesterday's date
+  if (utcHour < 7) {
+    now.setUTCDate(now.getUTCDate() - 1);
+  }
+
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
 const SELECTORS = {
   standard: {
     username: [
@@ -765,7 +938,10 @@ function fallbackInitialization() {
       extensionState.channelName = currentChannel;
       extensionState.currentGame = 'League of Legends';
       extensionState.isChannelActive = true;
-      
+
+      // Start viewer tracking
+      startViewerTracking();
+
       setupChatObserver(chatContainer);
       extensionState.observerInitialized = true;
       extensionState.initializationComplete = true;
@@ -1021,6 +1197,7 @@ function setupGameChangeObserver() {
           extensionState.isChannelActive = false;
         } else if (isGameSupported(extensionState.currentGame) && !isGameSupported(oldGame)) {
           extensionState.isChannelActive = true;
+          startViewerTracking(); // Start viewer tracking when switching TO LoL
           if (!extensionState.initializationInProgress) initializeExtension();
         }
       }
@@ -1088,6 +1265,10 @@ function initializeExtension() {
     if (isGameSupported(extensionState.currentGame)) {
       extensionState.isChannelActive = true;
       console.log(`🚀 EloWard: Active for ${extensionState.channelName} (${extensionState.chatMode} mode)`);
+
+      // Start viewer tracking whenever extension becomes active
+      startViewerTracking();
+
       if (!extensionState.observerInitialized) {
         initializeObserver();
       }
