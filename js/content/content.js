@@ -285,8 +285,7 @@ const extensionState = {
   lastPathname: ''
 };
 
-// Expose extensionState for other content scripts (e.g., viewer-stats.js)
-// This allows viewer tracking to check if League of Legends is currently being played
+// Expose extensionState globally for debugging and potential future extensions
 window.elowardExtensionState = extensionState;
 
 // ============================================================================
