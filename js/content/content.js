@@ -302,7 +302,7 @@ let viewerTrackingState = {
   currentTrackingChannel: null
 };
 
-const VIEWER_QUALIFY_THRESHOLD = 10; // TESTING: 10 seconds (change to 300 for production)
+const VIEWER_QUALIFY_THRESHOLD = 300; // Production: 5 minutes (300 seconds)
 const VIEWER_BACKEND_URL = 'https://eloward-users.unleashai.workers.dev';
 
 /**
