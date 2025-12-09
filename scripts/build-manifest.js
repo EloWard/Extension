@@ -96,7 +96,7 @@ function generateFirefoxManifest() {
       gecko: {
         id: "eloward@unleashai.workers.dev",
         data_collection_permissions: {
-          opt_in: false
+          required: false
         }
       }
     }
