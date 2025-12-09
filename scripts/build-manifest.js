@@ -94,7 +94,8 @@ function generateFirefoxManifest() {
     },
     browser_specific_settings: {
       gecko: {
-        id: "eloward@unleashai.workers.dev"
+        id: "eloward@unleashai.workers.dev",
+        data_collection_permissions: false
       }
     }
   };
