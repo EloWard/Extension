@@ -13,7 +13,7 @@ const ROOT_DIR = path.join(__dirname, '..');
 // Base manifest configuration
 const baseManifest = {
   name: "EloWard",
-  version: "2.1.4",
+  version: "2.1.5",
   description: "Injects real-time League of Legends rank badges into Twitch chat so you can seamlessly display your rank on any channel",
   icons: {
     "16": "images/logo/icon16.png",
@@ -96,7 +96,7 @@ function generateFirefoxManifest() {
       gecko: {
         id: "eloward@unleashai.workers.dev",
         data_collection_permissions: {
-          required: false
+          required: ["websiteActivity", "personallyIdentifyingInfo"]
         }
       }
     }
