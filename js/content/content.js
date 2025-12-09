@@ -310,6 +310,19 @@ const VIEWER_BACKEND_URL = 'https://eloward-users.unleashai.workers.dev';
  * Called automatically when extensionState.isChannelActive = true
  */
 function startViewerTracking() {
+  if (!extensionState.isChannelActive) {
+    console.log('[EloWard Viewer] ⛔ Cannot start tracking - extension not active');
+    return;
+  }
+  if (!isGameSupported(extensionState.currentGame)) {
+    console.log(`[EloWard Viewer] ⛔ Cannot start tracking - unsupported game: ${extensionState.currentGame || 'none'}`);
+    return;
+  }
+  if (!extensionState.channelName) {
+    console.log('[EloWard Viewer] ⛔ Cannot start tracking - no channel name');
+    return;
+  }
+
   // Don't track if already tracking the same channel
   if (viewerTrackingState.isTracking &&
       viewerTrackingState.currentTrackingChannel === extensionState.channelName) {
@@ -322,6 +335,10 @@ function startViewerTracking() {
 
     if (!riotPuuid) {
       // No PUUID - user hasn't connected Riot account, skip silently
+      return;
+    }
+    if (!isGameSupported(extensionState.currentGame)) {
+      console.log(`[EloWard Viewer] ⛔ Game changed before tracking started: ${extensionState.currentGame || 'none'}`);
       return;
     }
 
@@ -341,12 +358,23 @@ function startViewerTracking() {
     viewerTrackingState.playTimeSeconds = 0;
     viewerTrackingState.lastUpdateTime = Date.now();
 
-    console.log(`[EloWard Viewer] 🚀 Started tracking: ${extensionState.channelName}`);
+    console.log(`[EloWard Viewer] 🚀 Started tracking: ${extensionState.channelName} (${extensionState.currentGame})`);
 
     // Update every second
     viewerTrackingState.trackingIntervalId = setInterval(() => {
       updateViewerPlayTime(riotPuuid);
     }, 1000);
+
+    // EXTRA SAFETY: Re-verify game category after 3 seconds
+    // Catches race conditions where game detection completes after tracking starts
+    setTimeout(() => {
+      if (viewerTrackingState.isTracking &&
+          viewerTrackingState.currentTrackingChannel === extensionState.channelName &&
+          !isGameSupported(extensionState.currentGame)) {
+        console.log(`[EloWard Viewer] ⛔ Game verification failed - stopping tracking (detected: ${extensionState.currentGame})`);
+        stopViewerTracking();
+      }
+    }, 3000);
   });
 }
 
@@ -907,10 +935,10 @@ function setupFallbackInitialization() {
   }, 120000);
 }
 
-function fallbackInitialization() {
+async function fallbackInitialization() {
   const currentChannel = getCurrentChannelName();
   if (!currentChannel) return;
-  
+
   if (!extensionState.compatibilityMode) {
     const hasThirdPartyExtensions = !!(
       document.querySelector('.ffz-addon') ||
@@ -921,28 +949,40 @@ function fallbackInitialization() {
       window.FrankerFaceZ ||
       window.SevenTV || window.seventv
     );
-    
+
     if (hasThirdPartyExtensions) {
       extensionState.compatibilityMode = true;
     }
   }
-  
+
   let attempts = 0;
   const maxAttempts = 10;
-  
-  function tryFallbackSetup() {
+
+  async function tryFallbackSetup() {
     const chatContainer = findChatContainer();
-    
+
     if (chatContainer) {
       extensionState.channelName = currentChannel;
-      extensionState.currentGame = 'League of Legends';
-      extensionState.isChannelActive = true;
+      const detectedGame = await getCurrentGame();
+      extensionState.currentGame = detectedGame;
 
-      // Start viewer tracking
-      startViewerTracking();
+      console.log(`🔄 EloWard Fallback: Detected game - ${detectedGame || 'none'}`);
 
-      setupChatObserver(chatContainer);
-      extensionState.observerInitialized = true;
+      // Only activate if game is League of Legends
+      if (isGameSupported(detectedGame)) {
+        extensionState.isChannelActive = true;
+        console.log(`🚀 EloWard Fallback: Active for ${currentChannel} (${detectedGame})`);
+
+        // Start viewer tracking (now has guards to prevent activation on non-LoL games)
+        startViewerTracking();
+
+        setupChatObserver(chatContainer);
+        extensionState.observerInitialized = true;
+      } else {
+        extensionState.isChannelActive = false;
+        console.log(`⛔ EloWard Fallback: Not active - unsupported game: ${detectedGame || 'none'}`);
+      }
+
       extensionState.initializationComplete = true;
     } else {
       attempts++;
@@ -951,7 +991,7 @@ function fallbackInitialization() {
       }
     }
   }
-  
+
   tryFallbackSetup();
 }
 
